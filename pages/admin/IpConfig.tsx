@@ -19,21 +19,29 @@ export const IpConfig: React.FC = () => {
   }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
 
   useEffect(() => {
-    setMappings(getIpMappings());
+    const fetchMappings = async () => {
+      const data = await getIpMappings();
+      setMappings(data);
+    };
+    fetchMappings();
   }, []);
 
-  const handleAddMapping = () => {
+  const handleAddMapping = async () => {
     if (newIp && newName) {
       // Basic validation: Check if IP already exists
       if (mappings.some(m => m.ip === newIp)) {
           alert('该 IP 地址已存在配置。');
           return;
       }
-      const updated = [...mappings, { ip: newIp, name: newName }];
-      setMappings(updated);
-      saveIpMappings(updated);
-      setNewIp('');
-      setNewName('');
+      try {
+        await saveIpMappings([{ ip: newIp, name: newName }]);
+        const updated = [...mappings, { ip: newIp, name: newName }];
+        setMappings(updated);
+        setNewIp('');
+        setNewName('');
+      } catch (err) {
+        alert('添加失败');
+      }
     }
   };
 
@@ -42,10 +50,23 @@ export const IpConfig: React.FC = () => {
         isOpen: true,
         title: '删除 IP 映射',
         message: `确定要删除 IP [${ip}] 的映射配置吗？`,
-        onConfirm: () => {
-            const updated = mappings.filter(m => m.ip !== ip);
-            setMappings(updated);
-            saveIpMappings(updated);
+        onConfirm: async () => {
+            try {
+              const updated = mappings.filter(m => m.ip !== ip);
+              setMappings(updated);
+              // Call backend to delete
+              const resp = await fetch(`/api/ip-mappings/${encodeURIComponent(ip)}`, {
+                method: 'DELETE',
+                credentials: 'include'
+              });
+              if (!resp.ok) {
+                alert('删除失败');
+                setMappings(mappings); // Restore
+              }
+            } catch (err) {
+              alert('删除失败');
+              setMappings(mappings); // Restore
+            }
         }
     });
   };

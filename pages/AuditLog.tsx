@@ -11,13 +11,19 @@ export const AuditLog: React.FC = () => {
   const [mappings, setMappings] = useState<IpMapping[]>([]);
 
   useEffect(() => {
-    setLogs(getLogs());
-    setMappings(getIpMappings());
+    // Fetch logs and mappings from backend
+    const fetchData = async () => {
+      const fetchedLogs = await getLogs();
+      const fetchedMappings = await getIpMappings();
+      setLogs(fetchedLogs);
+      setMappings(fetchedMappings);
+    };
+    
+    fetchData();
     
     // Refresh logs every few seconds to show live activity
     const interval = setInterval(() => {
-        setLogs(getLogs());
-        setMappings(getIpMappings());
+      fetchData();
     }, 5000);
     return () => clearInterval(interval);
   }, []);

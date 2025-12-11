@@ -1,81 +1,106 @@
-import { Database, TABLE } from './database';
+// services/auditService.ts
 
 export interface LogEntry {
   id: string;
   timestamp: string;
   ip: string;
-  username: string; // Derived from IP or User Context
+  username: string;
   action: string;
   details: string;
 }
 
 export interface IpMapping {
+  id?: number;
   ip: string;
   name: string;
 }
 
-// Helper to simulate getting client IP
-// Changed to localStorage to simulate a static IP per machine (Client Persistence)
-export const getCurrentIp = (): string => {
-  let ip = localStorage.getItem('mock_client_device_ip');
-  if (!ip) {
-    // Generate a consistent random mock IP for this browser instance
-    // Simulating distinct clients like 192.168.1.X
-    const segment = Math.floor(Math.random() * 200) + 50; 
-    ip = `192.168.1.${segment}`;
-    localStorage.setItem('mock_client_device_ip', ip);
+const API_BASE = '/api';
+
+// 记录操作日志（后端自动获取真实IP）
+export const recordAction = async (action: string, details: string) => {
+  try {
+    await fetch(`${API_BASE}/audit/log`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ action, details }),
+    });
+  } catch (err) {
+    console.error('Failed to record action:', err);
   }
-  return ip;
 };
 
-export const getIpMappings = (): IpMapping[] => {
-  const saved = Database.findAll<IpMapping>(TABLE.IP_MAPPINGS);
-  return saved.length > 0 ? saved : [
-    { ip: '192.168.1.100', name: '管理员 (Admin)' },
-    { ip: '192.168.1.101', name: '开发人员 (Dev)' }
-  ];
+// 获取全部日志
+export const getLogs = async (): Promise<LogEntry[]> => {
+  try {
+    const resp = await fetch(`${API_BASE}/audit/logs`, { credentials: 'include' });
+    if (resp.ok) {
+      return await resp.json();
+    }
+  } catch (err) {
+    console.error('Failed to fetch logs:', err);
+  }
+  return [];
 };
 
-export const saveIpMappings = (mappings: IpMapping[]) => {
-  Database.save(TABLE.IP_MAPPINGS, mappings);
+// 获取全部IP映射
+export const getIpMappings = async (): Promise<IpMapping[]> => {
+  try {
+    const resp = await fetch(`${API_BASE}/ip-mappings`, { credentials: 'include' });
+    if (resp.ok) {
+      return await resp.json();
+    }
+  } catch (err) {
+    console.error('Failed to fetch IP mappings:', err);
+  }
+  return [];
 };
 
-export const getNameByIp = (ip: string): string => {
-  const mappings = getIpMappings();
+// 新增IP映射
+export const saveIpMappings = async (mappings: IpMapping[]) => {
+  for (const mapping of mappings) {
+    try {
+      await fetch(`${API_BASE}/ip-mappings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ ip: mapping.ip, name: mapping.name }),
+      });
+    } catch (err) {
+      console.error(`Failed to save mapping ${mapping.ip}:`, err);
+    }
+  }
+};
+
+// 删除IP映射
+export const deleteIpMapping = async (ip: string) => {
+  try {
+    await fetch(`${API_BASE}/ip-mappings/${encodeURIComponent(ip)}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    });
+  } catch (err) {
+    console.error('Failed to delete IP mapping:', err);
+  }
+};
+
+// 获取当前客户端真实IP
+export const getCurrentIp = async (): Promise<string> => {
+  try {
+    const resp = await fetch(`${API_BASE}/client-ip`, { credentials: 'include' });
+    if (resp.ok) {
+      const data = await resp.json();
+      return data.ip;
+    }
+  } catch (err) {
+    console.error('Failed to fetch client IP:', err);
+  }
+  return '';
+};
+
+// 同步函数（为兼容旧代码）
+export const getNameByIp = (ip: string, mappings: IpMapping[]): string => {
   const found = mappings.find(m => m.ip === ip);
-  
-  // Also try to get logged in user from session as fallback
-  if (!found) {
-      try {
-          const userJson = localStorage.getItem('user');
-          if (userJson) {
-              const user = JSON.parse(userJson);
-              return `${user.username} (Unmapped IP)`;
-          }
-      } catch(e) {}
-  }
-  
   return found ? found.name : 'Unknown Device';
-};
-
-export const recordAction = (action: string, details: string) => {
-  const logs = Database.findAll<LogEntry>(TABLE.AUDIT_LOGS);
-  
-  const ip = getCurrentIp();
-  const entry: LogEntry = {
-    id: Date.now().toString(),
-    timestamp: new Date().toLocaleString(),
-    ip: ip,
-    username: getNameByIp(ip),
-    action,
-    details
-  };
-
-  // Prepend new log and limit size
-  const newLogs = [entry, ...logs].slice(0, 2000); 
-  Database.save(TABLE.AUDIT_LOGS, newLogs);
-};
-
-export const getLogs = (): LogEntry[] => {
-  return Database.findAll<LogEntry>(TABLE.AUDIT_LOGS);
 };

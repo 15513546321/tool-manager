@@ -25,6 +25,7 @@ const Dashboard = () => {
   const navigate = useNavigate();
 
   React.useEffect(() => {
+    // No need to fetch client IP - backend handles it automatically
     try {
       const list = Database.findAll<any>(TABLE.ANNOUNCEMENTS);
       if (list.length > 0) {

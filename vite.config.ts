@@ -18,6 +18,7 @@ export default defineConfig(({ mode }) => {
       // 2. Access Port Configuration (Development)
       // Use PORT environment variable or default to 3000
       port: parseInt(env.PORT) || 3000,
+      host: '0.0.0.0',
       open: true,
       proxy: {
         // Proxy API requests to backend during development
@@ -29,9 +30,10 @@ export default defineConfig(({ mode }) => {
       }
     },
     build: {
-      outDir: 'dist',
+      outDir: './backend/src/main/resources/static',
       assetsDir: 'assets',
-      sourcemap: false
+      sourcemap: false,
+      emptyOutDir: true
     }
   };
 });

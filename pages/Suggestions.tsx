@@ -15,17 +15,21 @@ export const Suggestions: React.FC = () => {
 
   // Load Data
   useEffect(() => {
-    setItems(Database.findAll<SuggestionItem>(TABLE.SUGGESTIONS));
-    setMappings(Database.findAll<IpMapping>(TABLE.IP_MAPPINGS));
+    const loadData = async () => {
+      setItems(Database.findAll<SuggestionItem>(TABLE.SUGGESTIONS));
+      const fetchedMappings = await getIpMappings();
+      setMappings(fetchedMappings);
+    };
+    loadData();
   }, []);
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!formData.title.trim()) {
         alert('请输入建议标题');
         return;
     }
 
-    const ip = getCurrentIp();
+    const ip = await getCurrentIp();
     const newItem: SuggestionItem = {
         id: Date.now().toString(),
         title: formData.title,
