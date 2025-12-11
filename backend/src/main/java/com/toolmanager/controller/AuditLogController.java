@@ -19,10 +19,10 @@ public class AuditLogController {
 
     /**
      * Get client's real IPv4 from request headers (handles proxy cases)
-     * Filters out IPv6 and loopback addresses
+     * Priority: X-Forwarded-For > X-Real-IP > X-Client-IP > remoteAddr
      */
     private String getClientIp(javax.servlet.http.HttpServletRequest request) {
-        // Check X-Forwarded-For first (for proxy/load balancer)
+        // 1. Check X-Forwarded-For first (most common for proxies)
         String xff = request.getHeader("X-Forwarded-For");
         if (xff != null && !xff.isEmpty()) {
             String[] ips = xff.split(",");
@@ -34,35 +34,58 @@ public class AuditLogController {
             }
         }
 
-        // Check X-Real-IP
+        // 2. Check X-Real-IP (used by Nginx reverse proxy)
         String xri = request.getHeader("X-Real-IP");
-        if (xri != null && !xri.isEmpty() && isValidIPv4(xri.trim())) {
-            return xri.trim();
+        if (xri != null && !xri.isEmpty()) {
+            String trimmedIp = xri.trim();
+            if (isValidIPv4(trimmedIp)) {
+                return trimmedIp;
+            }
         }
 
-        // Fallback to request.getRemoteAddr()
+        // 3. Check X-Client-IP (used by some proxies)
+        String xci = request.getHeader("X-Client-IP");
+        if (xci != null && !xci.isEmpty()) {
+            String trimmedIp = xci.trim();
+            if (isValidIPv4(trimmedIp)) {
+                return trimmedIp;
+            }
+        }
+
+        // 4. Check CF-Connecting-IP (Cloudflare)
+        String cfip = request.getHeader("CF-Connecting-IP");
+        if (cfip != null && !cfip.isEmpty()) {
+            String trimmedIp = cfip.trim();
+            if (isValidIPv4(trimmedIp)) {
+                return trimmedIp;
+            }
+        }
+
+        // 5. Fallback to remoteAddr (direct connection)
         String remoteAddr = request.getRemoteAddr();
-        if (isValidIPv4(remoteAddr)) {
+        if (remoteAddr != null && !remoteAddr.isEmpty()) {
             return remoteAddr;
         }
 
-        // Fallback to placeholder
-        return "127.0.0.1";
+        return "0.0.0.0";
     }
 
     /**
-     * Validate if the given string is a valid IPv4 address (not IPv6 or loopback like ::1)
+     * Validate if the given string is a valid IPv4 address format
      */
     private boolean isValidIPv4(String ip) {
         if (ip == null || ip.isEmpty()) return false;
-        // Reject IPv6 addresses
+        
+        // Reject IPv6 addresses (contain colon)
         if (ip.contains(":")) return false;
-        // Reject IPv4 loopback
-        if (ip.startsWith("127.")) return false;
-        // Basic IPv4 format check: should have 4 octets
+        
+        // Check format: should have exactly 4 parts separated by dots
         String[] parts = ip.split("\\.");
         if (parts.length != 4) return false;
+        
+        // Validate each octet is 0-255
         for (String part : parts) {
+            if (part.isEmpty()) return false;
             try {
                 int num = Integer.parseInt(part);
                 if (num < 0 || num > 255) return false;
@@ -70,6 +93,7 @@ public class AuditLogController {
                 return false;
             }
         }
+        
         return true;
     }
 
