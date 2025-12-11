@@ -22,3 +22,13 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Backend build and data
+backend/target/
+backend/data/
+backend/build/
+
+# IDE
+*.swp
+*.swo
+*~
