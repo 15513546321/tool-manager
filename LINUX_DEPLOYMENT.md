@@ -18,7 +18,11 @@ Spring Boot 应用（端口 8080）
     ├── 后端 REST API（/api/*)
     └── H2 数据库（./data/tooldb.mv.db）
 ```
+spring.h2.console.enabled=true
+spring.h2.console.path=/h2-console
 
+# 启用 TCP 服务器（可选）
+# spring.datasource.url=jdbc:h2:tcp://localhost:9092/~/tooldb;MODE=MySQL
 ## 前置要求
 
 ### 系统要求
