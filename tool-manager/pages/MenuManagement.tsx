@@ -1,0 +1,179 @@
+import React, { useState, useEffect } from 'react';
+import { MenuItem } from '../types';
+import { Save, Edit2, Eye, EyeOff, CheckCircle, XCircle, Plus, Trash2 } from 'lucide-react';
+import { recordAction } from '../services/auditService';
+import { Database, TABLE } from '../services/database';
+
+// Shared state for demo purposes (usually in Context or Redux)
+export const initialMenuItems: MenuItem[] = [
+  { id: '1', name: '首页', path: '/dashboard', icon: 'dashboard', visible: true },
+  { id: '6', name: '公告通知', path: '/announcement', icon: 'docs', visible: true }, 
+  { id: '10', name: '优化建议', path: '/suggestions', icon: 'suggestions', visible: true },
+  { 
+    id: '2', 
+    name: '接口管理', 
+    path: '/interface', 
+    icon: 'interface',
+    visible: true,
+    children: [
+      { id: '2-1', name: '文档管理', path: '/interface/docs', icon: 'docs', visible: true },
+      { id: '2-2', name: '代码生成', path: '/interface/code', icon: 'code', visible: true },
+    ] 
+  },
+  { 
+    id: '11', 
+    name: '数据同步', 
+    path: '/sync', 
+    icon: 'sync',
+    visible: true,
+    children: [
+      { id: '11-1', name: 'Nacos配置同步', path: '/sync/nacos', icon: 'nacos', visible: true },
+      { id: '11-2', name: 'Oracle DDL同步', path: '/sync/oracle', icon: 'oracle', visible: true },
+    ] 
+  },
+  { id: '9', name: 'GitLab 报表', path: '/gitlab-reports', icon: 'gitlab', visible: true },
+  { id: '12', name: 'Gitee管理', path: '/gitee', icon: 'gitee', visible: true },
+  { id: '8', name: '格式化工具', path: '/format', icon: 'format', visible: true },
+  { id: '3', name: '参数配置', path: '/params', icon: 'params', visible: true },
+  { id: '4', name: '知识库', path: '/repo', icon: 'repo', visible: true },
+  { id: '7', name: '审计日志', path: '/audit', icon: 'settings', visible: true }, 
+  { id: '5', name: '系统设置', path: '/admin', icon: 'settings', visible: true, children: [
+      { id: '5-1', name: '菜单管理', path: '/admin/menus', icon: 'settings', visible: true },
+      { id: '5-2', name: 'IP映射配置', path: '/admin/ip-config', icon: 'ip', visible: true }
+  ]}
+];
+
+export const MenuManagement: React.FC = () => {
+  const [menus, setMenus] = useState<MenuItem[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+
+  useEffect(() => {
+    // Load from DB or default
+    const saved = Database.findAll<MenuItem>(TABLE.MENUS);
+    // Ensure visible property exists if loading old data
+    const patched = (saved.length > 0 ? saved : initialMenuItems).map(m => patchVisible(m));
+    setMenus(patched);
+  }, []);
+
+  const patchVisible = (item: MenuItem): MenuItem => {
+    return {
+        ...item,
+        visible: item.visible !== false,
+        children: item.children ? item.children.map(c => patchVisible(c)) : undefined
+    };
+  }
+
+  const handleEdit = (menu: MenuItem) => {
+    setEditingId(menu.id);
+    setEditName(menu.name);
+  };
+
+  const handleSave = (id: string) => {
+    const updateRecursive = (items: MenuItem[]): MenuItem[] => {
+      return items.map(item => {
+        if (item.id === id) return { ...item, name: editName };
+        if (item.children) return { ...item, children: updateRecursive(item.children) };
+        return item;
+      });
+    };
+
+    const newMenus = updateRecursive(menus);
+    updateAndSave(newMenus);
+    setEditingId(null);
+    recordAction('系统设置 - 菜单管理', `按钮:保存 - 修改菜单 [ID:${id}] 名称为 "${editName}"`);
+  };
+
+  const handleToggleVisible = (id: string, currentVisible: boolean) => {
+    const updateRecursive = (items: MenuItem[]): MenuItem[] => {
+        return items.map(item => {
+          if (item.id === id) return { ...item, visible: !currentVisible };
+          if (item.children) return { ...item, children: updateRecursive(item.children) };
+          return item;
+        });
+      };
+      const newMenus = updateRecursive(menus);
+      updateAndSave(newMenus);
+      recordAction('系统设置 - 菜单管理', `按钮:上下线 - 菜单 [ID:${id}] 状态变更为 ${!currentVisible ? '上线' : '下线'}`);
+  };
+
+  const updateAndSave = (newMenus: MenuItem[]) => {
+    setMenus(newMenus);
+    Database.save(TABLE.MENUS, newMenus);
+    // Force reload to update sidebar (in a real app, use Context)
+    window.dispatchEvent(new Event('menuUpdated'));
+  };
+
+  const renderList = (items: MenuItem[], depth = 0) => {
+    return items.map(item => {
+      const isOffline = item.visible === false;
+      return (
+      <div key={item.id} className="mb-2">
+        <div 
+          className={`flex items-center justify-between p-3 border rounded-lg transition-all ${isOffline ? 'bg-slate-50 border-slate-200 opacity-60' : 'bg-white border-slate-200 hover:shadow-sm'}`}
+          style={{ marginLeft: `${depth * 20}px` }}
+        >
+          <div className="flex items-center gap-3">
+             {/* Status Dot */}
+             <div className={`w-2 h-2 rounded-full ${isOffline ? 'bg-slate-300' : 'bg-green-500'}`} title={isOffline ? "已下线" : "在线"}></div>
+             
+             <span className="text-slate-400 text-xs font-mono w-10">{item.id}</span>
+             
+             {editingId === item.id ? (
+               <input 
+                 autoFocus
+                 className="px-2 py-1 border border-slate-200 rounded bg-[#f8fafc] focus:bg-white focus:ring-2 focus:ring-blue-100 outline-none text-sm text-slate-700"
+                 value={editName}
+                 onChange={(e) => setEditName(e.target.value)}
+               />
+             ) : (
+               <span className={`font-medium ${isOffline ? 'text-slate-500 line-through decoration-slate-300' : 'text-slate-700'}`}>{item.name}</span>
+             )}
+             
+             {item.children && <span className="text-xs bg-slate-100 text-slate-500 px-1.5 rounded">{item.children.length} 子菜单</span>}
+          </div>
+          
+          <div className="flex items-center gap-2">
+            {/* Online/Offline Toggle */}
+            <button 
+                onClick={() => handleToggleVisible(item.id, item.visible !== false)}
+                className={`p-1.5 rounded flex items-center gap-1 text-xs font-medium transition-colors ${isOffline ? 'text-slate-500 hover:bg-slate-200' : 'text-green-600 hover:bg-green-50'}`}
+                title={isOffline ? "点击上线" : "点击下线"}
+            >
+                {isOffline ? <EyeOff size={16}/> : <Eye size={16}/>}
+                <span className="hidden md:inline">{isOffline ? '已下线' : '在线'}</span>
+            </button>
+
+            <div className="w-px h-4 bg-slate-200 mx-1"></div>
+
+            {editingId === item.id ? (
+              <button onClick={() => handleSave(item.id)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="Save">
+                <Save size={16} />
+              </button>
+            ) : (
+              <button onClick={() => handleEdit(item)} className="p-1.5 text-slate-500 hover:bg-blue-50 hover:text-blue-600 rounded" title="Edit Name">
+                <Edit2 size={16} />
+              </button>
+            )}
+          </div>
+        </div>
+        {item.children && renderList(item.children, depth + 1)}
+      </div>
+    )});
+  };
+
+  return (
+    <div className="p-6">
+      <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold text-slate-800">菜单管理</h2>
+          <div className="text-sm text-slate-500 flex items-center gap-2">
+             <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-green-500"></div> 在线</span>
+             <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-slate-300"></div> 下线 (隐藏)</span>
+          </div>
+      </div>
+      <div className="bg-slate-50 p-6 rounded-xl border border-slate-200">
+        {renderList(menus)}
+      </div>
+    </div>
+  );
+};
