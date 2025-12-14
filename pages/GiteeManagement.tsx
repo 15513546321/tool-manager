@@ -1,11 +1,33 @@
 import React, { useState, useEffect } from 'react';
-import { GitPullRequest, Search, Download, Settings, RefreshCw, Save, Key, User, Calendar, FileText, ArrowRight, Lock, Globe, GitBranch } from 'lucide-react';
-import { Database, TABLE } from '../services/database';
+import { GitPullRequest, Search, Download, Settings, RefreshCw, Save, Key, User, Calendar, FileText, ArrowRight, Lock, Globe, GitBranch, CheckSquare, Square, FolderOpen, AlertTriangle, Code2, Eye, ChevronUp, ChevronDown, Trash2 } from 'lucide-react';
+import { apiService } from '../services/apiService';
 import { recordAction } from '../services/auditService';
 import { GiteeConfig, GiteeBranch, GiteeCommit } from '../types';
+import * as XLSX from 'xlsx';
 
 const INPUT_STYLE = "w-full pl-3 pr-4 py-2 border border-slate-200 rounded-lg bg-[#f8fafc] focus:bg-white focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm text-slate-700 placeholder:text-slate-400";
 const TEXTAREA_STYLE = "w-full p-3 border border-slate-200 rounded-lg bg-[#f8fafc] focus:bg-white focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm text-slate-700 font-mono resize-none";
+
+// Export Field Configuration Types
+interface ExportField {
+  id: string;
+  label: string;
+  value: string;
+  visible: boolean;
+  type?: 'text' | 'single-choice' | 'multi-choice';
+  options?: string[];
+}
+
+// Changeset item with branch information
+interface ChangesetItem {
+  branch: string;
+  requirementGroup?: string;
+  commitHash: string;
+  author: string;
+  date: string;
+  filePath: string;
+  message: string;
+}
 
 // Mock Data
 const MOCK_BRANCHES: GiteeBranch[] = [
@@ -13,12 +35,25 @@ const MOCK_BRANCHES: GiteeBranch[] = [
   { name: 'develop', lastCommitHash: 'e5f6g7h', lastUpdated: '2023-10-24 15:30' },
   { name: 'feature/req-20231024-pay', lastCommitHash: 'i8j9k0l', lastUpdated: '2023-10-24 09:15' },
   { name: 'feature/req-20231020-login', lastCommitHash: 'm1n2o3p', lastUpdated: '2023-10-20 11:00' },
+  { name: 'bugfix/issue-2024-001', lastCommitHash: 'p1q2r3s', lastUpdated: '2023-10-19 08:30' },
 ];
 
 const MOCK_COMMITS: GiteeCommit[] = [
   { id: 'a1b2c3d4e5f6g7h8i9j0', shortId: 'a1b2c3d', message: 'feat: add payment gateway integration', author: 'DevUser', date: '2023-10-25 10:00', filesChanged: 5 },
   { id: 'b2c3d4e5f6g7h8i9j0k1', shortId: 'b2c3d4e', message: 'fix: login timeout issue', author: 'Admin', date: '2023-10-24 16:20', filesChanged: 2 },
   { id: 'c3d4e5f6g7h8i9j0k1l2', shortId: 'c3d4e5f', message: 'docs: update api spec', author: 'DevUser', date: '2023-10-24 09:15', filesChanged: 1 },
+];
+
+// Default Export Fields Configuration
+const DEFAULT_EXPORT_FIELDS: ExportField[] = [
+  { id: 'filePath', label: '文件路径', value: 'file_path', visible: true, type: 'text' },
+  { id: 'branch', label: '分支', value: 'branch', visible: true, type: 'text' },
+  { id: 'commitHash', label: '提交ID', value: 'commit_hash', visible: true, type: 'text' },
+  { id: 'message', label: '信息', value: 'commit_message', visible: true, type: 'text' },
+  { id: 'author', label: '作者', value: 'commit_author', visible: true, type: 'text' },
+  { id: 'date', label: '提交时间', value: 'commit_date', visible: true, type: 'text' },
+  { id: 'reviewStatus', label: '评审状态', value: 'review_status', visible: false, type: 'single-choice', options: ['已评审', '未评审', '待复评'] },
+  { id: 'fileStatus', label: '文件状态', value: 'file_status', visible: false, type: 'single-choice', options: ['新增', '修改', '删除'] },
 ];
 
 export const GiteeManagement: React.FC = () => {
@@ -38,34 +73,67 @@ export const GiteeManagement: React.FC = () => {
   
   // Data State
   const [branches, setBranches] = useState<GiteeBranch[]>([]);
-  const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
+  const [selectedBranches, setSelectedBranches] = useState<Set<string>>(new Set());
   const [commits, setCommits] = useState<GiteeCommit[]>([]);
   
-  // Changeset Modal
+  // Changeset Data - now structured with branch info
+  const [changesetData, setChangesetData] = useState<Map<string, ChangesetItem[]>>(new Map());
   const [changesetOpen, setChangesetOpen] = useState(false);
-  const [currentChangeset, setCurrentChangeset] = useState<string[]>([]);
-  const [changesetContext, setChangesetContext] = useState<string>('');
+  const [selectedCommitDetail, setSelectedCommitDetail] = useState<ChangesetItem | null>(null);
+  
+  // Export Configuration
+  const [exportFields, setExportFields] = useState<ExportField[]>(DEFAULT_EXPORT_FIELDS);
+  const [isExportConfigOpen, setIsExportConfigOpen] = useState(false);
 
-  // Load Config
+  // Load Config from localStorage
   useEffect(() => {
-    const saved = Database.findObject<GiteeConfig>(TABLE.GITEE_CONFIG);
-    if (saved) setConfig({ ...config, ...saved }); // Merge with defaults
+    const saved = localStorage.getItem('gitee-config');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        setConfig({ ...config, ...parsed });
+      } catch (e) {
+        console.error('Failed to load Gitee config:', e);
+      }
+    }
+    
+    // Load and clean up old export fields config
+    const savedFields = localStorage.getItem('gitee-export-fields');
+    if (savedFields) {
+      try {
+        const parsed = JSON.parse(savedFields);
+        // Filter out old fields that are no longer in DEFAULT_EXPORT_FIELDS
+        const validFieldIds = DEFAULT_EXPORT_FIELDS.map(f => f.id);
+        const filteredFields = parsed.filter((f: any) => validFieldIds.includes(f.id));
+        if (filteredFields.length > 0) {
+          setExportFields(filteredFields);
+        }
+      } catch (e) {
+        console.error('Failed to load export fields config:', e);
+      }
+    }
   }, []);
 
   const saveConfig = () => {
-    Database.saveObject(TABLE.GITEE_CONFIG, config);
+    localStorage.setItem('gitee-config', JSON.stringify(config));
     recordAction('Gitee管理', `保存配置 - 方式: ${config.authType === 'token' ? 'HTTPS/Token' : 'SSH'}`);
     setIsConfigOpen(false);
     alert('连接配置已保存');
+  };
+
+  const saveExportFieldsConfig = () => {
+    localStorage.setItem('gitee-export-fields', JSON.stringify(exportFields));
+    recordAction('Gitee管理', '保存导出字段配置');
+    setIsExportConfigOpen(false);
+    alert('导出字段配置已保存');
   };
 
   const handleSearch = async () => {
     setLoading(true);
     setBranches([]);
     setCommits([]);
-    setSelectedBranch(null);
+    setSelectedBranches(new Set());
     
-    // Simulate API call delay
     setTimeout(() => {
         let results = MOCK_BRANCHES;
         if (searchQuery) {
@@ -77,72 +145,337 @@ export const GiteeManagement: React.FC = () => {
     }, 800);
   };
 
-  const handleBranchSelect = (branchName: string) => {
-    setSelectedBranch(branchName);
-    setLoading(true);
-    // Simulate Fetching Commits
-    setTimeout(() => {
-        setCommits(MOCK_COMMITS); // In real app, filter by branch
-        setLoading(false);
-    }, 600);
+  const toggleBranchSelection = (branchName: string) => {
+    const newSelected = new Set(selectedBranches);
+    if (newSelected.has(branchName)) {
+      newSelected.delete(branchName);
+    } else {
+      newSelected.add(branchName);
+    }
+    setSelectedBranches(newSelected);
   };
 
-  const handlePullCommitChanges = (commit: GiteeCommit) => {
-    setChangesetContext(`Commit: ${commit.shortId} - ${commit.message}`);
+  const toggleAllBranches = () => {
+    if (selectedBranches.size === branches.length && branches.length > 0) {
+      setSelectedBranches(new Set());
+    } else {
+      setSelectedBranches(new Set(branches.map(b => b.name)));
+    }
+  };
+
+  const handleFetchMultiBranchChanges = () => {
+    if (selectedBranches.size === 0) {
+      alert('请先选择至少一个分支');
+      return;
+    }
+
     setLoading(true);
-    
-    // Simulate Fetching File List for Commit
+
     setTimeout(() => {
-        setCurrentChangeset([
-            'src/main/java/com/bank/service/PaymentService.java',
-            'src/main/java/com/bank/controller/PaymentController.java',
-            'src/main/resources/application.yml',
-            'src/test/java/com/bank/PaymentTest.java'
-        ]);
+        // Generate mock changeset data for each branch
+        const newChangesetData = new Map<string, ChangesetItem[]>();
+        
+        const allAuthors = ['DevUser', 'Admin', 'TestUser', 'ReviewUser'];
+        const dates = ['2023-10-25 10:00', '2023-10-24 16:20', '2023-10-24 09:15', '2023-10-20 11:00'];
+        const messages = ['feat: add payment gateway integration', 'fix: login timeout issue', 'docs: update api spec', 'refactor: optimize database queries'];
+        
+        selectedBranches.forEach((branchName, index) => {
+          const items: ChangesetItem[] = [];
+          const commitCount = 2 + Math.floor(Math.random() * 3);
+          
+          for (let i = 0; i < commitCount; i++) {
+            items.push({
+              branch: branchName,
+              commitHash: `${String.fromCharCode(97 + i)}1b2c3d${i}`,
+              author: allAuthors[i % allAuthors.length],
+              date: dates[i % dates.length],
+              filePath: `src/main/java/com/bank/service/${i === 0 ? 'PaymentService' : 'AuthService'}.java`,
+              message: messages[i % messages.length],
+            });
+          }
+          newChangesetData.set(branchName, items);
+        });
+        
+        setChangesetData(newChangesetData);
         setLoading(false);
         setChangesetOpen(true);
-        recordAction('Gitee管理', `拉取变更集 - Commit: ${commit.shortId}`);
-    }, 800);
+        recordAction('Gitee管理', `拉取多分支变更集 - 分支数: ${selectedBranches.size}`);
+    }, 1000);
   };
 
-  const handlePullBranchChanges = (branchName: string) => {
-      setChangesetContext(`Branch: ${branchName} (vs master)`);
-      setLoading(true);
+  const handleDownloadChangeset = async () => {
+    if (changesetData.size === 0) {
+      alert('请先导出变更集');
+      return;
+    }
 
-      // Simulate Fetching Diff for Branch vs Master
-      setTimeout(() => {
-          // Mocking a larger changeset for a whole branch
-          setCurrentChangeset([
-              'src/main/java/com/bank/service/PaymentService.java',
-              'src/main/java/com/bank/controller/PaymentController.java',
-              'src/main/java/com/bank/dto/PaymentRequest.java', // Extra file
-              'src/main/java/com/bank/utils/CurrencyUtils.java', // Extra file
-              'src/main/resources/application.yml',
-              'src/main/resources/i18n/messages.properties', // Extra file
-              'src/test/java/com/bank/PaymentTest.java',
-              'pom.xml'
-          ]);
-          setLoading(false);
-          setChangesetOpen(true);
-          recordAction('Gitee管理', `拉取全量变更集 - Branch: ${branchName}`);
-      }, 1000);
+    try {
+      const timestamp = new Date().toISOString().slice(0, 10);
+      
+      // Get visible fields in order
+      const visibleFields = exportFields.filter(f => f.visible);
+      
+      // Prepare export data
+      const exportData: any[] = [];
+      
+      // Iterate through each branch in order
+      Array.from(changesetData.keys()).sort().forEach(branchName => {
+        const items = changesetData.get(branchName) || [];
+        
+        items.forEach(item => {
+          const row: any = {};
+          // Use the ordered visible fields
+          visibleFields.forEach(field => {
+            if (field.id === 'branch') {
+              row[field.label] = item.branch;
+            } else if (field.id === 'filePath') {
+              row[field.label] = item.filePath;
+            } else if (field.id === 'commitHash') {
+              row[field.label] = item.commitHash;
+            } else if (field.id === 'message') {
+              row[field.label] = item.message;
+            } else if (field.id === 'author') {
+              row[field.label] = item.author;
+            } else if (field.id === 'date') {
+              row[field.label] = item.date;
+            } else if (field.id === 'reviewStatus') {
+              row[field.label] = '未评审';
+            } else if (field.id === 'fileStatus') {
+              row[field.label] = '修改';
+            } else {
+              row[field.label] = '';
+            }
+          });
+          
+          // Only add rows that have actual file path data
+          if (item.filePath && item.filePath.trim()) {
+            exportData.push(row);
+          }
+        });
+      });
+
+      // Prepare validation rules for backend
+      const validationRules: any[] = [];
+      visibleFields.forEach((field, colIdx) => {
+        if (field.type === 'single-choice' && field.options && field.options.length > 0) {
+          validationRules.push({
+            columnIndex: colIdx,
+            columnName: field.label,
+            options: field.options
+          });
+        }
+      });
+
+      console.log('Export Data:', { headers: visibleFields.map(f => f.label), dataCount: exportData.length, sample: exportData.slice(0, 2) });
+
+      // Call backend to generate Excel with validation
+      const response = await fetch('/api/gitee/export-excel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: `gitee_changeset_${timestamp}`,
+          headers: visibleFields.map(f => f.label),
+          data: exportData,
+          validationRules: validationRules
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`导出失败: ${response.status} - ${errorText}`);
+      }
+
+      // Download the file
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `gitee_changeset_${timestamp}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      recordAction('Gitee管理', `导出多分支变更集Excel - 记录数: ${exportData.length}`);
+    } catch (error: any) {
+      alert('导出失败: ' + error.message);
+    }
   };
 
   const handleDownloadList = () => {
-      // Generate TXT content from the list
-      const content = currentChangeset.join('\n');
-      const blob = new Blob([content], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      // Use branch name as filename, strictly as requested
-      const filename = selectedBranch ? `${selectedBranch}.txt` : 'changeset_list.txt';
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      recordAction('Gitee管理', `导出变更清单文件: ${filename}`);
+    if (changesetData.size === 0) {
+      alert('请先导出变更集');
+      return;
+    }
+
+    // Build content organized by branch - only file paths
+    const lines: string[] = [];
+    
+    Array.from(changesetData.keys()).sort().forEach(branchName => {
+      lines.push(`=== 分支: ${branchName} ===`);
+      const items = changesetData.get(branchName) || [];
+      items.forEach(item => {
+        lines.push(item.filePath);
+      });
+      lines.push('');
+    });
+
+    const content = lines.join('\n');
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const timestamp = new Date().toISOString().slice(0, 10);
+    const filename = `gitee_changeset_${timestamp}.txt`;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    recordAction('Gitee管理', `导出变更清单文件: ${filename}`);
+  };
+
+  // Download single commit detail as TXT
+  const downloadCommitDetailTxt = (item: ChangesetItem) => {
+    const timestamp = new Date().toISOString().slice(0, 10);
+    const lines = [
+      `分支: ${item.branch}`,
+      `提交ID: ${item.commitHash}`,
+      `作者: ${item.author}`,
+      `时间: ${item.date}`,
+      `信息: ${item.message}`,
+      `文件: ${item.filePath}`,
+    ];
+    
+    const content = lines.join('\n');
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `commit_${item.commitHash}_${timestamp}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    recordAction('Gitee管理', `导出单个提交记录TXT: ${item.commitHash}`);
+  };
+
+  // Download single branch as TXT (only file list)
+  const downloadBranchTxt = (branchName: string) => {
+    const items = changesetData.get(branchName) || [];
+    if (items.length === 0) {
+      alert('该分支没有提交记录');
+      return;
+    }
+
+    const timestamp = new Date().toISOString().slice(0, 10);
+    const lines = [`=== 分支: ${branchName} ===`];
+    items.forEach(item => {
+      lines.push(item.filePath);
+    });
+
+    const content = lines.join('\n');
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `gitee_${branchName}_${timestamp}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    recordAction('Gitee管理', `导出单个分支TXT: ${branchName}`);
+  };
+
+  // Download single branch as Excel
+  const downloadBranchExcel = async (branchName: string) => {
+    const items = changesetData.get(branchName) || [];
+    if (items.length === 0) {
+      alert('该分支没有提交记录');
+      return;
+    }
+
+    try {
+      const timestamp = new Date().toISOString().slice(0, 10);
+      const visibleFields = exportFields.filter(f => f.visible);
+      
+      // Prepare export data
+      const exportData: any[] = [];
+
+      items.forEach(item => {
+        const row: any = {};
+        // Use ordered visible fields
+        visibleFields.forEach(field => {
+          if (field.id === 'branch') {
+            row[field.label] = item.branch;
+          } else if (field.id === 'filePath') {
+            row[field.label] = item.filePath;
+          } else if (field.id === 'commitHash') {
+            row[field.label] = item.commitHash;
+          } else if (field.id === 'message') {
+            row[field.label] = item.message;
+          } else if (field.id === 'author') {
+            row[field.label] = item.author;
+          } else if (field.id === 'date') {
+            row[field.label] = item.date;
+          } else if (field.id === 'reviewStatus') {
+            row[field.label] = '未评审';
+          } else if (field.id === 'fileStatus') {
+            row[field.label] = '修改';
+          } else {
+            row[field.label] = '';
+          }
+        });
+        
+        if (item.filePath && item.filePath.trim()) {
+          exportData.push(row);
+        }
+      });
+
+      // Prepare validation rules for backend
+      const validationRules: any[] = [];
+      visibleFields.forEach((field, colIdx) => {
+        if (field.type === 'single-choice' && field.options && field.options.length > 0) {
+          validationRules.push({
+            columnIndex: colIdx,
+            columnName: field.label,
+            options: field.options
+          });
+        }
+      });
+
+      // Call backend to generate Excel with validation
+      const response = await fetch('/api/gitee/export-excel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: `gitee_${branchName}`,
+          headers: visibleFields.map(f => f.label),
+          data: exportData,
+          validationRules: validationRules
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`导出失败: ${response.status} - ${errorText}`);
+      }
+
+      // Download the file
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `gitee_${branchName}_${timestamp}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      recordAction('Gitee管理', `导出单个分支Excel: ${branchName}, 记录数: ${exportData.length}`);
+    } catch (error: any) {
+      alert('导出失败: ' + error.message);
+    }
   };
 
   return (
@@ -153,15 +486,148 @@ export const GiteeManagement: React.FC = () => {
            <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
              <GitPullRequest className="text-red-600"/> Gitee 代码管理
            </h2>
-           <p className="text-slate-500 text-sm mt-1">支持 HTTPS/SSH 连接，查询需求分支与获取增量/全量变更</p>
+           <p className="text-slate-500 text-sm mt-1">支持多分支选择、按需求分组导出变更集，导出字段可配置</p>
         </div>
-        <button 
-            onClick={() => setIsConfigOpen(!isConfigOpen)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition-all shadow-sm ${isConfigOpen ? 'bg-slate-200 text-slate-700' : 'bg-white text-blue-600 border border-slate-200 hover:bg-slate-50'}`}
-        >
-            <Settings size={18}/> {isConfigOpen ? '收起配置' : '连接配置'}
-        </button>
+        <div className="flex gap-2">
+          <button 
+              onClick={() => setIsExportConfigOpen(!isExportConfigOpen)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition-all shadow-sm ${isExportConfigOpen ? 'bg-slate-200 text-slate-700' : 'bg-white text-green-600 border border-slate-200 hover:bg-slate-50'}`}
+          >
+              <FolderOpen size={18}/> {isExportConfigOpen ? '收起配置' : '导出字段'}
+          </button>
+          <button 
+              onClick={() => setIsConfigOpen(!isConfigOpen)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition-all shadow-sm ${isConfigOpen ? 'bg-slate-200 text-slate-700' : 'bg-white text-blue-600 border border-slate-200 hover:bg-slate-50'}`}
+          >
+              <Settings size={18}/> {isConfigOpen ? '收起配置' : '连接配置'}
+          </button>
+        </div>
       </div>
+
+      {/* Export Fields Config Panel */}
+      {isExportConfigOpen && (
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-6 animate-in fade-in slide-in-from-top-4">
+              <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2">
+                  <FolderOpen size={18} className="text-green-500"/> 导出字段配置
+              </h3>
+              <p className="text-xs text-slate-500 mb-4">拖拽上下箭头调整字段顺序，打钩选择要导出的字段</p>
+              <div className="space-y-3 max-h-96 overflow-y-auto">
+                  {exportFields.map((field, idx) => (
+                      <div key={field.id} className="p-4 bg-slate-50 rounded-lg border border-slate-100 hover:border-slate-200 space-y-2">
+                          <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3 flex-1">
+                                  {/* Move buttons */}
+                                  <div className="flex flex-col gap-1">
+                                      <button
+                                          onClick={() => {
+                                              if (idx > 0) {
+                                                  const updated = [...exportFields];
+                                                  [updated[idx], updated[idx - 1]] = [updated[idx - 1], updated[idx]];
+                                                  setExportFields(updated);
+                                              }
+                                          }}
+                                          disabled={idx === 0}
+                                          className="text-slate-400 hover:text-blue-600 disabled:opacity-30 transition-colors p-0.5"
+                                          title="上移"
+                                      >
+                                          <ChevronUp size={16} />
+                                      </button>
+                                      <button
+                                          onClick={() => {
+                                              if (idx < exportFields.length - 1) {
+                                                  const updated = [...exportFields];
+                                                  [updated[idx], updated[idx + 1]] = [updated[idx + 1], updated[idx]];
+                                                  setExportFields(updated);
+                                              }
+                                          }}
+                                          disabled={idx === exportFields.length - 1}
+                                          className="text-slate-400 hover:text-blue-600 disabled:opacity-30 transition-colors p-0.5"
+                                          title="下移"
+                                      >
+                                          <ChevronDown size={16} />
+                                      </button>
+                                  </div>
+
+                                  {/* Visibility toggle */}
+                                  <button
+                                      onClick={() => {
+                                          const updated = [...exportFields];
+                                          updated[idx].visible = !updated[idx].visible;
+                                          setExportFields(updated);
+                                      }}
+                                      className="text-slate-500 hover:text-blue-600 transition-colors"
+                                  >
+                                      {field.visible ? <CheckSquare size={20} /> : <Square size={20} />}
+                                  </button>
+
+                                  {/* Field info */}
+                                  <div>
+                                      <div className="font-bold text-slate-700 text-sm">{field.label}</div>
+                                      <div className="text-xs text-slate-500 font-mono">{field.value}</div>
+                                  </div>
+                              </div>
+                              {field.type && <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">{field.type}</span>}
+                          </div>
+                          
+                          {/* Options editor for single-choice fields */}
+                          {field.type === 'single-choice' && field.options && (
+                              <div className="mt-2 pl-8 border-l-2 border-blue-200">
+                                  <label className="text-xs font-bold text-slate-600 uppercase block mb-2">选项配置</label>
+                                  <div className="flex flex-wrap gap-2">
+                                      {field.options.map((option, optIdx) => (
+                                          <div key={optIdx} className="flex items-center gap-1 bg-white border border-blue-300 rounded px-2 py-1">
+                                              <input
+                                                  type="text"
+                                                  value={option}
+                                                  onChange={(e) => {
+                                                      const updated = [...exportFields];
+                                                      if (updated[idx].options) {
+                                                          updated[idx].options[optIdx] = e.target.value;
+                                                          setExportFields(updated);
+                                                      }
+                                                  }}
+                                                  className="text-xs bg-transparent border-none outline-none w-20"
+                                              />
+                                              <button
+                                                  onClick={() => {
+                                                      const updated = [...exportFields];
+                                                      if (updated[idx].options) {
+                                                          updated[idx].options = updated[idx].options!.filter((_, i) => i !== optIdx);
+                                                          setExportFields(updated);
+                                                      }
+                                                  }}
+                                                  className="text-red-500 hover:text-red-700 text-sm font-bold"
+                                              >
+                                                  ×
+                                              </button>
+                                          </div>
+                                      ))}
+                                      <button
+                                          onClick={() => {
+                                              const updated = [...exportFields];
+                                              if (updated[idx].options) {
+                                                  updated[idx].options.push('新选项');
+                                                  setExportFields(updated);
+                                              }
+                                          }}
+                                          className="text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 px-2 py-1 rounded font-bold"
+                                      >
+                                          + 添加选项
+                                      </button>
+                                  </div>
+                              </div>
+                          )}
+                      </div>
+                  ))}
+              </div>
+              <div className="flex justify-end pt-4 gap-2">
+                  <button onClick={() => setIsExportConfigOpen(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-medium">取消</button>
+                  <button onClick={saveExportFieldsConfig} className="bg-green-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-green-700 flex items-center gap-2 shadow-sm transition-colors">
+                      <Save size={18}/> 保存字段配置
+                  </button>
+              </div>
+          </div>
+      )}
 
       {/* Config Panel */}
       {isConfigOpen && (
@@ -284,11 +750,11 @@ export const GiteeManagement: React.FC = () => {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col md:flex-row gap-6 overflow-hidden">
-          {/* Left: Branch Search */}
+          {/* Left: Branch Search & Multi-Select */}
           <div className="w-full md:w-1/3 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
               <div className="p-4 border-b border-slate-100 bg-slate-50/50">
                   <h3 className="font-bold text-slate-700 mb-2">需求分支查询</h3>
-                  <div className="relative">
+                  <div className="relative mb-3">
                       <Search className="absolute left-3 top-2.5 text-slate-400" size={16}/>
                       <input 
                           className={`${INPUT_STYLE} pl-9 pr-12`} 
@@ -304,25 +770,49 @@ export const GiteeManagement: React.FC = () => {
                           <ArrowRight size={16}/>
                       </button>
                   </div>
+                  {branches.length > 0 && (
+                      <div className="flex items-center justify-between">
+                          <span className="text-xs text-slate-600 font-medium">
+                              已选中: <span className="font-bold text-blue-600">{selectedBranches.size}</span> / {branches.length}
+                          </span>
+                          <button
+                              onClick={toggleAllBranches}
+                              className="text-xs font-bold text-blue-600 hover:text-blue-700 px-2 py-1 rounded hover:bg-blue-50"
+                          >
+                              {selectedBranches.size === branches.length && branches.length > 0 ? '取消全选' : '全选'}
+                          </button>
+                      </div>
+                  )}
               </div>
               <div className="flex-1 overflow-y-auto p-2">
                   {branches.length > 0 ? (
                       branches.map(branch => (
                           <div 
                               key={branch.name}
-                              onClick={() => handleBranchSelect(branch.name)}
-                              className={`p-3 rounded-lg cursor-pointer border mb-2 transition-all ${selectedBranch === branch.name ? 'bg-red-50 border-red-200 shadow-sm' : 'bg-white border-transparent hover:bg-slate-50'}`}
+                              onClick={() => toggleBranchSelection(branch.name)}
+                              className={`p-3 rounded-lg cursor-pointer border mb-2 transition-all ${selectedBranches.has(branch.name) ? 'bg-blue-50 border-blue-200 shadow-sm' : 'bg-white border-transparent hover:bg-slate-50'}`}
                           >
-                              <div className="flex justify-between items-start">
-                                  <div className={`font-bold text-sm ${selectedBranch === branch.name ? 'text-red-700' : 'text-slate-700'}`}>
-                                      {branch.name}
+                              <div className="flex justify-between items-start gap-2">
+                                  <div className="flex items-start gap-2 flex-1 min-w-0">
+                                      <input 
+                                          type="checkbox"
+                                          checked={selectedBranches.has(branch.name)}
+                                          onChange={() => toggleBranchSelection(branch.name)}
+                                          onClick={e => e.stopPropagation()}
+                                          className="mt-0.5 text-blue-600 rounded focus:ring-blue-500"
+                                      />
+                                      <div className="min-w-0 flex-1">
+                                          <div className={`font-bold text-sm truncate ${selectedBranches.has(branch.name) ? 'text-blue-700' : 'text-slate-700'}`}>
+                                              {branch.name}
+                                          </div>
+                                          <div className="text-xs text-slate-400 mt-1 flex items-center gap-1">
+                                              <Calendar size={12}/> {branch.lastUpdated}
+                                          </div>
+                                      </div>
                                   </div>
-                                  <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-mono">
+                                  <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-mono shrink-0">
                                       {branch.lastCommitHash}
                                   </span>
-                              </div>
-                              <div className="text-xs text-slate-400 mt-1 flex items-center gap-1">
-                                  <Calendar size={12}/> Updated: {branch.lastUpdated}
                               </div>
                           </div>
                       ))
@@ -332,106 +822,210 @@ export const GiteeManagement: React.FC = () => {
                       </div>
                   )}
               </div>
+              
+              {selectedBranches.size > 0 && (
+                  <div className="p-4 border-t border-slate-100 bg-slate-50">
+                      <button
+                          onClick={handleFetchMultiBranchChanges}
+                          disabled={loading || selectedBranches.size === 0}
+                          className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 shadow-sm transition-colors"
+                      >
+                          <GitBranch size={16}/>
+                          {loading ? '处理中...' : `导出 ${selectedBranches.size} 个分支变更`}
+                      </button>
+                  </div>
+              )}
           </div>
 
-          {/* Right: Commits & Changes */}
+          {/* Right: Changeset Display */}
           <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
               <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
                   <div className="flex items-center gap-2">
-                      <h3 className="font-bold text-slate-700">提交记录</h3>
-                      {selectedBranch && <span className="text-xs font-mono bg-blue-100 text-blue-700 px-2 py-0.5 rounded">{selectedBranch}</span>}
-                  </div>
-                  <div className="flex items-center gap-2">
-                      {loading && <div className="flex items-center gap-2 text-xs text-blue-600 mr-2"><RefreshCw size={12} className="animate-spin"/> Processing...</div>}
-                      {selectedBranch && (
-                          <button 
-                            onClick={() => handlePullBranchChanges(selectedBranch)}
-                            className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-2 shadow-sm transition-colors"
-                            title="Compare this branch with master and get all changed files"
-                          >
-                              <GitBranch size={14}/> 拉取分支全量变更
-                          </button>
-                      )}
+                      <h3 className="font-bold text-slate-700">变更集预览</h3>
+                      {changesetData.size > 0 && <span className="text-xs font-mono bg-green-100 text-green-700 px-2 py-0.5 rounded">{changesetData.size}个分支</span>}
                   </div>
               </div>
               
-              <div className="flex-1 overflow-y-auto">
-                  {selectedBranch ? (
-                       <table className="w-full text-left text-sm">
-                           <thead className="bg-slate-50 border-b border-slate-100 sticky top-0">
-                               <tr>
-                                   <th className="px-6 py-3 font-semibold text-slate-600">Short ID</th>
-                                   <th className="px-6 py-3 font-semibold text-slate-600">Message</th>
-                                   <th className="px-6 py-3 font-semibold text-slate-600">Author</th>
-                                   <th className="px-6 py-3 font-semibold text-slate-600">Date</th>
-                                   <th className="px-6 py-3 font-semibold text-slate-600 text-right">Action</th>
-                               </tr>
-                           </thead>
-                           <tbody className="divide-y divide-slate-50">
-                               {commits.map(commit => (
-                                   <tr key={commit.id} className="hover:bg-slate-50">
-                                       <td className="px-6 py-3 font-mono text-xs text-slate-500">{commit.shortId}</td>
-                                       <td className="px-6 py-3 font-medium text-slate-800">{commit.message}</td>
-                                       <td className="px-6 py-3 text-slate-600 flex items-center gap-2">
-                                           <User size={14} className="text-slate-400"/> {commit.author}
-                                       </td>
-                                       <td className="px-6 py-3 text-slate-500 text-xs">{commit.date}</td>
-                                       <td className="px-6 py-3 text-right">
-                                           <button 
-                                               onClick={() => handlePullCommitChanges(commit)}
-                                               className="text-blue-600 hover:bg-blue-50 px-3 py-1 rounded text-xs font-bold border border-blue-200 hover:border-blue-300 transition-colors"
-                                           >
-                                               拉取单次变更
-                                           </button>
-                                       </td>
-                                   </tr>
-                               ))}
-                           </tbody>
-                       </table>
+              <div className="flex-1 overflow-y-auto p-4 bg-slate-50">
+                  {changesetData.size > 0 ? (
+                      <div className="space-y-4">
+                          {Array.from(changesetData.keys()).sort().map(branchName => (
+                              <div key={branchName} className="border border-slate-200 rounded-lg overflow-hidden bg-white">
+                                  {/* Branch Header with Export Buttons */}
+                                  <div className="bg-blue-50 border-b border-blue-100 px-4 py-3 sticky top-0 z-10">
+                                      <div className="flex items-center justify-between gap-3">
+                                          <div className="flex items-center gap-2">
+                                              <GitBranch size={16} className="text-blue-700"/>
+                                              <h4 className="font-bold text-blue-700">{branchName}</h4>
+                                              <span className="text-xs bg-blue-200 text-blue-700 px-2 py-0.5 rounded">
+                                                  {(changesetData.get(branchName) || []).length} 条提交
+                                              </span>
+                                          </div>
+                                          <div className="flex gap-2">
+                                              <button
+                                                  onClick={() => downloadBranchTxt(branchName)}
+                                                  className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold flex items-center gap-1 shadow-sm transition-colors"
+                                              >
+                                                  <Download size={14}/> TXT
+                                              </button>
+                                              <button
+                                                  onClick={() => downloadBranchExcel(branchName).catch(e => alert('导出失败: ' + e.message))}
+                                                  className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-bold flex items-center gap-1 shadow-sm transition-colors"
+                                              >
+                                                  <Download size={14}/> Excel
+                                              </button>
+                                          </div>
+                                      </div>
+                                  </div>
+                                  
+                                  {/* Commits List */}
+                                  <div className="divide-y divide-slate-100">
+                                      {(changesetData.get(branchName) || []).map((item, idx) => (
+                                          <div key={idx} className="p-3 hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => setSelectedCommitDetail(item)}>
+                                              <div className="flex items-start justify-between gap-2">
+                                                  <div className="flex-1 min-w-0">
+                                                      <div className="flex items-center gap-2 mb-1">
+                                                          <code className="text-[11px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-bold">
+                                                              {item.commitHash}
+                                                          </code>
+                                                          <span className="text-xs text-slate-500">{item.author}</span>
+                                                      </div>
+                                                      <div className="text-sm text-slate-700 font-mono truncate mb-1">
+                                                          {item.message}
+                                                      </div>
+                                                      <div className="text-xs text-slate-500 flex items-center gap-1">
+                                                          <FileText size={12}/> {item.filePath}
+                                                      </div>
+                                                      <div className="text-xs text-slate-400 mt-1">
+                                                          <Calendar size={12} className="inline mr-1"/>
+                                                          {item.date}
+                                                      </div>
+                                                  </div>
+                                                  <Eye size={16} className="text-slate-400 hover:text-blue-600 flex-shrink-0 mt-1"/>
+                                              </div>
+                                          </div>
+                                      ))}
+                                  </div>
+                              </div>
+                          ))}
+                      </div>
                   ) : (
                       <div className="flex flex-col items-center justify-center h-full text-slate-300">
                           <GitPullRequest size={48} className="mb-4 opacity-50"/>
-                          <p className="text-lg font-medium">请选择左侧分支查看提交记录</p>
+                          <p className="text-lg font-medium">请在左侧选择分支并导出</p>
                       </div>
                   )}
               </div>
+
+              {changesetData.size > 0 && (
+                  <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-2 justify-end">
+                      <button 
+                          onClick={handleDownloadList}
+                          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-bold flex items-center gap-2 shadow-sm transition-colors"
+                      >
+                          <Download size={16}/> 下载 TXT
+                      </button>
+                      <button 
+                          onClick={() => handleDownloadChangeset().catch(e => alert('导出失败: ' + e.message))}
+                          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-bold flex items-center gap-2 shadow-sm transition-colors"
+                      >
+                          <Download size={16}/> 导出 Excel
+                      </button>
+                  </div>
+              )}
           </div>
       </div>
 
-      {/* Changeset Modal */}
-      {changesetOpen && (
+      {/* Commit Detail Modal - View & Export Single Commit */}
+      {selectedCommitDetail && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
               <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col max-h-[80vh]">
                   <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                       <div>
-                          <h3 className="text-lg font-bold text-slate-800">变更集文件列表</h3>
-                          <p className="text-xs text-slate-500 font-mono mt-1">{changesetContext}</p>
+                          <h3 className="text-lg font-bold text-slate-800">提交记录详情</h3>
+                          <p className="text-xs text-slate-500 font-mono mt-1">分支: {selectedCommitDetail.branch}</p>
                       </div>
-                      <button onClick={() => setChangesetOpen(false)} className="text-slate-400 hover:text-slate-600">
-                          <Settings size={20} className="hidden"/> {/* Placeholder to align X */}
-                          <div className="p-1 rounded hover:bg-slate-200 transition-colors"><Settings className="opacity-0 w-0 h-0"/>X</div> 
-                          {/* Proper Close Icon via visual trick or just X icon */}
-                      </button>
+                      <button onClick={() => setSelectedCommitDetail(null)} className="text-slate-400 hover:text-slate-600 text-2xl font-bold">×</button>
                   </div>
-                  <div className="flex-1 overflow-y-auto p-4">
-                      <div className="space-y-2">
-                          {currentChangeset.length > 0 ? currentChangeset.map((file, idx) => (
-                              <div key={idx} className="flex items-center gap-3 p-2 rounded hover:bg-slate-50 border border-transparent hover:border-slate-100">
-                                  <FileText size={16} className="text-blue-500 shrink-0"/>
-                                  <span className="text-sm font-mono text-slate-700 break-all">{file}</span>
+                  
+                  <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                      {/* Commit Info */}
+                      <div className="space-y-3">
+                          <div>
+                              <label className="text-xs font-bold text-slate-500 uppercase">提交ID</label>
+                              <div className="mt-1 p-3 bg-slate-100 rounded-lg font-mono text-sm text-slate-700">
+                                  {selectedCommitDetail.commitHash}
                               </div>
-                          )) : (
-                              <div className="text-center py-8 text-slate-400">无文件变更</div>
-                          )}
+                          </div>
+                          
+                          <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                  <label className="text-xs font-bold text-slate-500 uppercase">作者</label>
+                                  <div className="mt-1 p-3 bg-slate-50 rounded-lg text-sm text-slate-700 flex items-center gap-2">
+                                      <User size={16} className="text-blue-500"/> {selectedCommitDetail.author}
+                                  </div>
+                              </div>
+                              <div>
+                                  <label className="text-xs font-bold text-slate-500 uppercase">提交时间</label>
+                                  <div className="mt-1 p-3 bg-slate-50 rounded-lg text-sm text-slate-700 flex items-center gap-2">
+                                      <Calendar size={16} className="text-green-500"/> {selectedCommitDetail.date}
+                                  </div>
+                              </div>
+                          </div>
+                          
+                          <div>
+                              <label className="text-xs font-bold text-slate-500 uppercase">提交信息</label>
+                              <div className="mt-1 p-3 bg-slate-50 rounded-lg text-sm text-slate-700">
+                                  {selectedCommitDetail.message}
+                              </div>
+                          </div>
+                          
+                          <div>
+                              <label className="text-xs font-bold text-slate-500 uppercase">文件路径</label>
+                              <div className="mt-1 p-3 bg-slate-50 rounded-lg text-sm text-slate-700 font-mono flex items-center gap-2">
+                                  <FileText size={16} className="text-orange-500"/> {selectedCommitDetail.filePath}
+                              </div>
+                          </div>
                       </div>
                   </div>
+                  
                   <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
-                      <button onClick={() => setChangesetOpen(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg text-sm font-medium">关闭</button>
+                      <button onClick={() => setSelectedCommitDetail(null)} className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg text-sm font-medium">关闭</button>
                       <button 
-                        onClick={handleDownloadList}
+                        onClick={() => {
+                          if (selectedCommitDetail) {
+                            downloadCommitDetailTxt(selectedCommitDetail);
+                            setSelectedCommitDetail(null);
+                          }
+                        }}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-bold flex items-center gap-2 shadow-sm"
+                      >
+                          <Download size={16}/> 导出 TXT
+                      </button>
+                      <button 
+                        onClick={() => {
+                          // Export single commit as Excel
+                          if (selectedCommitDetail) {
+                            const timestamp = new Date().toISOString().slice(0, 10);
+                            const exportData = [{
+                              '分支': selectedCommitDetail.branch,
+                              '提交ID': selectedCommitDetail.commitHash,
+                              '作者': selectedCommitDetail.author,
+                              '时间': selectedCommitDetail.date,
+                              '信息': selectedCommitDetail.message,
+                              '文件': selectedCommitDetail.filePath,
+                            }];
+                            const wb = XLSX.utils.book_new();
+                            const ws = XLSX.utils.json_to_sheet(exportData);
+                            XLSX.utils.book_append_sheet(wb, ws, "Commit");
+                            XLSX.writeFile(wb, `commit_${selectedCommitDetail.commitHash}_${timestamp}.xlsx`);
+                            recordAction('Gitee管理', `导出单个提交记录Excel: ${selectedCommitDetail.commitHash}`);
+                            setSelectedCommitDetail(null);
+                          }
+                        }}
                         className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-bold flex items-center gap-2 shadow-sm"
                       >
-                          <Download size={16}/> 导出变更清单 ({selectedBranch ? `${selectedBranch}.txt` : '.txt'})
+                          <Download size={16}/> 导出 Excel
                       </button>
                   </div>
               </div>

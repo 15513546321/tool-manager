@@ -20,16 +20,23 @@ public class ClientIpController {
      * Get client's real IPv4 address from request
      * GET /api/client-ip
      * 
-     * 场景说明：
-     * 1. 如果通过代理/负载均衡器访问：返回 X-Forwarded-For 或 X-Real-IP 中的有效 IPv4
-     * 2. 如果直连访问（本地局域网）：返回 remoteAddr（实际的 IPv4 或 127.0.0.1）
-     * 3. 重要：访问时必须使用局域网 IP（如 http://192.168.1.x:8080），而非 http://localhost:8080
+     * JAR直接部署场景下的说明：
+     * - remoteAddr 就是客户端的真实IP地址
+     * - 当Windows客户端访问 http://[Linux服务器IP]:8080 时，remoteAddr 就是Windows的IP
+     * - 这是HTTP连接本身的来源IP，不需要额外的代理头信息
+     * 
+     * 返回格式: { "ip": "[客户端真实IP]", "remoteAddr": "[同上]", "remoteHost": "..." }
      */
     @GetMapping("/client-ip")
     public ResponseEntity<Map<String, String>> getClientIp(HttpServletRequest request) {
-        String clientIp = getClientIpFromRequest(request);
+        String remoteAddr = request.getRemoteAddr();
+        String remoteHost = request.getRemoteHost();
+        
         Map<String, String> response = new HashMap<>();
-        response.put("ip", clientIp);
+        response.put("ip", remoteAddr);  // 这就是客户端真实IP
+        response.put("remoteAddr", remoteAddr);
+        response.put("remoteHost", remoteHost);
+        response.put("note", "For direct JAR deployment: remoteAddr is the actual client IP");
         return ResponseEntity.ok(response);
     }
 

@@ -258,28 +258,39 @@ export const generateXml = (t: XmlTransaction): string => {
 };
 
 export const generateJava = (t: XmlTransaction, author: string = 'admin'): string => {
-  const className = t.id ? `${t.id.charAt(0).toUpperCase() + t.id.slice(1)}Action` : 'BaseAction';
-  const date = new Date().toISOString().split('T')[0];
+  // Extract class name from ID (capitalize first letter, keep rest)
+  // e.g., "userQuery" -> "UserQuery", then add "Action" -> "UserQueryAction"
+  const baseClassName = t.id 
+    ? t.id.charAt(0).toUpperCase() + t.id.slice(1).replace(/([A-Z])/g, (match) => match)
+    : 'EntAPQuotaQry';
+  const className = `${baseClassName}Action`;
+  const description = t.trsName || t.id || '交易描述';
   
-  return `package com.bank.interface.action;\n\n` +
-         `import com.bank.framework.context.Context;\n` +
-         `import com.bank.framework.action.BaseAction;\n\n` +
-         `/**\n` +
-         ` * Transaction: ${t.id}\n` +
-         ` * Description: ${t.trsName}\n` +
-         ` * Author: ${author}\n` +
-         ` * Date: ${date}\n` +
+  // Extract Request/Response class names based on baseClassName
+  const requestClass = `${baseClassName}Request`;
+  const responseClass = `${baseClassName}Response`;
+  
+  return `/**\n` +
+         `\n` +
+         ` * ${description}\n` +
+         ` *\n` +
+         ` * @author ${author}\n` +
          ` */\n` +
-         `public class ${className} extends BaseAction {\n\n` +
+         `@Slf4j\n` +
+         `@Service\n` +
+         `@Description("${className}")\n` +
+         `public class ${className} extends AbstractExecutableAction {\n` +
+         `\n` +
+         `    @Autowired\n` +
+         `    private EcssSendService ecssSendService;\n` +
+         `\n` +
          `    @Override\n` +
-         `    public void execute(Context context) throws Exception {\n` +
-         `        // Extract Inputs\n` +
-         t.inputs.map(f => `        // String ${f.name} = (String) context.getData("${f.name}");`).join('\n') +
-         `\n\n` +
-         `        // TODO: Business Logic Implementation\n` +
-         `        logger.info("Executing transaction: ${t.id}");\n\n` +
-         `        // Set Outputs\n` +
-         t.outputs.map(f => `        // context.setData("${f.name}", ${f.name}Value);`).join('\n') +
+         `    public void doexecute(Context context) throws PsException {\n` +
+         `        EntUser entUser = (EntUser) context.getUser();\n` +
+         `        context.setData("cifNo", entUser.getCifNo());\n` +
+         `        context.setDataMap(BeanMapUtils.beanToMap(ecssSendService.send(context, context.getDataMap(),\n` +
+         `                ${requestClass}.class, ${responseClass}.class)));\n` +
          `    }\n` +
+         `\n` +
          `}`;
 };

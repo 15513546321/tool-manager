@@ -100,13 +100,24 @@ public class AuditLogController {
     /**
      * Record an audit action
      * POST /api/audit/log
-     * Body: { "action": "...", "details": "..." }
+     * Body: { "action": "...", "details": "...", "ip": "..." (optional) }
+     * 
+     * IP获取优先级（JAR直接部署场景）:
+     * 1. 优先使用前端传来的 ip 参数（前端通过 GET /api/client-ip 获取）
+     * 2. 备用：服务器从请求头检测的IP（X-Forwarded-For, X-Real-IP等）
+     * 3. 最后备用：remoteAddr
      */
     @PostMapping("/log")
-        public ResponseEntity<AuditLogDto> recordLog(
+    public ResponseEntity<AuditLogDto> recordLog(
             @RequestBody Map<String, String> payload,
             javax.servlet.http.HttpServletRequest request) {
-        String clientIp = getClientIp(request);
+        // 🔧 优化: 优先使用前端传来的IP（更准确）
+        String clientIp = payload.get("ip");
+        if (clientIp == null || clientIp.trim().isEmpty() || !isValidIPv4(clientIp)) {
+            // 备用：使用服务器检测的IP
+            clientIp = getClientIp(request);
+        }
+        
         String action = payload.getOrDefault("action", "Unknown");
         String details = payload.getOrDefault("details", "");
 

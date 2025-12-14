@@ -11,4 +11,5 @@ public class IpMappingDto {
     private Long id;
     private String ip;
     private String name;
+    private String lastAnnouncementVersionSeen;
 }

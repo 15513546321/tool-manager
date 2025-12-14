@@ -20,4 +20,7 @@ public class IpMapping {
 
     @Column(name = "name", nullable = false)
     private String name;
+
+    @Column(name = "last_announcement_version_seen")
+    private String lastAnnouncementVersionSeen;
 }

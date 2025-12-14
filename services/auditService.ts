@@ -17,14 +17,33 @@ export interface IpMapping {
 
 const API_BASE = '/api';
 
-// 记录操作日志（后端自动获取真实IP）
+// 🔧 获取客户端真实IP地址（JAR直接部署场景）
+// 前端调用此函数获取用户IP，然后在后续API调用时传递给后端
+const getClientIp = async (): Promise<string> => {
+  try {
+    const resp = await fetch(`${API_BASE}/client-ip`, { credentials: 'include' });
+    if (resp.ok) {
+      const data = await resp.json();
+      // 返回 remoteAddr（这就是客户端真实IP）
+      return data.remoteAddr || data.ip || '0.0.0.0';
+    }
+  } catch (err) {
+    console.error('Failed to get client IP:', err);
+  }
+  return '0.0.0.0';
+};
+
+// 记录操作日志（前端先获取真实IP，然后传递给后端）
 export const recordAction = async (action: string, details: string) => {
   try {
+    // 🔧 优化：前端先获取客户端真实IP，然后传递给后端
+    const clientIp = await getClientIp();
+    
     await fetch(`${API_BASE}/audit/log`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ action, details }),
+      body: JSON.stringify({ action, details, ip: clientIp }),  // 添加 ip 参数
     });
   } catch (err) {
     console.error('Failed to record action:', err);

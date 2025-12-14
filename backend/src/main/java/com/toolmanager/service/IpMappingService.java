@@ -5,14 +5,53 @@ import com.toolmanager.entity.IpMapping;
 import com.toolmanager.repository.IpMappingRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class IpMappingService {
     private final IpMappingRepository ipMappingRepository;
+
+    /**
+     * Get or create an IP mapping.
+     * If mapping exists, return it. Otherwise, create a new one with "Unknown Device" as name.
+     */
+    @Transactional
+    public IpMapping getOrCreateIpMapping(String ip) {
+        return ipMappingRepository.findByIp(ip)
+                .orElseGet(() -> {
+                    IpMapping newMapping = new IpMapping();
+                    newMapping.setIp(ip);
+                    newMapping.setName("Unknown Device"); // Default name
+                    newMapping.setLastAnnouncementVersionSeen(null); // Default to null
+                    return ipMappingRepository.save(newMapping);
+                });
+    }
+
+    /**
+     * Get the last announcement version seen by a given IP.
+     * Returns null if not seen or IP not mapped.
+     */
+    public String getLastAnnouncementVersionSeen(String ip) {
+        return ipMappingRepository.findByIp(ip)
+                .map(IpMapping::getLastAnnouncementVersionSeen)
+                .orElse(null);
+    }
+
+    /**
+     * Record that a given IP has seen a specific announcement version.
+     * If the IP mapping doesn't exist, it will be created.
+     */
+    @Transactional
+    public void recordAnnouncementView(String ip, String announcementVersion) {
+        IpMapping mapping = getOrCreateIpMapping(ip);
+        mapping.setLastAnnouncementVersionSeen(announcementVersion);
+        ipMappingRepository.save(mapping);
+    }
 
     /**
      * Get name/description for a given IP
@@ -72,6 +111,6 @@ public class IpMappingService {
     }
 
     private IpMappingDto convertToDto(IpMapping mapping) {
-        return new IpMappingDto(mapping.getId(), mapping.getIp(), mapping.getName());
+        return new IpMappingDto(mapping.getId(), mapping.getIp(), mapping.getName(), mapping.getLastAnnouncementVersionSeen());
     }
 }

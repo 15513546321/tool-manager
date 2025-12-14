@@ -8,6 +8,7 @@ import mammoth from 'mammoth';
 import { recordAction } from '../services/auditService';
 import { decodeBase64Content, base64ToUint8Array } from '../services/utils';
 import { Database, TABLE } from '../services/database';
+import { announcementApi } from '../services/apiService';
 
 // Reusing DocItem structure but storing in 'announcements' key
 const initialData: DocItem[] = [
@@ -48,13 +49,63 @@ export const Announcement: React.FC = () => {
   const [wordOutline, setWordOutline] = useState<HeadingItem[]>([]);
 
   useEffect(() => {
-    const saved = Database.findAll<DocItem>(TABLE.ANNOUNCEMENTS);
-    setItems(saved.length > 0 ? saved : initialData);
+    const loadAnnouncements = async () => {
+      try {
+        const announcements = await announcementApi.getAll();
+        // Convert API response to DocItem format for UI compatibility
+        const docItems: DocItem[] = announcements.map((ann: any) => ({
+          id: ann.id.toString(),
+          category: 'System',
+          subCategory: ann.category || 'Announcement',
+          title: ann.title,
+          description: ann.description,
+          versions: [
+            {
+              id: 'v' + ann.id,
+              versionNumber: ann.version,
+              fileName: '',
+              fileContent: ann.content || '',
+              updatedAt: new Date(ann.updatedAt).toLocaleString(),
+              updatedBy: ann.updatedBy || 'admin',
+              size: '0KB'
+            }
+          ]
+        }));
+        setItems(docItems);
+      } catch (error) {
+        console.error('Failed to load announcements:', error);
+        setItems([]);
+      }
+    };
+    loadAnnouncements();
   }, []);
 
-  const saveItems = (newItems: DocItem[]) => {
+  const saveItems = async (newItems: DocItem[]) => {
     setItems(newItems);
-    Database.save(TABLE.ANNOUNCEMENTS, newItems);
+    // Save to backend via API instead of LocalStorage
+    try {
+      for (const item of newItems) {
+        const version = item.versions[0];
+        const dto = {
+          title: item.title,
+          description: item.description,
+          content: version.fileContent,
+          version: version.versionNumber,
+          status: 'PUBLISHED',
+          updatedBy: 'admin'
+        };
+        
+        if (item.id.includes('-create-')) {
+          // New announcement
+          await announcementApi.create(dto);
+        } else {
+          // Update existing
+          await announcementApi.update(parseInt(item.id), dto);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to save announcements:', error);
+    }
   };
 
   const selectedItem = useMemo(() => items.find(d => d.id === selectedId), [items, selectedId]);
@@ -163,42 +214,53 @@ export const Announcement: React.FC = () => {
 
   const handleSubmit = async () => {
     // Logic to finalize save (called after file read or immediately if no file)
-    const finalizeSubmit = (fileData: { content: string, name: string, size: string }) => {
-        const newVersion: DocVersion = {
-            id: Date.now().toString(),
-            versionNumber: formData.versionNumber,
-            fileName: fileData.name,
-            fileContent: fileData.content,
-            updatedAt: new Date().toLocaleString(),
-            updatedBy: 'admin',
-            size: fileData.size
-        };
+    const finalizeSubmit = async (fileData: { content: string, name: string, size: string }) => {
+        try {
+          const dto = {
+            title: formData.title,
+            description: formData.description,
+            content: fileData.content,
+            version: formData.versionNumber,
+            status: 'PUBLISHED',
+            createdBy: 'admin',
+            updatedBy: 'admin'
+          };
 
-        if (selectedItem) {
-            // Update existing (Add version)
-            const updatedList = items.map(d => {
-                if (d.id === selectedItem.id) {
-                    return { ...d, versions: [newVersion, ...d.versions], title: formData.title, description: formData.description };
-                }
-                return d;
-            });
-            saveItems(updatedList);
+          if (selectedItem && !selectedItem.id.includes('-create-')) {
+            // Update existing
+            await announcementApi.update(parseInt(selectedItem.id), dto);
             recordAction('Update Announcement', `Updated: ${formData.title}`);
-        } else {
+          } else {
             // Create New
-            const newItem: DocItem = {
-                id: Date.now().toString(),
-                category: 'Notice',
-                subCategory: 'General',
-                title: formData.title,
-                description: formData.description,
-                versions: [newVersion]
-            };
-            saveItems([newItem, ...items]);
-            setSelectedId(newItem.id);
+            await announcementApi.create(dto);
             recordAction('Create Announcement', `Created: ${formData.title}`);
+          }
+          
+          // Reload announcements
+          const announcements = await announcementApi.getAll();
+          const docItems: DocItem[] = announcements.map((ann: any) => ({
+            id: ann.id.toString(),
+            category: 'System',
+            subCategory: ann.category || 'Announcement',
+            title: ann.title,
+            description: ann.description,
+            versions: [
+              {
+                id: 'v' + ann.id,
+                versionNumber: ann.version,
+                fileName: '',
+                fileContent: ann.content || '',
+                updatedAt: new Date(ann.updatedAt).toLocaleString(),
+                updatedBy: ann.updatedBy || 'admin',
+                size: '0KB'
+              }
+            ]
+          }));
+          setItems(docItems);
+          setIsModalOpen(false);
+        } catch (error) {
+          console.error('Failed to save announcement:', error);
         }
-        setIsModalOpen(false);
     };
 
     if (file) {
@@ -214,7 +276,7 @@ export const Announcement: React.FC = () => {
         reader.readAsDataURL(file);
     } else {
         // Handle no file case
-        finalizeSubmit({
+        await finalizeSubmit({
             content: '',
             name: '',
             size: '0KB'

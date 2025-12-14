@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Lightbulb, Plus, X, User, Monitor, Clock } from 'lucide-react';
-import { Database, TABLE } from '../services/database';
+import { apiService } from '../services/apiService';
 import { SuggestionItem } from '../types';
-import { getCurrentIp, getIpMappings, IpMapping } from '../services/auditService';
+import { getIpMappings, IpMapping } from '../services/auditService';
 
 const INPUT_STYLE = "w-full pl-3 pr-4 py-2 border border-slate-200 rounded-lg bg-[#f8fafc] focus:bg-white focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm text-slate-700 placeholder:text-slate-400";
 const LABEL_STYLE = "block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1";
@@ -11,14 +11,32 @@ export const Suggestions: React.FC = () => {
   const [items, setItems] = useState<SuggestionItem[]>([]);
   const [mappings, setMappings] = useState<IpMapping[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [formData, setFormData] = useState({ title: '', description: '' });
+  const [formData, setFormData] = useState({ title: '', content: '' });
+  const [loading, setLoading] = useState(false);
 
-  // Load Data
+  // Load Data from API
   useEffect(() => {
     const loadData = async () => {
-      setItems(Database.findAll<SuggestionItem>(TABLE.SUGGESTIONS));
-      const fetchedMappings = await getIpMappings();
-      setMappings(fetchedMappings);
+      try {
+        setLoading(true);
+        const suggestions = await apiService.suggestionApi.getAll();
+        setItems(suggestions.map((s: any) => ({
+          id: s.id.toString(),
+          title: s.title,
+          description: s.content,
+          category: s.category,
+          priority: s.priority,
+          status: s.status,
+          timestamp: new Date(s.createdAt).toLocaleString()
+        })));
+        const fetchedMappings = await getIpMappings();
+        setMappings(fetchedMappings);
+      } catch (error) {
+        console.error('Failed to load suggestions:', error);
+        alert('加载建议失败，请重试');
+      } finally {
+        setLoading(false);
+      }
     };
     loadData();
   }, []);
@@ -29,30 +47,48 @@ export const Suggestions: React.FC = () => {
         return;
     }
 
-    const ip = await getCurrentIp();
-    const newItem: SuggestionItem = {
-        id: Date.now().toString(),
+    try {
+      setLoading(true);
+      const newSuggestion = {
         title: formData.title,
-        description: formData.description,
-        ip: ip,
-        timestamp: new Date().toLocaleString()
-    };
-
-    const updated = [newItem, ...items];
-    setItems(updated);
-    Database.save(TABLE.SUGGESTIONS, updated);
-    
-    setFormData({ title: '', description: '' });
-    setIsModalOpen(false);
+        content: formData.content,
+        category: 'GENERAL',
+        priority: 1,
+        status: 'NEW'
+      };
+      
+      const created = await apiService.suggestionApi.create(newSuggestion);
+      
+      // Reload suggestions after adding
+      const suggestions = await apiService.suggestionApi.getAll();
+      setItems(suggestions.map((s: any) => ({
+        id: s.id.toString(),
+        title: s.title,
+        description: s.content,
+        category: s.category,
+        priority: s.priority,
+        status: s.status,
+        timestamp: new Date(s.createdAt).toLocaleString()
+      })));
+      
+      setFormData({ title: '', content: '' });
+      setIsModalOpen(false);
+      alert('建议已成功提交！');
+    } catch (error) {
+      console.error('Failed to submit suggestion:', error);
+      alert('提交建议失败，请重试');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Resolve Names Dynamically
   const displayItems = useMemo(() => {
       return items.map(item => {
-          const mapping = mappings.find(m => m.ip === item.ip);
+          const mapping = mappings.find(m => m && m.ip); // Safe mapping access
           return {
               ...item,
-              displayName: mapping ? mapping.name : 'Unknown User'
+              displayName: mapping ? mapping.name : 'System'
           };
       });
   }, [items, mappings]);
@@ -132,6 +168,7 @@ export const Suggestions: React.FC = () => {
                                 placeholder="简要描述您的建议..." 
                                 value={formData.title}
                                 onChange={e => setFormData({...formData, title: e.target.value})}
+                                disabled={loading}
                                 autoFocus
                             />
                         </div>
@@ -141,26 +178,29 @@ export const Suggestions: React.FC = () => {
                                 className={INPUT_STYLE} 
                                 rows={4}
                                 placeholder="请提供更多细节..." 
-                                value={formData.description}
-                                onChange={e => setFormData({...formData, description: e.target.value})}
+                                value={formData.content}
+                                onChange={e => setFormData({...formData, content: e.target.value})}
+                                disabled={loading}
                             />
                         </div>
                         <div className="text-xs text-slate-400 bg-slate-50 p-2 rounded border border-slate-100">
-                            系统将自动记录您的 IP 地址，并根据配置显示您的姓名。
+                            系统将自动记录建议，使用的是后端数据库存储。
                         </div>
                     </div>
                     <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
                         <button 
                             onClick={() => setIsModalOpen(false)}
-                            className="px-4 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-200 transition-colors"
+                            disabled={loading}
+                            className="px-4 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-200 transition-colors disabled:opacity-50"
                         >
                             取消
                         </button>
                         <button 
                             onClick={handleAdd}
-                            className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-500/30 transition-colors"
+                            disabled={loading}
+                            className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-500/30 transition-colors disabled:opacity-50"
                         >
-                            提交
+                            {loading ? '提交中...' : '提交'}
                         </button>
                     </div>
                 </div>

@@ -3,6 +3,7 @@ import { ParameterConfig } from '../types';
 import { Plus, Trash2, Filter, Search, X } from 'lucide-react';
 import { Database, TABLE } from '../services/database';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { systemParameterApi } from '../services/apiService';
 
 const mockParams: ParameterConfig[] = [
   { id: '1', category: 'System', subCategory: 'Timeout', key: 'SESSION_TIMEOUT', value: '3000', description: 'Session timeout in seconds' },
@@ -32,15 +33,45 @@ export const ParameterConfigPage: React.FC = () => {
       onConfirm: () => void;
   }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
 
-  // Init Data from DB
+  // Init Data from API
   useEffect(() => {
-    const saved = Database.findAll<ParameterConfig>(TABLE.PARAMS);
-    if (saved.length > 0) setParams(saved);
+    const loadParams = async () => {
+      try {
+        const data = await systemParameterApi.getAll();
+        // Convert API response to ParameterConfig format
+        const converted = data.map((param: any) => ({
+          id: param.id.toString(),
+          category: param.category || 'System',
+          subCategory: param.paramType || 'General',
+          key: param.paramKey,
+          value: param.paramValue,
+          description: param.description || ''
+        }));
+        setParams(converted);
+      } catch (error) {
+        console.error('Failed to load parameters:', error);
+        setParams(mockParams);
+      }
+    };
+    loadParams();
   }, []);
 
-  const saveParams = (newParams: ParameterConfig[]) => {
-      setParams(newParams);
-      Database.save(TABLE.PARAMS, newParams);
+  const saveParams = async (newParams: ParameterConfig[]) => {
+    setParams(newParams);
+    try {
+      for (const param of newParams) {
+        await systemParameterApi.save({
+          paramKey: param.key,
+          paramValue: param.value,
+          paramType: param.subCategory,
+          description: param.description,
+          category: param.category,
+          updatedBy: 'admin'
+        });
+      }
+    } catch (error) {
+      console.error('Failed to save parameters:', error);
+    }
   };
 
   // Compute unique categories
@@ -78,12 +109,20 @@ export const ParameterConfigPage: React.FC = () => {
   };
 
   const handleDelete = (id: string) => {
+    const paramToDelete = params.find(p => p.id === id);
     setConfirmState({
         isOpen: true,
         title: '删除参数',
         message: '确定要删除此参数吗？',
-        onConfirm: () => {
-            saveParams(params.filter(p => p.id !== id));
+        onConfirm: async () => {
+            try {
+              if (paramToDelete) {
+                await systemParameterApi.delete(paramToDelete.key);
+              }
+              saveParams(params.filter(p => p.id !== id));
+            } catch (error) {
+              console.error('Failed to delete parameter:', error);
+            }
         }
     });
   };

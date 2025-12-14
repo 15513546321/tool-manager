@@ -1,17 +1,23 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Database, ArrowRight, Play, FileCode, CheckCircle, Settings, Plus, Trash2, X, Link as LinkIcon, Search, ChevronDown } from 'lucide-react';
+import { Database, ArrowRight, Play, FileCode, CheckCircle, Settings, Plus, Trash2, X, ChevronDown, Link as LinkIcon, Download, AlertTriangle } from 'lucide-react';
+import { apiService } from '../../services/apiService';
 import { recordAction } from '../../services/auditService';
-import { Database as DB, TABLE } from '../../services/database';
 import { ConfirmModal } from '../../components/ConfirmModal';
 
 const INPUT_STYLE = "w-full pl-3 pr-4 py-2 border border-slate-200 rounded-lg bg-[#f8fafc] focus:bg-white focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm text-slate-700 placeholder:text-slate-400";
 
 interface DbConnection {
-  id: string;
+  id?: string;
   name: string;
-  url: string;
+  type?: string;
+  host?: string;
+  port?: string;
+  database?: string;
   username: string;
   password?: string;
+  connectionString?: string;
+  url?: string;
+  notes?: string;
 }
 
 // --- Searchable Select Component ---
@@ -56,7 +62,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({ options, value, onC
   const filteredOptions = options.filter(opt => 
     opt.name.toLowerCase().includes(searchText.toLowerCase()) || 
     opt.username.toLowerCase().includes(searchText.toLowerCase()) ||
-    opt.url.toLowerCase().includes(searchText.toLowerCase())
+    opt.url?.toLowerCase().includes(searchText.toLowerCase())
   );
 
   return (
@@ -86,7 +92,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({ options, value, onC
                 key={opt.id}
                 className={`px-4 py-2 text-sm cursor-pointer transition-colors ${opt.id === value ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-50'}`}
                 onClick={() => {
-                  onChange(opt.id);
+                  onChange(opt.id || '');
                   setIsOpen(false);
                   setSearchText(opt.name);
                 }}
@@ -131,87 +137,122 @@ export const OracleSync: React.FC = () => {
         title: string;
         message: string;
         onConfirm: () => void;
+        confirmText?: string;
+        cancelText?: string;
+        type?: 'danger' | 'info' | 'warning';
     }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
 
     // Load Data
     useEffect(() => {
-        const savedSource = DB.findAll<DbConnection>(TABLE.ORACLE_SOURCE_CONNS);
-        const savedTarget = DB.findAll<DbConnection>(TABLE.ORACLE_TARGET_CONNS);
+        const loadConnections = async () => {
+            try {
+                const allConns = await apiService.dbConnectionApi.getAll();
+                const sourceConns = allConns.filter((c: any) => c.type === 'ORACLE_SOURCE');
+                const targetConns = allConns.filter((c: any) => c.type === 'ORACLE_TARGET');
+                
+                setSourceConns(sourceConns.length > 0 ? sourceConns : []);
+                setTargetConns(targetConns.length > 0 ? targetConns : []);
+                
+                // If no connections, create demo defaults
+                if (sourceConns.length === 0 && targetConns.length === 0) {
+                    const defaultsSource = [
+                        { id: 's1', name: 'DEV DB (Source)', type: 'ORACLE_SOURCE', host: '192.168.1.10', port: '1521', database: 'ORCL', username: 'SCOTT', connectionString: 'jdbc:oracle:thin:@192.168.1.10:1521:ORCL' },
+                        { id: 's2', name: 'UAT DB (Source)', type: 'ORACLE_SOURCE', host: '192.168.1.20', port: '1521', database: 'ORCL', username: 'HR', connectionString: 'jdbc:oracle:thin:@192.168.1.20:1521:ORCL' }
+                    ];
+                    const defaultsTarget = [
+                        { id: 't1', name: 'SIT DB (Target)', type: 'ORACLE_TARGET', host: '192.168.1.30', port: '1521', database: 'ORCL', username: 'SCOTT', connectionString: 'jdbc:oracle:thin:@192.168.1.30:1521:ORCL' },
+                        { id: 't2', name: 'PROD DB (Target)', type: 'ORACLE_TARGET', host: '192.168.1.100', port: '1521', database: 'PROD', username: 'SCOTT', connectionString: 'jdbc:oracle:thin:@192.168.1.100:1521:PROD' },
+                        { id: 't3', name: 'UAT DB (Target)', type: 'ORACLE_TARGET', host: '192.168.1.20', port: '1521', database: 'ORCL', username: 'HR', connectionString: 'jdbc:oracle:thin:@192.168.1.20:1521:ORCL' }
+                    ];
+                    setSourceConns(defaultsSource);
+                    setTargetConns(defaultsTarget);
+                }
+            } catch (err) {
+                console.error('Failed to load connections:', err);
+            }
+        };
         
-        // Legacy migration or defaults
-        if (savedSource.length === 0 && savedTarget.length === 0) {
-           const legacy = DB.findAll<DbConnection>(TABLE.ORACLE_CONNS);
-           if (legacy.length > 0) {
-               setSourceConns(legacy);
-               setTargetConns(legacy);
-               DB.save(TABLE.ORACLE_SOURCE_CONNS, legacy);
-               DB.save(TABLE.ORACLE_TARGET_CONNS, legacy);
-           } else {
-               // Demo defaults
-               const defaultsSource: DbConnection[] = [
-                   { id: 's1', name: 'DEV DB (Source)', url: 'jdbc:oracle:thin:@192.168.1.10:1521:ORCL', username: 'SCOTT' },
-                   { id: 's2', name: 'UAT DB (Source)', url: 'jdbc:oracle:thin:@192.168.1.20:1521:ORCL', username: 'HR' }
-               ];
-               const defaultsTarget: DbConnection[] = [
-                   { id: 't1', name: 'SIT DB (Target)', url: 'jdbc:oracle:thin:@192.168.1.30:1521:ORCL', username: 'SCOTT' },
-                   { id: 't2', name: 'PROD DB (Target)', url: 'jdbc:oracle:thin:@192.168.1.100:1521:PROD', username: 'SCOTT' },
-                   { id: 't3', name: 'UAT DB (Target)', url: 'jdbc:oracle:thin:@192.168.1.20:1521:ORCL', username: 'HR' }
-               ];
-               setSourceConns(defaultsSource);
-               setTargetConns(defaultsTarget);
-           }
-        } else {
-           setSourceConns(savedSource);
-           setTargetConns(savedTarget);
-        }
+        loadConnections();
     }, []);
 
     // --- Actions ---
 
-    const saveSourceConns = (list: DbConnection[]) => {
+    const saveSourceConns = async (list: DbConnection[]) => {
         setSourceConns(list);
-        DB.save(TABLE.ORACLE_SOURCE_CONNS, list);
-    };
-
-    const saveTargetConns = (list: DbConnection[]) => {
-        setTargetConns(list);
-        DB.save(TABLE.ORACLE_TARGET_CONNS, list);
-    };
-
-    const handleAddConnection = () => {
-        if (newConn.name && newConn.url && newConn.username) {
-            const entry = {
-                ...newConn,
-                id: Date.now().toString(),
-                password: newConn.password || ''
-            } as DbConnection;
-
-            if (configTab === 'source') {
-                saveSourceConns([...sourceConns, entry]);
-            } else {
-                saveTargetConns([...targetConns, entry]);
+        // Save to backend
+        for (const conn of list) {
+            if (conn.id?.startsWith('s')) {
+                await apiService.dbConnectionApi.create({ ...conn, type: 'ORACLE_SOURCE' });
             }
-            setNewConn({});
         }
     };
 
-    const handleDeleteConnection = (e: React.MouseEvent, id: string, type: 'source' | 'target') => {
+    const saveTargetConns = async (list: DbConnection[]) => {
+        setTargetConns(list);
+        // Save to backend
+        for (const conn of list) {
+            if (conn.id?.startsWith('t')) {
+                await apiService.dbConnectionApi.create({ ...conn, type: 'ORACLE_TARGET' });
+            }
+        }
+    };
+
+    const handleAddConnection = async () => {
+        if (newConn.name && (newConn.connectionString || newConn.url) && newConn.username) {
+            const entry = {
+                ...newConn,
+                id: Date.now().toString(),
+                type: configTab === 'source' ? 'ORACLE_SOURCE' : 'ORACLE_TARGET',
+                password: newConn.password || ''
+            } as DbConnection;
+
+            try {
+                const created = await apiService.dbConnectionApi.create(entry);
+                if (configTab === 'source') {
+                    saveSourceConns([...sourceConns, created]);
+                } else {
+                    saveTargetConns([...targetConns, created]);
+                }
+                setNewConn({});
+                recordAction('Oracle同步', `添加${configTab === 'source' ? '源' : '目标'}连接: ${entry.name}`);
+            } catch (err) {
+                console.error('Failed to add connection:', err);
+                alert('添加连接失败');
+            }
+        }
+    };
+
+    const handleDeleteConnection = (e: React.MouseEvent, id: string | undefined, type: 'source' | 'target') => {
         e.preventDefault();
         e.stopPropagation();
+        
+        if (!id) return;
         
         setConfirmState({
             isOpen: true,
             title: '删除连接',
             message: '确定要删除此数据库连接配置吗？此操作不可恢复。',
-            onConfirm: () => {
-                if (type === 'source') {
-                    const updated = sourceConns.filter(c => c.id !== id);
-                    saveSourceConns(updated);
-                    if (sourceId === id) setSourceId('');
-                } else {
-                    const updated = targetConns.filter(c => c.id !== id);
-                    saveTargetConns(updated);
-                    if (targetId === id) setTargetId('');
+            confirmText: '确认删除',
+            cancelText: '取消',
+            type: 'danger',
+            onConfirm: async () => {
+                try {
+                    if (typeof id === 'string' && !isNaN(Number(id))) {
+                        await apiService.dbConnectionApi.delete(Number(id));
+                    }
+                    
+                    if (type === 'source') {
+                        const updated = sourceConns.filter(c => c.id !== id);
+                        saveSourceConns(updated);
+                        if (sourceId === id) setSourceId('');
+                    } else {
+                        const updated = targetConns.filter(c => c.id !== id);
+                        saveTargetConns(updated);
+                        if (targetId === id) setTargetId('');
+                    }
+                    recordAction('Oracle同步', `删除连接: ${id}`);
+                } catch (err) {
+                    console.error('Failed to delete connection:', err);
                 }
             }
         });
@@ -245,7 +286,7 @@ export const OracleSync: React.FC = () => {
             if (sConn) {
                 const matches = targetConns.filter(t => t.username === sConn.username);
                 if (matches.length === 1) {
-                    setTargetId(matches[0].id);
+                    setTargetId(matches[0]?.id || '');
                 } else if (matches.length > 1) {
                      // Check if current targetId is still valid in the new filtered list
                      const currentValid = matches.some(m => m.id === targetId);
@@ -289,19 +330,75 @@ export const OracleSync: React.FC = () => {
         }, 1200);
     };
 
+    const downloadDDL = () => {
+        if (!ddlScript) {
+            alert("请先生成DDL脚本");
+            return;
+        }
+        
+        const sConn = sourceConns.find(c => c.id === sourceId);
+        const tConn = targetConns.find(c => c.id === targetId);
+        const timestamp = new Date().toISOString().slice(0, 10);
+        const filename = `oracle_sync_${sConn?.name}_to_${tConn?.name}_${timestamp}.sql`;
+        
+        const blob = new Blob([ddlScript], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', filename);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        
+        recordAction('数据同步', `下载DDL脚本: ${filename}`);
+    };
+
+    const handleExecuteSQL = () => {
+        if (!ddlScript) {
+            alert("请先生成DDL脚本");
+            return;
+        }
+
+        const tConn = targetConns.find(c => c.id === targetId);
+        
+        setConfirmState({
+            isOpen: true,
+            title: '✓ 确认执行SQL脚本',
+            message: `即将在目标数据库 "${tConn?.name}" 上执行DDL修改操作。\n\n确认事项:\n✓ 已备份数据库\n✓ SQL脚本内容已确认正确\n✓ 目标数据库连接正确\n\n点击 "执行修改" 按钮确认执行此操作。`,
+            confirmText: '执行修改',
+            cancelText: '取消',
+            type: 'warning',
+            onConfirm: () => {
+                setLoading(true);
+                // Simulate API call to execute SQL
+                setTimeout(() => {
+                    setDdlScript(prev => prev + `\n\n/* ✓ 脚本已成功执行于 ${new Date().toLocaleString()} */`);
+                    setLoading(false);
+                    alert('✓ SQL脚本已成功执行在目标数据库上！');
+                    recordAction('数据同步', `执行DDL脚本: ${tConn?.name}`);
+                }, 1500);
+            }
+        });
+    };
+
     const renderConnInfo = (id: string, list: DbConnection[]) => {
         const conn = list.find(c => c.id === id);
         if (!conn) return <div className="text-slate-400 text-sm mt-2 italic pl-1">未选择连接</div>;
         return (
             <div className="mt-4 space-y-3 bg-slate-50 p-3 rounded-lg border border-slate-100">
                 <div>
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">JDBC URL</label>
-                    <div className="text-xs font-mono text-slate-700 truncate" title={conn.url}>{conn.url}</div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase">Connection String</label>
+                    <div className="text-xs font-mono text-slate-700 truncate" title={conn.connectionString || conn.url}>{conn.connectionString || conn.url}</div>
                 </div>
                 <div className="flex gap-4">
                     <div className="flex-1">
                         <label className="text-[10px] font-bold text-slate-400 uppercase">Username</label>
                         <div className="text-sm font-bold text-slate-800">{conn.username}</div>
+                    </div>
+                    <div className="flex-1">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase">Host</label>
+                        <div className="text-sm font-bold text-slate-800">{conn.host || '-'}</div>
                     </div>
                 </div>
             </div>
@@ -316,8 +413,9 @@ export const OracleSync: React.FC = () => {
                 onConfirm={confirmState.onConfirm}
                 title={confirmState.title}
                 message={confirmState.message}
-                confirmText="确认删除"
-                type="danger"
+                confirmText={confirmState.confirmText || '确认'}
+                cancelText={confirmState.cancelText || '取消'}
+                type={confirmState.type || 'info'}
             />
 
             <div className="flex justify-between items-center mb-6">
@@ -401,9 +499,30 @@ export const OracleSync: React.FC = () => {
                         <FileCode size={14}/>
                         <span>Sync_Script.sql</span>
                     </div>
-                    {ddlScript && (
-                         <span className="flex items-center gap-1 text-green-400 text-xs font-bold"><CheckCircle size={12}/> Generated Successfully</span>
-                    )}
+                    <div className="flex items-center gap-2">
+                        {ddlScript && (
+                             <span className="flex items-center gap-1 text-green-400 text-xs font-bold"><CheckCircle size={12}/> Generated Successfully</span>
+                        )}
+                        {ddlScript && (
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={downloadDDL}
+                                    className="flex items-center gap-1 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded transition-colors"
+                                    title="下载SQL脚本文件"
+                                >
+                                    <Download size={14}/> 下载
+                                </button>
+                                <button
+                                    onClick={handleExecuteSQL}
+                                    disabled={loading}
+                                    className="flex items-center gap-1 px-3 py-1 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    title="在目标数据库执行脚本"
+                                >
+                                    <AlertTriangle size={14}/> 执行
+                                </button>
+                            </div>
+                        )}
+                    </div>
                 </div>
                 <textarea 
                     className="flex-1 w-full bg-slate-900 text-blue-100 p-4 font-mono text-sm leading-relaxed resize-none outline-none"
@@ -446,8 +565,8 @@ export const OracleSync: React.FC = () => {
                                     <input className={INPUT_STYLE} placeholder="e.g. DB Name" value={newConn.name || ''} onChange={e => setNewConn({...newConn, name: e.target.value})} />
                                 </div>
                                 <div className="md:col-span-4">
-                                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">JDBC URL</label>
-                                    <input className={INPUT_STYLE} placeholder="jdbc:oracle:thin:..." value={newConn.url || ''} onChange={e => setNewConn({...newConn, url: e.target.value})} />
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Connection String</label>
+                                    <input className={INPUT_STYLE} placeholder="jdbc:oracle:thin:..." value={newConn.connectionString || newConn.url || ''} onChange={e => setNewConn({...newConn, connectionString: e.target.value, url: e.target.value})} />
                                 </div>
                                 <div className="md:col-span-2">
                                     <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Username</label>

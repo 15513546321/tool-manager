@@ -3,6 +3,7 @@ import { MenuItem } from '../types';
 import { Save, Edit2, Eye, EyeOff, CheckCircle, XCircle, Plus, Trash2 } from 'lucide-react';
 import { recordAction } from '../services/auditService';
 import { Database, TABLE } from '../services/database';
+import { menuApi } from '../services/apiService';
 
 // Shared state for demo purposes (usually in Context or Redux)
 export const initialMenuItems: MenuItem[] = [
@@ -49,11 +50,40 @@ export const MenuManagement: React.FC = () => {
   const [editName, setEditName] = useState('');
 
   useEffect(() => {
-    // Load from DB or default
-    const saved = Database.findAll<MenuItem>(TABLE.MENUS);
-    // Ensure visible property exists if loading old data
-    const patched = (saved.length > 0 ? saved : initialMenuItems).map(m => patchVisible(m));
-    setMenus(patched);
+    // Load from API
+    const loadMenus = async () => {
+      try {
+        const data = await menuApi.getAll();
+        // Convert API response to MenuItem format
+        const converted = data.map((item: any) => ({
+          id: item.menuId,
+          name: item.name,
+          path: item.path,
+          icon: item.icon,
+          visible: item.visible !== false,
+          parentId: item.parentId
+        }));
+        
+        // Build hierarchy
+        const rootItems = converted.filter((m: any) => !m.parentId);
+        const buildTree = (parent: any) => {
+          const children = converted.filter((m: any) => m.parentId === parent.id);
+          if (children.length > 0) {
+            parent.children = children.map((c: any) => buildTree(c));
+          }
+          return parent;
+        };
+        
+        const menus = rootItems.map((item: any) => buildTree(item));
+        setMenus(menus);
+      } catch (error) {
+        console.error('Failed to load menus:', error);
+        // Fallback to default menus
+        const defaultMenus = initialMenuItems.map(m => patchVisible(m));
+        setMenus(defaultMenus);
+      }
+    };
+    loadMenus();
   }, []);
 
   const patchVisible = (item: MenuItem): MenuItem => {
@@ -69,7 +99,7 @@ export const MenuManagement: React.FC = () => {
     setEditName(menu.name);
   };
 
-  const handleSave = (id: string) => {
+  const handleSave = async (id: string) => {
     const updateRecursive = (items: MenuItem[]): MenuItem[] => {
       return items.map(item => {
         if (item.id === id) return { ...item, name: editName };
@@ -79,30 +109,69 @@ export const MenuManagement: React.FC = () => {
     };
 
     const newMenus = updateRecursive(menus);
-    updateAndSave(newMenus);
-    setEditingId(null);
-    recordAction('系统设置 - 菜单管理', `按钮:保存 - 修改菜单 [ID:${id}] 名称为 "${editName}"`);
-  };
-
-  const handleToggleVisible = (id: string, currentVisible: boolean) => {
-    const updateRecursive = (items: MenuItem[]): MenuItem[] => {
-        return items.map(item => {
-          if (item.id === id) return { ...item, visible: !currentVisible };
-          if (item.children) return { ...item, children: updateRecursive(item.children) };
-          return item;
+    try {
+      const target = findMenuById(menus, id);
+      if (target) {
+        await menuApi.update(id, {
+          menuId: id,
+          name: editName,
+          path: target.path,
+          icon: target.icon,
+          visible: target.visible,
+          parentId: (target as any).parentId,
+          updatedBy: 'admin'
         });
-      };
-      const newMenus = updateRecursive(menus);
-      updateAndSave(newMenus);
-      recordAction('系统设置 - 菜单管理', `按钮:上下线 - 菜单 [ID:${id}] 状态变更为 ${!currentVisible ? '上线' : '下线'}`);
+        setMenus(newMenus);
+        recordAction('系统设置 - 菜单管理', `按钮:保存 - 修改菜单 [ID:${id}] 名称为 "${editName}"`);
+      }
+    } catch (error) {
+      console.error('Failed to save menu:', error);
+    }
+    setEditingId(null);
   };
 
-  const updateAndSave = (newMenus: MenuItem[]) => {
-    setMenus(newMenus);
-    Database.save(TABLE.MENUS, newMenus);
-    // Force reload to update sidebar (in a real app, use Context)
-    window.dispatchEvent(new Event('menuUpdated'));
+  const findMenuById = (items: MenuItem[], id: string): MenuItem | null => {
+    for (const item of items) {
+      if (item.id === id) return item;
+      if (item.children) {
+        const found = findMenuById(item.children, id);
+        if (found) return found;
+      }
+    }
+    return null;
   };
+
+  const handleToggleVisible = async (id: string, currentVisible: boolean) => {
+    const updateRecursive = (items: MenuItem[]): MenuItem[] => {
+      return items.map(item => {
+        if (item.id === id) return { ...item, visible: !currentVisible };
+        if (item.children) return { ...item, children: updateRecursive(item.children) };
+        return item;
+      });
+    };
+    
+    const newMenus = updateRecursive(menus);
+    try {
+      const target = findMenuById(menus, id);
+      if (target) {
+        await menuApi.update(id, {
+          menuId: id,
+          name: target.name,
+          path: target.path,
+          icon: target.icon,
+          visible: !currentVisible,
+          parentId: (target as any).parentId,
+          updatedBy: 'admin'
+        });
+        setMenus(newMenus);
+        recordAction('系统设置 - 菜单管理', `按钮:上下线 - 菜单 [ID:${id}] 状态变更为 ${!currentVisible ? '上线' : '下线'}`);
+      }
+    } catch (error) {
+      console.error('Failed to toggle menu visibility:', error);
+    }
+  };
+
+  // Removed updateAndSave - now using API directly
 
   const renderList = (items: MenuItem[], depth = 0) => {
     return items.map(item => {

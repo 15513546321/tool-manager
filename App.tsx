@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { Login } from './pages/Login';
@@ -18,29 +18,70 @@ import { IpConfig } from './pages/admin/IpConfig';
 import { Suggestions } from './pages/Suggestions';
 import { Megaphone, ArrowRight, X, Clock, FileText } from 'lucide-react';
 import { Database, TABLE } from './services/database';
+import { announcementApi } from './services/apiService';
+import { initializeAuditButtonTracking } from './services/auditButton';
+
+interface AnnouncementStatus {
+  clientIp: string;
+  currentAnnouncementVersion: string;
+  lastSeenAnnouncementVersion: string | null;
+  needsDisplay: boolean;
+  announcement?: any;
+}
 
 const Dashboard = () => {
-  const [announcement, setAnnouncement] = React.useState<any>(null);
-  const [showModal, setShowModal] = useState(false);
+  const [announcement, setAnnouncement] = useState<any>(null);
+  const [showAnnouncementModal, setShowAnnouncementModal] = useState(false);
   const navigate = useNavigate();
 
-  React.useEffect(() => {
-    // No need to fetch client IP - backend handles it automatically
-    try {
-      const list = Database.findAll<any>(TABLE.ANNOUNCEMENTS);
-      if (list.length > 0) {
-        const latest = list[0]; // Assuming first is latest
-        setAnnouncement(latest);
-        
-        // Check if user has seen announcement in this session
-        const hasSeen = sessionStorage.getItem('has_seen_notice');
-        if (!hasSeen) {
-            setShowModal(true);
-            sessionStorage.setItem('has_seen_notice', 'true');
+  useEffect(() => {
+    // Check announcement status from backend API
+    const checkAnnouncementStatus = async () => {
+      try {
+        const data = await announcementApi.checkStatus();
+        if (data.needsDisplay && data.announcement) {
+          setAnnouncement({
+            title: data.announcement.title,
+            description: data.announcement.description,
+            versions: [
+              {
+                updatedAt: data.announcement.updatedAt,
+                versionNumber: data.announcement.version,
+                fileName: ''
+              }
+            ]
+          });
+          setShowAnnouncementModal(true);
+        } else if (data.announcement) {
+          // Still load announcement for display, just don't force modal
+          setAnnouncement({
+            title: data.announcement.title,
+            description: data.announcement.description,
+            versions: [
+              {
+                updatedAt: data.announcement.updatedAt,
+                versionNumber: data.announcement.version,
+                fileName: ''
+              }
+            ]
+          });
         }
+      } catch (error) {
+        console.error('Failed to fetch announcement status from backend:', error);
       }
-    } catch(e) {}
+    };
+    checkAnnouncementStatus();
   }, []);
+
+  const handleCloseAnnouncementModal = async () => {
+    try {
+      await announcementApi.recordView();
+      setShowAnnouncementModal(false);
+    } catch (error) {
+      console.error('Failed to record announcement view:', error);
+      setShowAnnouncementModal(false);
+    }
+  };
 
   return (
     <div className="p-8 max-w-6xl mx-auto animate-in fade-in duration-500 relative">
@@ -110,7 +151,7 @@ const Dashboard = () => {
       </div>
 
       {/* Announcement Modal (First Login) */}
-      {showModal && announcement && (
+      {showAnnouncementModal && announcement && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-300">
            <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
                {/* Header */}
@@ -122,7 +163,7 @@ const Dashboard = () => {
                        <Megaphone size={20} className="text-yellow-300"/> 最新公告
                    </h2>
                    <button 
-                     onClick={() => setShowModal(false)}
+                     onClick={handleCloseAnnouncementModal} // Use new handler
                      className="text-white/70 hover:text-white hover:bg-white/20 p-1 rounded-full transition-colors relative z-10"
                    >
                      <X size={20} />
@@ -152,7 +193,7 @@ const Dashboard = () => {
                {/* Footer */}
                <div className="bg-slate-50 px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
                    <button 
-                     onClick={() => setShowModal(false)}
+                     onClick={handleCloseAnnouncementModal} // Use new handler
                      className="px-4 py-2 text-slate-500 hover:text-slate-700 text-sm font-medium hover:bg-slate-200 rounded-lg transition-colors"
                    >
                      关闭
@@ -172,6 +213,11 @@ const Dashboard = () => {
 };
 
 const App: React.FC = () => {
+  // 🔧 初始化全局按钮点击审计追踪
+  useEffect(() => {
+    initializeAuditButtonTracking();
+  }, []);
+
   return (
     <HashRouter>
       <Routes>

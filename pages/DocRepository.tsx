@@ -167,11 +167,24 @@ export const DocRepository: React.FC = () => {
 
   // Derived Data
   const filteredDocs = useMemo(() => {
+    // 如果有搜索关键词，则在全部文档中进行模糊匹配
+    if (searchFilter) {
+      const searchLower = searchFilter.toLowerCase();
+      return docs.filter(d => {
+        const matchTitle = d.title.toLowerCase().includes(searchLower);
+        const matchDesc = d.description?.toLowerCase().includes(searchLower) || false;
+        const matchCategory = d.category.toLowerCase().includes(searchLower);
+        const matchSubCategory = d.subCategory.toLowerCase().includes(searchLower);
+        // 模糊匹配：标题、描述、分类、子分类任意一个包含搜索词即可
+        return matchTitle || matchDesc || matchCategory || matchSubCategory;
+      });
+    }
+    
+    // 无搜索词时按分类和子分类筛选
     return docs.filter(d => {
       const matchCat = categoryFilter ? d.category === categoryFilter : true;
       const matchSub = subCategoryFilter ? d.subCategory === subCategoryFilter : true;
-      const matchSearch = searchFilter ? d.title.toLowerCase().includes(searchFilter.toLowerCase()) : true;
-      return matchCat && matchSub && matchSearch;
+      return matchCat && matchSub;
     });
   }, [docs, categoryFilter, subCategoryFilter, searchFilter]);
 

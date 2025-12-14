@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import {GitBranch, Search, Download, Settings, RefreshCw, Save, Plus, Trash2, ExternalLink, ShieldCheck, LayoutTemplate, Filter, User, Tag, Flag, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react';
-import { Database, TABLE } from '../services/database';
+import {GitBranch, Search, Download, Settings, RefreshCw, Save, Plus, Trash2, ExternalLink, ShieldCheck, LayoutTemplate, Filter, User, Tag, Flag, CheckCircle, ChevronLeft, ChevronRight, ArrowUp, ArrowDown } from 'lucide-react';
+import { apiService } from '../services/apiService';
 import { recordAction } from '../services/auditService';
 import * as XLSX from 'xlsx';
 
@@ -44,24 +44,38 @@ const FIELD_DEFINITIONS: Record<ReportType, { value: string; label: string }[]> 
   issues: [
     { value: 'iid', label: 'Issue ID' },
     { value: 'title', label: 'Title' },
+    { value: 'description', label: 'Description (议题描述)' },
     { value: 'state', label: 'State' },
     { value: 'author.name', label: 'Author' },
-    { value: 'assignee.name', label: 'Assignee' }, // Simple handling, complex array handling in render
+    { value: 'assignee.name', label: 'Assignee' },
     { value: 'milestone.title', label: 'Milestone' },
     { value: 'labels', label: 'Labels' },
+    { value: 'due_date', label: 'Due Date' },
     { value: 'created_at', label: 'Created At' },
     { value: 'updated_at', label: 'Updated At' },
+    { value: 'closed_at', label: 'Closed At' },
+    { value: 'time_stats.time_estimate', label: 'Time Estimate' },
+    { value: 'time_stats.total_time_spent', label: 'Time Spent' },
+    { value: 'weight', label: 'Weight' },
+    { value: 'confidential', label: 'Confidential' },
     { value: 'web_url', label: 'Web URL' }
   ],
   merge_requests: [
     { value: 'iid', label: 'MR ID' },
     { value: 'title', label: 'Title' },
+    { value: 'description', label: 'Description (合并请求描述)' },
     { value: 'state', label: 'State' },
     { value: 'author.name', label: 'Author' },
     { value: 'assignee.name', label: 'Assignee' },
     { value: 'source_branch', label: 'Source Branch' },
     { value: 'target_branch', label: 'Target Branch' },
+    { value: 'draft', label: 'Draft' },
+    { value: 'merged_by.name', label: 'Merged By' },
+    { value: 'merged_at', label: 'Merged At' },
     { value: 'created_at', label: 'Created At' },
+    { value: 'updated_at', label: 'Updated At' },
+    { value: 'closed_at', label: 'Closed At' },
+    { value: 'squash_commit_sha', label: 'Squash Commit SHA' },
     { value: 'web_url', label: 'Web URL' }
   ]
 };
@@ -77,19 +91,21 @@ const DEFAULT_COLUMNS: Record<ReportType, ReportColumn[]> = {
   issues: [
     { id: 'i1', field: 'iid', title: '编号', visible: true },
     { id: 'i2', field: 'title', title: '标题', visible: true },
-    { id: 'i3', field: 'state', title: '状态', visible: true },
-    { id: 'i4', field: 'assignee.name', title: '指派给', visible: true },
-    { id: 'i5', field: 'milestone.title', title: '里程碑', visible: true },
-    { id: 'i6', field: 'labels', title: '标记', visible: true },
-    { id: 'i7', field: 'created_at', title: '创建时间', visible: true },
+    { id: 'i3', field: 'description', title: '描述', visible: true },
+    { id: 'i4', field: 'state', title: '状态', visible: true },
+    { id: 'i5', field: 'assignee.name', title: '指派给', visible: true },
+    { id: 'i6', field: 'milestone.title', title: '里程碑', visible: true },
+    { id: 'i7', field: 'labels', title: '标记', visible: true },
+    { id: 'i8', field: 'created_at', title: '创建时间', visible: true },
   ],
   merge_requests: [
     { id: 'm1', field: 'iid', title: '编号', visible: true },
     { id: 'm2', field: 'title', title: '标题', visible: true },
-    { id: 'm3', field: 'state', title: '状态', visible: true },
-    { id: 'm4', field: 'author.name', title: '作者', visible: true },
-    { id: 'm5', field: 'source_branch', title: '源分支', visible: true },
-    { id: 'm6', field: 'target_branch', title: '目标分支', visible: true },
+    { id: 'm3', field: 'description', title: '描述', visible: true },
+    { id: 'm4', field: 'state', title: '状态', visible: true },
+    { id: 'm5', field: 'author.name', title: '作者', visible: true },
+    { id: 'm6', field: 'source_branch', title: '源分支', visible: true },
+    { id: 'm7', field: 'target_branch', title: '目标分支', visible: true },
   ]
 };
 
@@ -147,12 +163,18 @@ export const GitlabReports: React.FC = () => {
   const [newColumnField, setNewColumnField] = useState('');
   const [newColumnTitle, setNewColumnTitle] = useState('');
 
-  // Initial Load from DB
+  // Initial Load from localStorage (now using browser cache)
   useEffect(() => {
-    const saved = Database.findObject<{settings: GitLabSettings, columnsMap: Record<ReportType, ReportColumn[]>}>(TABLE.GITLAB_SETTINGS);
+    // Load from localStorage as fallback since GitLab settings are not critical to H2
+    const saved = localStorage.getItem('gitlab-settings');
     if (saved) {
-      if(saved.settings) setSettings(saved.settings);
-      if(saved.columnsMap) setColumnsMap(saved.columnsMap);
+      try {
+        const parsed = JSON.parse(saved);
+        if(parsed.settings) setSettings(parsed.settings);
+        if(parsed.columnsMap) setColumnsMap(parsed.columnsMap);
+      } catch (e) {
+        console.error('Failed to load GitLab settings from cache:', e);
+      }
     }
   }, []);
 
@@ -307,7 +329,8 @@ export const GitlabReports: React.FC = () => {
 
 
   const saveConfig = () => {
-    Database.saveObject(TABLE.GITLAB_SETTINGS, { settings, columnsMap });
+    // Save to localStorage as fallback cache
+    localStorage.setItem('gitlab-settings', JSON.stringify({ settings, columnsMap }));
     recordAction('GitLab报表', '保存配置 - 更新了连接或列定义');
     alert('配置已保存');
   };
@@ -411,8 +434,9 @@ export const GitlabReports: React.FC = () => {
     const currentCols = columnsMap[reportType];
     const exportData = data.map(row => {
       const map: any = {};
-      currentCols.forEach(c => {
-        if (c.visible) map[c.title] = getNestedValue(row, c.field);
+      // 按字段配置的顺序添加数据
+      currentCols.filter(c => c.visible).forEach(c => {
+        map[c.title] = getNestedValue(row, c.field);
       });
       return map;
     });
@@ -420,6 +444,7 @@ export const GitlabReports: React.FC = () => {
     const ws = XLSX.utils.json_to_sheet(exportData);
     XLSX.utils.book_append_sheet(wb, ws, "Report");
     XLSX.writeFile(wb, `gitlab_${reportType}_${new Date().toISOString().slice(0,10)}.xlsx`);
+    recordAction('GitLab报表', `导出数据 - ${reportType} (${data.length} 条)`);
   };
 
   // --- UI Components ---
@@ -779,30 +804,71 @@ export const GitlabReports: React.FC = () => {
 
                     <div className="border border-slate-200 rounded-lg overflow-hidden">
                        {columnsMap[reportType].map((col, idx) => (
-                         <div key={col.id} className="flex justify-between items-center p-3 border-b border-slate-100 last:border-0 bg-white hover:bg-slate-50">
-                            <span className="font-bold text-sm text-slate-700 w-1/3">{col.title}</span>
-                            <span className="font-mono text-xs text-slate-500 w-1/3">{col.field}</span>
+                         <div key={col.id} className="flex items-center p-3 border-b border-slate-100 last:border-0 bg-white hover:bg-slate-50 gap-4">
+                            {/* 序号和字段信息 */}
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                               <span className="inline-flex items-center justify-center w-6 h-6 bg-slate-200 text-slate-700 text-xs font-bold rounded">{idx + 1}</span>
+                               <div className="flex-1 min-w-0">
+                                  <div className="font-bold text-sm text-slate-700">{col.title}</div>
+                                  <div className="font-mono text-xs text-slate-500">{col.field}</div>
+                               </div>
+                            </div>
+
+                            {/* 排序按钮 - 使用文本 */}
                             <div className="flex gap-2">
                                <button 
                                  onClick={() => {
-                                   const newCols = [...columnsMap[reportType]];
-                                   newCols[idx].visible = !newCols[idx].visible;
-                                   setColumnsMap(prev => ({...prev, [reportType]: newCols}));
+                                   if (idx > 0) {
+                                     const newCols = [...columnsMap[reportType]];
+                                     [newCols[idx], newCols[idx - 1]] = [newCols[idx - 1], newCols[idx]];
+                                     setColumnsMap(prev => ({...prev, [reportType]: newCols}));
+                                   }
                                  }}
-                                 className={`text-xs px-2 py-1 rounded font-bold ${col.visible ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-500'}`}
+                                 disabled={idx === 0}
+                                 className="w-9 h-9 flex items-center justify-center font-bold text-lg text-blue-600 hover:bg-blue-100 rounded border-2 border-blue-300 disabled:text-slate-300 disabled:border-slate-300 disabled:bg-slate-50 disabled:cursor-not-allowed transition-all"
+                                 title="向上移动"
                                >
-                                 {col.visible ? '显示' : '隐藏'}
+                                 ↑
                                </button>
                                <button 
                                  onClick={() => {
-                                   const newCols = columnsMap[reportType].filter(c => c.id !== col.id);
-                                   setColumnsMap(prev => ({...prev, [reportType]: newCols}));
+                                   if (idx < columnsMap[reportType].length - 1) {
+                                     const newCols = [...columnsMap[reportType]];
+                                     [newCols[idx], newCols[idx + 1]] = [newCols[idx + 1], newCols[idx]];
+                                     setColumnsMap(prev => ({...prev, [reportType]: newCols}));
+                                   }
                                  }}
-                                 className="text-red-400 hover:bg-red-50 p-1 rounded"
+                                 disabled={idx === columnsMap[reportType].length - 1}
+                                 className="w-9 h-9 flex items-center justify-center font-bold text-lg text-blue-600 hover:bg-blue-100 rounded border-2 border-blue-300 disabled:text-slate-300 disabled:border-slate-300 disabled:bg-slate-50 disabled:cursor-not-allowed transition-all"
+                                 title="向下移动"
                                >
-                                 <Trash2 size={14}/>
+                                 ↓
                                </button>
                             </div>
+
+                            {/* 显示/隐藏 */}
+                            <button 
+                              onClick={() => {
+                                const newCols = [...columnsMap[reportType]];
+                                newCols[idx].visible = !newCols[idx].visible;
+                                setColumnsMap(prev => ({...prev, [reportType]: newCols}));
+                              }}
+                              className={`text-xs px-3 py-1.5 rounded font-bold transition-colors ${col.visible ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-slate-200 text-slate-500 hover:bg-slate-300'}`}
+                            >
+                              {col.visible ? '显示' : '隐藏'}
+                            </button>
+
+                            {/* 删除 */}
+                            <button 
+                              onClick={() => {
+                                const newCols = columnsMap[reportType].filter(c => c.id !== col.id);
+                                setColumnsMap(prev => ({...prev, [reportType]: newCols}));
+                              }}
+                              className="w-9 h-9 flex items-center justify-center text-red-500 hover:bg-red-100 rounded border-2 border-red-300 hover:text-red-700 transition-all font-bold"
+                              title="删除字段"
+                            >
+                              ×
+                            </button>
                          </div>
                        ))}
                     </div>
