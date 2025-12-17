@@ -6,6 +6,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import lombok.RequiredArgsConstructor;
 
+import javax.servlet.http.HttpServletRequest;
 import java.util.List;
 
 @RestController
@@ -52,8 +53,9 @@ public class SuggestionController {
      * POST /api/suggestion
      */
     @PostMapping
-    public ResponseEntity<SuggestionDto> createSuggestion(@RequestBody SuggestionDto dto) {
-        SuggestionDto created = suggestionService.createSuggestion(dto);
+    public ResponseEntity<SuggestionDto> createSuggestion(@RequestBody SuggestionDto dto, HttpServletRequest request) {
+        String clientIp = request.getRemoteAddr();
+        SuggestionDto created = suggestionService.createSuggestion(dto, clientIp);
         return ResponseEntity.ok(created);
     }
 

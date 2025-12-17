@@ -32,6 +32,7 @@ export interface XmlTransaction {
   trsName: string; // Description attribute of transaction
   actionRef: string; // The bean name
   actionClass: string; // The fully qualified Java class
+  author?: string; // Author of the interface (corresponds to Java class @author)
   inputs: XmlField[];
   outputs: XmlField[];
   downstreamCalls: string[]; // List of called interfaces found in Java or properties

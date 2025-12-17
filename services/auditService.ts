@@ -13,6 +13,7 @@ export interface IpMapping {
   id?: number;
   ip: string;
   name: string;
+  lastAnnouncementVersionSeen?: string;
 }
 
 const API_BASE = '/api';

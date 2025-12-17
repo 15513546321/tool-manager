@@ -19,4 +19,6 @@ public class AnnouncementDto {
     private String createdBy;
     private String updatedBy;
     private String status;
+    private String fileName;
+    private String fileSize;
 }

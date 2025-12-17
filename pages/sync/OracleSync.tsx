@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Database, ArrowRight, Play, FileCode, CheckCircle, Settings, Plus, Trash2, X, ChevronDown, Link as LinkIcon, Download, AlertTriangle } from 'lucide-react';
+import { Database, ArrowRight, Play, FileCode, CheckCircle, Settings, Plus, Trash2, X, ChevronDown, Link as LinkIcon, Download, AlertTriangle, Edit2, Zap } from 'lucide-react';
 import { apiService } from '../../services/apiService';
 import { recordAction } from '../../services/auditService';
 import { ConfirmModal } from '../../components/ConfirmModal';
@@ -122,6 +122,9 @@ export const OracleSync: React.FC = () => {
     const [isConfigOpen, setIsConfigOpen] = useState(false);
     const [configTab, setConfigTab] = useState<'source' | 'target'>('source');
     const [newConn, setNewConn] = useState<Partial<DbConnection>>({});
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [testingConnId, setTestingConnId] = useState<string | null>(null);
+    const [testResult, setTestResult] = useState<{ id: string; success: boolean; message: string } | null>(null);
 
     // --- Selection State ---
     const [sourceId, setSourceId] = useState<string>('');
@@ -152,21 +155,6 @@ export const OracleSync: React.FC = () => {
                 
                 setSourceConns(sourceConns.length > 0 ? sourceConns : []);
                 setTargetConns(targetConns.length > 0 ? targetConns : []);
-                
-                // If no connections, create demo defaults
-                if (sourceConns.length === 0 && targetConns.length === 0) {
-                    const defaultsSource = [
-                        { id: 's1', name: 'DEV DB (Source)', type: 'ORACLE_SOURCE', host: '192.168.1.10', port: '1521', database: 'ORCL', username: 'SCOTT', connectionString: 'jdbc:oracle:thin:@192.168.1.10:1521:ORCL' },
-                        { id: 's2', name: 'UAT DB (Source)', type: 'ORACLE_SOURCE', host: '192.168.1.20', port: '1521', database: 'ORCL', username: 'HR', connectionString: 'jdbc:oracle:thin:@192.168.1.20:1521:ORCL' }
-                    ];
-                    const defaultsTarget = [
-                        { id: 't1', name: 'SIT DB (Target)', type: 'ORACLE_TARGET', host: '192.168.1.30', port: '1521', database: 'ORCL', username: 'SCOTT', connectionString: 'jdbc:oracle:thin:@192.168.1.30:1521:ORCL' },
-                        { id: 't2', name: 'PROD DB (Target)', type: 'ORACLE_TARGET', host: '192.168.1.100', port: '1521', database: 'PROD', username: 'SCOTT', connectionString: 'jdbc:oracle:thin:@192.168.1.100:1521:PROD' },
-                        { id: 't3', name: 'UAT DB (Target)', type: 'ORACLE_TARGET', host: '192.168.1.20', port: '1521', database: 'ORCL', username: 'HR', connectionString: 'jdbc:oracle:thin:@192.168.1.20:1521:ORCL' }
-                    ];
-                    setSourceConns(defaultsSource);
-                    setTargetConns(defaultsTarget);
-                }
             } catch (err) {
                 console.error('Failed to load connections:', err);
             }
@@ -201,24 +189,80 @@ export const OracleSync: React.FC = () => {
         if (newConn.name && (newConn.connectionString || newConn.url) && newConn.username) {
             const entry = {
                 ...newConn,
-                id: Date.now().toString(),
+                id: editingId || Date.now().toString(),
                 type: configTab === 'source' ? 'ORACLE_SOURCE' : 'ORACLE_TARGET',
                 password: newConn.password || ''
             } as DbConnection;
 
             try {
-                const created = await apiService.dbConnectionApi.create(entry);
-                if (configTab === 'source') {
-                    saveSourceConns([...sourceConns, created]);
+                let saved: DbConnection;
+                if (editingId && (editingId.startsWith('s') || editingId.startsWith('t'))) {
+                    // Update existing connection
+                    saved = await apiService.dbConnectionApi.update(Number(editingId), entry);
+                    if (configTab === 'source') {
+                        saveSourceConns(sourceConns.map(c => c.id === editingId ? saved : c));
+                    } else {
+                        saveTargetConns(targetConns.map(c => c.id === editingId ? saved : c));
+                    }
+                    recordAction('Oracle同步', `编辑${configTab === 'source' ? '源' : '目标'}连接: ${entry.name}`);
                 } else {
-                    saveTargetConns([...targetConns, created]);
+                    // Create new connection
+                    saved = await apiService.dbConnectionApi.create(entry);
+                    if (configTab === 'source') {
+                        saveSourceConns([...sourceConns, saved]);
+                    } else {
+                        saveTargetConns([...targetConns, saved]);
+                    }
+                    recordAction('Oracle同步', `添加${configTab === 'source' ? '源' : '目标'}连接: ${entry.name}`);
                 }
                 setNewConn({});
-                recordAction('Oracle同步', `添加${configTab === 'source' ? '源' : '目标'}连接: ${entry.name}`);
+                setEditingId(null);
             } catch (err) {
                 console.error('Failed to add connection:', err);
                 alert('添加连接失败');
             }
+        }
+    };
+
+    const handleEditConnection = (conn: DbConnection) => {
+        setNewConn(conn);
+        setEditingId(conn.id || null);
+    };
+
+    const handleCancelEdit = () => {
+        setNewConn({});
+        setEditingId(null);
+        setTestResult(null);
+    };
+
+    const handleTestConnection = async (conn?: DbConnection) => {
+        const testConn = conn || newConn;
+        if (!testConn.connectionString && !testConn.url) {
+            alert('请输入 Connection String');
+            return;
+        }
+
+        setTestingConnId(testConn.id || 'new');
+        try {
+            const result = await apiService.dbConnectionApi.testConnection(
+                testConn.connectionString || testConn.url || '',
+                testConn.username || '',
+                testConn.password || ''
+            );
+            setTestResult({
+                id: testConn.id || 'new',
+                success: result.success || result.data?.success,
+                message: result.data?.message || result.error || '测试失败'
+            });
+            recordAction('Oracle同步', `测试连接: ${testConn.name || 'new'}`);
+        } catch (err) {
+            setTestResult({
+                id: testConn.id || 'new',
+                success: false,
+                message: '网络错误：' + (err instanceof Error ? err.message : '未知错误')
+            });
+        } finally {
+            setTestingConnId(null);
         }
     };
 
@@ -434,9 +478,9 @@ export const OracleSync: React.FC = () => {
             </div>
 
             {/* Selection Area */}
-            <div className="grid grid-cols-1 md:grid-cols-11 gap-4 mb-6 items-start">
+            <div className="grid grid-cols-1 md:grid-cols-10 gap-4 mb-6 items-start">
                 {/* Source Card */}
-                <div className="md:col-span-5 bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                <div className="md:col-span-4 bg-white p-5 rounded-xl shadow-sm border border-slate-200">
                     <h3 className="font-bold text-slate-700 mb-3 flex items-center gap-2">
                         <div className="w-2 h-2 rounded-full bg-blue-500"/> 源数据库 (Source)
                     </h3>
@@ -449,15 +493,30 @@ export const OracleSync: React.FC = () => {
                     {renderConnInfo(sourceId, sourceConns)}
                 </div>
 
+                {/* Source Test Button */}
+                <div className="md:col-span-1 flex justify-center pt-12">
+                    <button
+                        onClick={() => {
+                            const conn = sourceConns.find(c => c.id === sourceId);
+                            if (conn) handleTestConnection(conn);
+                            else alert('请先选择源数据库');
+                        }}
+                        className="flex items-center gap-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold text-xs transition-colors whitespace-nowrap"
+                        title="测试源数据库连接"
+                    >
+                        <Play size={14}/> 测试
+                    </button>
+                </div>
+
                 {/* Arrow */}
                 <div className="md:col-span-1 flex justify-center pt-12 text-slate-300">
                     <ArrowRight size={32} />
                 </div>
 
                 {/* Target Card */}
-                <div className="md:col-span-5 bg-white p-5 rounded-xl shadow-sm border border-slate-200 relative">
+                <div className="md:col-span-3 bg-white p-5 rounded-xl shadow-sm border border-slate-200 relative">
                     <div className="flex justify-between items-center mb-3">
-                        <h3 className="font-bold text-slate-700 flex items-center gap-2">
+                        <h3 className="font-bold text-slate-700 flex items-center gap-2 flex-1">
                             <div className="w-2 h-2 rounded-full bg-purple-500"/> 目标数据库 (Target)
                         </h3>
                         {sourceId && targetId && sourceConns.find(c => c.id === sourceId)?.username === targetConns.find(c => c.id === targetId)?.username && (
@@ -477,6 +536,21 @@ export const OracleSync: React.FC = () => {
                         <div className="text-xs text-orange-500 mt-1 pl-1">Target list contains no databases with matching username.</div>
                     )}
                     {renderConnInfo(targetId, targetConns)}
+                </div>
+
+                {/* Target Test Button */}
+                <div className="md:col-span-1 flex justify-center pt-12">
+                    <button
+                        onClick={() => {
+                            const conn = targetConns.find(c => c.id === targetId);
+                            if (conn) handleTestConnection(conn);
+                            else alert('请先选择目标数据库');
+                        }}
+                        className="flex items-center gap-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold text-xs transition-colors whitespace-nowrap"
+                        title="测试目标数据库连接"
+                    >
+                        <Play size={14}/> 测试
+                    </button>
                 </div>
             </div>
 
@@ -559,6 +633,13 @@ export const OracleSync: React.FC = () => {
                         </div>
 
                         <div className="p-6 border-b border-slate-100 bg-slate-50/50">
+                            <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                                <div className="text-xs font-bold text-blue-900 mb-1">Connection String 格式说明:</div>
+                                <div className="text-xs text-blue-800 font-mono space-y-1">
+                                    <div>• SID 方式: <span className="bg-white px-1 py-0.5">jdbc:oracle:thin:@10.20.72.168:1521:ECSS</span></div>
+                                    <div>• Service 方式: <span className="bg-white px-1 py-0.5">jdbc:oracle:thin:@10.20.72.168:1521/ECSS</span></div>
+                                </div>
+                            </div>
                             <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
                                 <div className="md:col-span-3">
                                     <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Alias Name</label>
@@ -566,7 +647,7 @@ export const OracleSync: React.FC = () => {
                                 </div>
                                 <div className="md:col-span-4">
                                     <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Connection String</label>
-                                    <input className={INPUT_STYLE} placeholder="jdbc:oracle:thin:..." value={newConn.connectionString || newConn.url || ''} onChange={e => setNewConn({...newConn, connectionString: e.target.value, url: e.target.value})} />
+                                    <input className={INPUT_STYLE} placeholder="jdbc:oracle:thin:@host:port:SID" value={newConn.connectionString || newConn.url || ''} onChange={e => setNewConn({...newConn, connectionString: e.target.value, url: e.target.value})} />
                                 </div>
                                 <div className="md:col-span-2">
                                     <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Username</label>
@@ -576,18 +657,31 @@ export const OracleSync: React.FC = () => {
                                     <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Password</label>
                                     <input className={INPUT_STYLE} type="password" placeholder="******" value={newConn.password || ''} onChange={e => setNewConn({...newConn, password: e.target.value})} />
                                 </div>
-                                <div className="md:col-span-1">
-                                    <button onClick={handleAddConnection} className={`w-full text-white h-[38px] rounded-lg flex items-center justify-center mb-[1px] ${configTab === 'source' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-purple-600 hover:bg-purple-700'}`}>
-                                        <Plus size={20} />
+                                <div className="md:col-span-1 flex gap-1">
+                                    <button onClick={() => handleTestConnection()} disabled={testingConnId !== null} className={`flex-1 text-white h-[38px] rounded-lg flex items-center justify-center text-xs font-bold ${testingConnId !== null ? 'bg-slate-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'}`} title="测试数据库连接">
+                                        {testingConnId !== null ? '测试中...' : '测试'}
+                                    </button>
+                                    {editingId ? (
+                                        <button onClick={handleCancelEdit} className="flex-1 text-white h-[38px] rounded-lg flex items-center justify-center text-xs font-bold bg-slate-500 hover:bg-slate-600" title="取消编辑">
+                                            ✕
+                                        </button>
+                                    ) : null}
+                                    <button onClick={handleAddConnection} className={`flex-1 text-white h-[38px] rounded-lg flex items-center justify-center ${configTab === 'source' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-purple-600 hover:bg-purple-700'}`} title={editingId ? '保存修改' : '添加连接'}>
+                                        {editingId ? '保存' : <Plus size={20} />}
                                     </button>
                                 </div>
                             </div>
+                            {testResult && testResult.id === (editingId || 'new') && (
+                                <div className={`mt-3 p-3 rounded-lg text-sm font-bold ${testResult.success ? 'bg-green-50 border border-green-200 text-green-800' : 'bg-red-50 border border-red-200 text-red-800'}`}>
+                                    {testResult.success ? '✓ 连接成功: ' : '✗ 连接失败: '} {testResult.message}
+                                </div>
+                            )}
                         </div>
 
-                        <div className="flex-1 overflow-y-auto p-6">
+                        <div className="flex-1 overflow-y-auto p-6 bg-white">
                             <div className="space-y-2">
                                 {(configTab === 'source' ? sourceConns : targetConns).map(conn => (
-                                    <div key={conn.id} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg hover:shadow-sm transition-shadow">
+                                    <div key={conn.id} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-lg hover:shadow-sm transition-shadow group">
                                         <div className="flex items-center gap-4 overflow-hidden">
                                             <div className={`w-8 h-8 rounded flex items-center justify-center font-bold shrink-0 text-white ${configTab === 'source' ? 'bg-blue-500' : 'bg-purple-500'}`}>
                                                 Or
@@ -596,16 +690,32 @@ export const OracleSync: React.FC = () => {
                                                 <div className="font-bold text-slate-800 text-sm truncate">{conn.name}</div>
                                                 <div className="text-xs text-slate-500 font-mono truncate max-w-md">{conn.url}</div>
                                             </div>
-                                            <div className="hidden md:block px-3 py-1 bg-slate-50 rounded text-xs font-bold text-slate-600 border border-slate-100">
+                                            <div className="hidden md:block px-3 py-1 bg-white rounded text-xs font-bold text-slate-600 border border-slate-100">
                                                 {conn.username}
                                             </div>
                                         </div>
-                                        <button 
-                                            onClick={(e) => handleDeleteConnection(e, conn.id, configTab)}
-                                            className="text-slate-400 hover:text-red-500 p-2 hover:bg-red-50 rounded transition-colors"
-                                        >
-                                            <Trash2 size={16} />
-                                        </button>
+                                        <div className="flex gap-1">
+                                            <button 
+                                                onClick={() => handleTestConnection(conn)}
+                                                className="text-slate-400 hover:text-green-500 p-2 hover:bg-green-50 rounded transition-colors opacity-0 group-hover:opacity-100"
+                                                title="测试连接"
+                                            >
+                                                <Zap size={16} />
+                                            </button>
+                                            <button 
+                                                onClick={() => handleEditConnection(conn)}
+                                                className="text-slate-400 hover:text-blue-500 p-2 hover:bg-blue-50 rounded transition-colors"
+                                                title="编辑连接"
+                                            >
+                                                <Edit2 size={16} />
+                                            </button>
+                                            <button 
+                                                onClick={(e) => handleDeleteConnection(e, conn.id, configTab)}
+                                                className="text-slate-400 hover:text-red-500 p-2 hover:bg-red-50 rounded transition-colors"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </div>
                                     </div>
                                 ))}
                                 {(configTab === 'source' ? sourceConns : targetConns).length === 0 && (

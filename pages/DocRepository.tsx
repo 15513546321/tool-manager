@@ -24,7 +24,8 @@ import {
   FileCode,
   Check,
   List,
-  AlignLeft
+  AlignLeft,
+  BookOpen
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import mammoth from 'mammoth';
@@ -702,7 +703,10 @@ export const DocRepository: React.FC = () => {
         {/* Header / Filter Area */}
         <div className="p-4 border-b border-slate-100 space-y-3 bg-white">
            <div className="flex items-center justify-between">
-             <h2 className="text-xl font-bold text-slate-800">知识库</h2>
+             <div className="flex items-center gap-2">
+               <BookOpen size={24} className="text-blue-600" />
+               <h2 className="text-xl font-bold text-slate-800">知识库</h2>
+             </div>
              <div className="flex gap-2">
                <button 
                  onClick={() => setIsCatManagerOpen(true)}
@@ -1010,7 +1014,7 @@ export const DocRepository: React.FC = () => {
                                 </div>
                                 <div className="flex-1 overflow-y-auto p-2 space-y-1">
                                     {categoryMap[selectedCatForEdit]?.map(sub => (
-                                        <div key={sub} className="flex justify-between items-center p-2 rounded bg-white border border-slate-100 shadow-sm">
+                                        <div key={sub} className="group flex justify-between items-center p-2 rounded bg-white border border-slate-100 shadow-sm hover:border-blue-200 hover:bg-blue-50 transition-colors">
                                             {editingSubCat === sub ? (
                                                 <div className="flex items-center gap-1 w-full">
                                                     <input 
@@ -1036,10 +1040,10 @@ export const DocRepository: React.FC = () => {
                                                 <>
                                                     <span className="truncate flex-1">{sub}</span>
                                                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity">
-                                                        <button onClick={() => { setEditingSubCat(sub); setEditSubCatValue(sub); }} className="text-slate-300 hover:text-blue-500 p-1">
+                                                        <button onClick={() => { setEditingSubCat(sub); setEditSubCatValue(sub); }} className="text-slate-400 hover:text-blue-500 p-1 rounded hover:bg-blue-100">
                                                             <Edit size={14} />
                                                         </button>
-                                                        <button onClick={() => handleDeleteSubCategory(selectedCatForEdit, sub)} className="text-slate-300 hover:text-red-500 p-1">
+                                                        <button onClick={() => handleDeleteSubCategory(selectedCatForEdit, sub)} className="text-slate-400 hover:text-red-500 p-1 rounded hover:bg-red-100">
                                                             <Trash2 size={14} />
                                                         </button>
                                                     </div>

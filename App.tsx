@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import './src/globals.css';
 import { Layout } from './components/Layout';
 import { Login } from './pages/Login';
 import { MenuManagement } from './pages/MenuManagement';
@@ -16,7 +17,7 @@ import { NacosSync } from './pages/sync/NacosSync';
 import { OracleSync } from './pages/sync/OracleSync';
 import { IpConfig } from './pages/admin/IpConfig';
 import { Suggestions } from './pages/Suggestions';
-import { Megaphone, ArrowRight, X, Clock, FileText } from 'lucide-react';
+import { Megaphone, ArrowRight, X, Clock, FileText, Download } from 'lucide-react';
 import { Database, TABLE } from './services/database';
 import { announcementApi } from './services/apiService';
 import { initializeAuditButtonTracking } from './services/auditButton';
@@ -47,7 +48,8 @@ const Dashboard = () => {
               {
                 updatedAt: data.announcement.updatedAt,
                 versionNumber: data.announcement.version,
-                fileName: ''
+                fileName: data.announcement.fileName || '',
+                fileContent: data.announcement.content || ''
               }
             ]
           });
@@ -61,7 +63,8 @@ const Dashboard = () => {
               {
                 updatedAt: data.announcement.updatedAt,
                 versionNumber: data.announcement.version,
-                fileName: ''
+                fileName: data.announcement.fileName || '',
+                fileContent: data.announcement.content || ''
               }
             ]
           });
@@ -83,6 +86,25 @@ const Dashboard = () => {
     }
   };
 
+  const handleDownloadAnnouncement = (version: any) => {
+    if (!version.fileContent || !version.fileName) {
+      alert('无可下载的文件');
+      return;
+    }
+
+    try {
+      const link = document.createElement('a');
+      link.href = version.fileContent;
+      link.download = version.fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error('Download failed:', error);
+      alert('下载失败，请重试');
+    }
+  };
+
   return (
     <div className="p-8 max-w-6xl mx-auto animate-in fade-in duration-500 relative">
       <div className="mb-8">
@@ -94,40 +116,59 @@ const Dashboard = () => {
       {announcement ? (
         <div 
             onClick={() => navigate('/announcement')}
-            className="bg-gradient-to-br from-indigo-600 to-blue-600 rounded-2xl p-8 text-white shadow-xl mb-10 relative overflow-hidden group cursor-pointer transition-transform hover:scale-[1.01]"
+            className="relative mb-10 group cursor-pointer overflow-hidden rounded-2xl transition-all duration-500 hover:shadow-xl"
         >
-          {/* Decorative Background Icon */}
-          <div className="absolute -right-6 -top-6 text-white opacity-10 transform rotate-12 group-hover:scale-110 transition-transform duration-500">
-             <Megaphone size={160} />
-          </div>
+          {/* Light Blue Background - Professional and Eye-catching */}
+          <div className="absolute inset-0 bg-gradient-to-br from-blue-50 via-cyan-50 to-blue-100 group-hover:from-blue-100 group-hover:via-cyan-100 group-hover:to-blue-200 transition-all duration-500"></div>
+          
+          {/* Top Accent Bar */}
+          <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-blue-400 via-cyan-400 to-blue-400"></div>
+          
+          {/* Decorative Elements */}
+          <div className="absolute -right-40 -top-40 w-80 h-80 bg-blue-200/30 rounded-full blur-3xl group-hover:scale-110 transition-transform duration-700"></div>
+          <div className="absolute -left-40 -bottom-40 w-96 h-96 bg-cyan-200/20 rounded-full blur-3xl group-hover:scale-105 transition-transform duration-700"></div>
+          
+          {/* Main Content Container */}
+          <div className="relative z-10 p-8 flex items-start gap-6">
+            {/* Icon Container */}
+            <div className="bg-white/70 backdrop-blur-sm p-4 rounded-xl shadow-md shrink-0 border border-blue-200 group-hover:bg-white/90 group-hover:shadow-lg transition-all duration-300">
+              <Megaphone className="w-8 h-8 text-blue-600" />
+            </div>
 
-          <div className="relative z-10 flex items-start gap-5">
-             <div className="bg-white/20 p-4 rounded-xl backdrop-blur-sm shadow-inner shrink-0">
-               <Megaphone className="w-8 h-8 text-white" />
-             </div>
-             <div className="flex-1">
-                <div className="flex items-center gap-3 mb-2">
-                   <span className="bg-rose-500 text-white text-[10px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider shadow-sm animate-pulse">
-                     Latest Notice
-                   </span>
-                   <span className="text-blue-100 text-xs font-mono bg-blue-900/30 px-2 py-1 rounded">
-                     {announcement.versions?.[0]?.updatedAt?.split(' ')[0]}
-                   </span>
-                </div>
-                <h3 className="text-2xl font-bold mb-2 leading-tight">{announcement.title}</h3>
-                <p className="text-blue-100 text-sm leading-relaxed max-w-2xl line-clamp-2">
-                  {announcement.description || '暂无详细描述...'}
-                </p>
-                <div className="mt-4 flex items-center gap-2 text-xs font-bold text-blue-200 group-hover:text-white transition-colors">
-                   查看详情 <ArrowRight size={14} />
-                </div>
-             </div>
+            {/* Text Content */}
+            <div className="flex-1">
+              {/* Badges Row */}
+              <div className="flex items-center gap-3 mb-4 flex-wrap">
+                <span className="bg-white/80 backdrop-blur-sm text-blue-600 text-[11px] font-bold px-4 py-1.5 rounded-full uppercase tracking-wider border border-blue-300 shadow-sm group-hover:bg-white transition-all duration-300">
+                  📢 最新公告
+                </span>
+                <span className="text-blue-700 text-xs font-mono bg-white/70 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-blue-200">
+                  {announcement.versions?.[0]?.updatedAt?.split(' ')[0]}
+                </span>
+              </div>
+
+              {/* Title */}
+              <h3 className="text-2xl font-bold mb-3 leading-tight text-blue-900 group-hover:text-blue-800 transition-all duration-300">
+                {announcement.title}
+              </h3>
+
+              {/* Description */}
+              <p className="text-blue-800 text-base leading-relaxed max-w-3xl line-clamp-2 mb-4">
+                {announcement.description || '点击查看完整内容...'}
+              </p>
+
+              {/* Action Hint */}
+              <div className="flex items-center gap-2 text-blue-700 text-sm group-hover:text-blue-900 transition-all duration-300 font-medium">
+                <ArrowRight size={16} className="group-hover:translate-x-2 transition-transform duration-300" />
+                <span>点击进入公告详情</span>
+              </div>
+            </div>
           </div>
         </div>
       ) : (
-         <div className="bg-slate-100 rounded-xl p-8 text-center border-2 border-dashed border-slate-300 mb-10">
-            <Megaphone className="mx-auto text-slate-400 mb-2" size={32} />
-            <p className="text-slate-500 font-medium">暂无最新公告</p>
+         <div className="bg-blue-50 rounded-xl p-8 text-center border border-blue-200 mb-10">
+            <Megaphone className="mx-auto text-blue-400 mb-2" size={32} />
+            <p className="text-blue-600 font-medium">暂无最新公告</p>
          </div>
       )}
 
@@ -179,10 +220,12 @@ const Dashboard = () => {
                    
                    <div className="flex items-center gap-4 text-xs text-slate-400 mb-4 pb-4 border-b border-slate-100">
                        <span className="flex items-center gap-1"><Clock size={12}/> {announcement.versions[0]?.updatedAt}</span>
-                       <span className="flex items-center gap-1">
-                           <FileText size={12}/> 
-                           {announcement.versions[0]?.fileName ? '包含附件' : '无附件'}
-                       </span>
+                       {announcement.versions[0]?.fileName && (
+                         <span className="flex items-center gap-1">
+                             <FileText size={12}/> 
+                             包含附件
+                         </span>
+                       )}
                    </div>
 
                    <div className="text-slate-600 text-sm leading-relaxed max-h-60 overflow-y-auto bg-slate-50 p-4 rounded-lg border border-slate-100">
@@ -198,6 +241,14 @@ const Dashboard = () => {
                    >
                      关闭
                    </button>
+                   {announcement.versions[0]?.fileName && announcement.versions[0]?.fileContent && (
+                     <button 
+                       onClick={() => handleDownloadAnnouncement(announcement.versions[0])}
+                       className="px-4 py-2 bg-slate-100 text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-200 transition-colors flex items-center gap-2"
+                     >
+                       <Download size={14}/> 下载附件
+                     </button>
+                   )}
                    <button 
                      onClick={() => navigate('/announcement')}
                      className="px-5 py-2 bg-blue-600 text-white text-sm font-bold rounded-lg shadow-lg shadow-blue-500/30 hover:bg-blue-700 transition-colors flex items-center gap-2"

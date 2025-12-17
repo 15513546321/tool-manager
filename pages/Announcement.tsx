@@ -63,11 +63,11 @@ export const Announcement: React.FC = () => {
             {
               id: 'v' + ann.id,
               versionNumber: ann.version,
-              fileName: '',
+              fileName: ann.fileName || '',
               fileContent: ann.content || '',
               updatedAt: new Date(ann.updatedAt).toLocaleString(),
               updatedBy: ann.updatedBy || 'admin',
-              size: '0KB'
+              size: ann.fileSize || '0KB'
             }
           ]
         }));
@@ -212,6 +212,26 @@ export const Announcement: React.FC = () => {
       document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
+  const handleDownload = (version: any) => {
+      if (!version.fileContent || !version.fileName) {
+          alert('无可下载的文件');
+          return;
+      }
+      
+      try {
+          const link = document.createElement('a');
+          link.href = version.fileContent;
+          link.download = version.fileName;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          recordAction('Download Announcement', `Downloaded: ${version.fileName}`);
+      } catch (error) {
+          console.error('Download failed:', error);
+          alert('下载失败，请重试');
+      }
+  };
+
   const handleSubmit = async () => {
     // Logic to finalize save (called after file read or immediately if no file)
     const finalizeSubmit = async (fileData: { content: string, name: string, size: string }) => {
@@ -220,6 +240,8 @@ export const Announcement: React.FC = () => {
             title: formData.title,
             description: formData.description,
             content: fileData.content,
+            fileName: fileData.name || null,
+            fileSize: fileData.size,
             version: formData.versionNumber,
             status: 'PUBLISHED',
             createdBy: 'admin',
@@ -227,9 +249,9 @@ export const Announcement: React.FC = () => {
           };
 
           if (selectedItem && !selectedItem.id.includes('-create-')) {
-            // Update existing
+            // Update existing - backend will handle version history
             await announcementApi.update(parseInt(selectedItem.id), dto);
-            recordAction('Update Announcement', `Updated: ${formData.title}`);
+            recordAction('Update Announcement', `Updated: ${formData.title} (v${formData.versionNumber})`);
           } else {
             // Create New
             await announcementApi.create(dto);
@@ -238,28 +260,52 @@ export const Announcement: React.FC = () => {
           
           // Reload announcements
           const announcements = await announcementApi.getAll();
-          const docItems: DocItem[] = announcements.map((ann: any) => ({
-            id: ann.id.toString(),
-            category: 'System',
-            subCategory: ann.category || 'Announcement',
-            title: ann.title,
-            description: ann.description,
-            versions: [
-              {
-                id: 'v' + ann.id,
-                versionNumber: ann.version,
-                fileName: '',
-                fileContent: ann.content || '',
-                updatedAt: new Date(ann.updatedAt).toLocaleString(),
-                updatedBy: ann.updatedBy || 'admin',
-                size: '0KB'
-              }
-            ]
-          }));
+          const docItems: DocItem[] = announcements.map((ann: any) => {
+            // Support multiple versions - build version history from API response
+            const versions: DocVersion[] = [];
+            
+            // Add current version
+            versions.push({
+              id: 'v' + ann.id + '_' + ann.version,
+              versionNumber: ann.version,
+              fileName: ann.fileName || '',
+              fileContent: ann.content || '',
+              updatedAt: new Date(ann.updatedAt).toLocaleString(),
+              updatedBy: ann.updatedBy || 'admin',
+              size: ann.fileSize || '0KB'
+            });
+            
+            // If API returns version history, add them (if implemented in future)
+            if (ann.versionHistory && Array.isArray(ann.versionHistory)) {
+              ann.versionHistory.forEach((v: any, idx: number) => {
+                if (idx > 0) { // Skip first one as we already added it
+                  versions.push({
+                    id: 'v' + ann.id + '_' + v.version,
+                    versionNumber: v.version,
+                    fileName: v.fileName || '',
+                    fileContent: v.content || '',
+                    updatedAt: new Date(v.updatedAt).toLocaleString(),
+                    updatedBy: v.updatedBy || 'admin',
+                    size: v.fileSize || '0KB'
+                  });
+                }
+              });
+            }
+            
+            return {
+              id: ann.id.toString(),
+              category: 'System',
+              subCategory: ann.category || 'Announcement',
+              title: ann.title,
+              description: ann.description,
+              versions
+            };
+          });
           setItems(docItems);
           setIsModalOpen(false);
         } catch (error) {
           console.error('Failed to save announcement:', error);
+          alert('保存失败，请重试');
         }
     };
 
@@ -293,10 +339,14 @@ export const Announcement: React.FC = () => {
 
   const handleOpenUpdate = () => {
       if(!selectedItem) return;
+      const currentVersion = selectedItem.versions[0];
+      // Auto-increment version number
+      const nextVersion = (parseFloat(currentVersion.versionNumber) + 0.1).toFixed(1);
+      
       setFormData({ 
           title: selectedItem.title, 
           description: selectedItem.description || '', 
-          versionNumber: (parseFloat(selectedItem.versions[0].versionNumber) + 0.1).toFixed(1)
+          versionNumber: nextVersion
       });
       setFile(null);
       setIsModalOpen(true);
@@ -405,8 +455,8 @@ export const Announcement: React.FC = () => {
                              <button onClick={handleOpenUpdate} className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 text-sm font-medium"><Edit size={16}/> 更新</button>
                         )}
                         {/* Only show download if file content exists */}
-                        {activeVersion.fileContent && (
-                            <button className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-600 rounded hover:bg-slate-200 text-sm font-medium"><Download size={16}/> 下载</button>
+                        {activeVersion.fileContent && activeVersion.fileName && (
+                            <button onClick={() => handleDownload(activeVersion)} className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-600 rounded hover:bg-slate-200 text-sm font-medium"><Download size={16}/> 下载</button>
                         )}
                     </div>
                 </div>

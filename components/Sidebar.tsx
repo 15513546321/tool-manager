@@ -20,7 +20,8 @@ import {
   ArrowLeftRight,
   Lightbulb,
   Network,
-  GitPullRequest
+  GitPullRequest,
+  Zap
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -31,6 +32,7 @@ const IconMap: Record<string, React.ElementType> = {
   'dashboard': LayoutDashboard,
   'settings': Settings,
   'interface': FileCode,
+  'api': Zap,
   'docs': FileText,
   'code': Code,
   'params': Database,

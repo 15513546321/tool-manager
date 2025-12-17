@@ -91,7 +91,7 @@ public class AnnouncementService {
     }
 
     private AnnouncementDto convertToDto(Announcement announcement) {
-        return new AnnouncementDto(
+        AnnouncementDto dto = new AnnouncementDto(
                 announcement.getId(),
                 announcement.getTitle(),
                 announcement.getDescription(),
@@ -101,7 +101,10 @@ public class AnnouncementService {
                 announcement.getUpdatedAt(),
                 announcement.getCreatedBy(),
                 announcement.getUpdatedBy(),
-                announcement.getStatus()
+                announcement.getStatus(),
+                announcement.getFileName(),
+                announcement.getFileSize()
         );
+        return dto;
     }
 }

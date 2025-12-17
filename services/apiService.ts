@@ -3,8 +3,9 @@
  * Handles all HTTP requests to the Spring Boot backend
  */
 
-// Get API base URL from environment or default to localhost:8080
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
+// Get API base URL - use relative path to support any deployment environment
+// This way it works whether deployed on localhost, Ubuntu server, or any other host
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -292,6 +293,16 @@ export const dbConnectionApi = {
     });
     if (!res.ok) throw new Error('Failed to delete database connection');
   },
+
+  testConnection: async (connectionString: string, username: string, password: string) => {
+    const res = await fetch(`${API_BASE_URL}/db-connection/test-connection`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ connectionString, username, password }),
+    });
+    if (!res.ok) throw new Error('Failed to test database connection');
+    return res.json();
+  },
 };
 
 // Code Template API
@@ -402,7 +413,239 @@ export const documentApi = {
   },
 };
 
+// Document Category APIs
+export const documentCategoryApi = {
+  getAll: async () => {
+    const res = await fetch(`${API_BASE_URL}/document-category/all`);
+    if (!res.ok) throw new Error('Failed to fetch categories');
+    return res.json();
+  },
+
+  getByName: async (categoryName: string) => {
+    const res = await fetch(`${API_BASE_URL}/document-category/${encodeURIComponent(categoryName)}`);
+    if (!res.ok) throw new Error('Failed to fetch category');
+    return res.json();
+  },
+
+  create: async (data: any) => {
+    const res = await fetch(`${API_BASE_URL}/document-category`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to create category');
+    return res.json();
+  },
+
+  delete: async (categoryName: string) => {
+    const res = await fetch(`${API_BASE_URL}/document-category/${encodeURIComponent(categoryName)}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error('Failed to delete category');
+    return res.json();
+  },
+
+  rename: async (oldName: string, newName: string) => {
+    const res = await fetch(`${API_BASE_URL}/document-category/${encodeURIComponent(oldName)}/rename?newName=${encodeURIComponent(newName)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (!res.ok) throw new Error('Failed to rename category');
+    return res.json();
+  },
+
+  addSubCategory: async (categoryName: string, subCategoryName: string) => {
+    const res = await fetch(`${API_BASE_URL}/document-category/${encodeURIComponent(categoryName)}/sub-categories?subCategoryName=${encodeURIComponent(subCategoryName)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (!res.ok) throw new Error('Failed to add sub-category');
+    return res.json();
+  },
+
+  deleteSubCategory: async (categoryName: string, subCategoryName: string) => {
+    const res = await fetch(`${API_BASE_URL}/document-category/${encodeURIComponent(categoryName)}/sub-categories/${encodeURIComponent(subCategoryName)}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error('Failed to delete sub-category');
+    return res.json();
+  },
+
+  renameSubCategory: async (categoryName: string, oldSubName: string, newSubName: string) => {
+    const res = await fetch(`${API_BASE_URL}/document-category/${encodeURIComponent(categoryName)}/sub-categories/${encodeURIComponent(oldSubName)}/rename?newSubName=${encodeURIComponent(newSubName)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (!res.ok) throw new Error('Failed to rename sub-category');
+    return res.json();
+  },
+};
+
+// Generic HTTP methods for custom API calls
+const httpMethods = {
+  get: async (url: string) => {
+    const res = await fetch(`${API_BASE_URL}${url}`);
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error(`GET ${url} failed:`, res.status, errorText);
+      throw new Error(`${res.status}: ${errorText || 'Unknown error'}`);
+    }
+    return res.json();
+  },
+
+  post: async (url: string, data?: any) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}${url}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data || {}),
+      });
+      
+      // 不管状态码如何都尝试解析 JSON
+      const jsonResponse = await res.json().catch(() => null);
+      
+      if (!res.ok) {
+        console.error(`POST ${url} failed:`, res.status, jsonResponse);
+        throw new Error(`${res.status}: ${jsonResponse?.message || jsonResponse?.error || 'Unknown error'}`);
+      }
+      
+      return jsonResponse;
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        throw new Error('Invalid JSON response from server');
+      }
+      throw error;
+    }
+  },
+
+  put: async (url: string, data: any) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}${url}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      
+      const jsonResponse = await res.json().catch(() => null);
+      
+      if (!res.ok) {
+        console.error(`PUT ${url} failed:`, res.status, jsonResponse);
+        throw new Error(`${res.status}: ${jsonResponse?.message || jsonResponse?.error || 'Unknown error'}`);
+      }
+      
+      return jsonResponse;
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        throw new Error('Invalid JSON response from server');
+      }
+      throw error;
+    }
+  },
+
+  delete: async (url: string) => {
+    const res = await fetch(`${API_BASE_URL}${url}`, {
+      method: 'DELETE',
+    });
+    
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error(`DELETE ${url} failed:`, res.status, errorText);
+      throw new Error(`${res.status}: ${errorText || 'Unknown error'}`);
+    }
+    
+    // DELETE 可能没有响应体
+    const contentType = res.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      return res.json();
+    }
+    return null;
+  },
+};
+
+// Nacos Sync API
+export const nacosApi = {
+  testConnection: async (data: any) => {
+    const res = await fetch(`${API_BASE_URL}/nacos-sync/test-connection`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to test connection');
+    return res.json();
+  },
+
+  queryConfigs: async () => {
+    const res = await fetch(`${API_BASE_URL}/nacos-sync/configs`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (!res.ok) throw new Error('Failed to query configs');
+    return res.json();
+  },
+
+  saveConfig: async (data: any) => {
+    const res = await fetch(`${API_BASE_URL}/nacos-sync/configs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to save config');
+    return res.json();
+  },
+
+  updateConfig: async (id: string, data: any) => {
+    const res = await fetch(`${API_BASE_URL}/nacos-sync/configs/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to update config');
+    return res.json();
+  },
+
+  deleteConfig: async (id: string, data: any) => {
+    const res = await fetch(`${API_BASE_URL}/nacos-sync/configs/${id}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to delete config');
+    return res.json();
+  },
+
+  getConfig: async (data: any) => {
+    const res = await fetch(`${API_BASE_URL}/nacos-sync/get-config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to get config');
+    return res.json();
+  },
+
+  compare: async (data: any) => {
+    const res = await fetch(`${API_BASE_URL}/nacos-sync/compare`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to compare configs');
+    return res.json();
+  },
+
+  compareDetailed: async (data: any) => {
+    const res = await fetch(`${API_BASE_URL}/nacos-sync/compare-detailed`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to compare configs');
+    return res.json();
+  },
+};
+
 export const apiService = {
+  ...httpMethods,
   announcementApi,
   menuApi,
   systemParameterApi,
@@ -411,4 +654,6 @@ export const apiService = {
   dbConnectionApi,
   codeTemplateApi,
   documentApi,
+  documentCategoryApi,
+  nacosApi,
 };

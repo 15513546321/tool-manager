@@ -300,15 +300,67 @@ rm -f data/toolmanager*
 # 重启应用
 ```
 
+### Nacos 同步故障排查
+
+**现已支持 Nacos 1.4.0 和 2.3.1+ 版本！**
+
+✨ **最新改进**:
+- ✅ 自动版本检测 (1.4.0 vs 2.x)
+- ✅ 双版本认证支持
+- ✅ 智能认证回退机制
+- ✅ 版本信息显示
+- 📖 [详细版本支持文档](./NACOS_VERSION_SUPPORT.md)
+
+**如遇到 Nacos 连接问题，请按顺序参考：**
+
+1. **快速参考** (新增)
+   - [⚡ Nacos 快速参考](./NACOS_QUICK_REFERENCE.md) - 快速开始指南
+   - [🧪 Nacos 快速测试](./NACOS_QUICK_TEST.md) - 快速测试脚本
+
+2. **快速诊断**（推荐）
+   - Windows: `.\nacos-test.ps1 http://localhost:8848 nacos nacos`
+   - Linux/Mac: `./nacos-test.sh http://localhost:8848 nacos nacos`
+   - 自动检查网络连接、版本、认证
+
+3. **详细故障排查指南**
+   - [📖 Nacos 配置同步故障排查](./NACOS_TROUBLESHOOTING.md)
+   - [📋 Nacos 多版本解决方案](./NACOS_SOLUTION.md) - 完整实现细节
+   - 常见问题及解决方案汇总
+   - 配置参数示例（本地/远程/云端）
+
+4. **浏览器调试指南**
+   - [🔍 浏览器开发者工具调试](./BROWSER_DEBUG_GUIDE.md)
+   - 使用 F12 Console 查看详细日志
+   - Network 标签查看 API 请求/响应
+   - 控制台直接测试 Nacos 连接
+
 更多信息见 [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)
 
 ---
 
 ## 📚 文档
 
+### 快速开始
 - [🚀 快速开始指南](./QUICK_START.md) - 最快上手
+- [⚡ Nacos 快速参考](./NACOS_QUICK_REFERENCE.md) - 新增多版本支持
+
+### 部署与配置
 - [📦 部署指南](./DEPLOYMENT_GUIDE.md) - 完整部署说明
 - [✅ 功能完整性说明](./ITERATION_v2.0_COMPLETE.md) - 功能清单
+
+### Nacos 配置中心（已升级）
+- [🔧 Nacos 同步故障排查](./NACOS_TROUBLESHOOTING.md) - Nacos 问题诊断
+- [📋 Nacos 多版本解决方案](./NACOS_SOLUTION.md) - 版本兼容性完整实现
+- [📖 Nacos 版本支持详情](./NACOS_VERSION_SUPPORT.md) - 1.4.0 & 2.3.1+ 支持
+- [🧪 Nacos 快速测试指南](./NACOS_QUICK_TEST.md) - 快速验证修复
+- [📊 解决方案完成报告](./SOLUTION_REPORT.md) - 问题解决总结
+
+### 诊断工具
+- [🔍 浏览器调试指南](./BROWSER_DEBUG_GUIDE.md) - 开发者工具诊断
+- [⚙️ Nacos 测试脚本](./nacos-test.ps1) - Windows PowerShell 版本
+- [⚙️ Nacos 测试脚本](./nacos-test.bat) - Windows CMD 版本
+- [⚙️ 诊断工具](./nacos-diagnostics.ps1) - Windows 自动诊断脚本
+- [⚙️ 诊断工具](./nacos-diagnostics.sh) - Linux/Mac 自动诊断脚本
 
 ---
 

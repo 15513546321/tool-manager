@@ -100,34 +100,56 @@ export const MenuManagement: React.FC = () => {
   };
 
   const handleSave = async (id: string) => {
-    const updateRecursive = (items: MenuItem[]): MenuItem[] => {
-      return items.map(item => {
-        if (item.id === id) return { ...item, name: editName };
-        if (item.children) return { ...item, children: updateRecursive(item.children) };
-        return item;
-      });
-    };
+    if (!editName.trim()) {
+      alert('菜单名称不能为空');
+      return;
+    }
 
-    const newMenus = updateRecursive(menus);
     try {
       const target = findMenuById(menus, id);
-      if (target) {
-        await menuApi.update(id, {
-          menuId: id,
-          name: editName,
-          path: target.path,
-          icon: target.icon,
-          visible: target.visible,
-          parentId: (target as any).parentId,
-          updatedBy: 'admin'
-        });
-        setMenus(newMenus);
-        recordAction('系统设置 - 菜单管理', `按钮:保存 - 修改菜单 [ID:${id}] 名称为 "${editName}"`);
+      if (!target) {
+        alert('菜单项不存在');
+        setEditingId(null);
+        setEditName('');
+        return;
       }
+
+      const updatePayload = {
+        menuId: id,
+        name: editName.trim(),
+        path: target.path,
+        icon: target.icon,
+        visible: target.visible,
+        parentId: (target as any).parentId,
+        sortOrder: (target as any).sortOrder || 0,
+        updatedBy: 'admin'
+      };
+      
+      console.log('Saving menu name for:', id, 'Payload:', updatePayload);
+      const response = await menuApi.update(id, updatePayload);
+      console.log('Menu update response:', response);
+      
+      // 更新本地状态
+      const updateRecursive = (items: MenuItem[]): MenuItem[] => {
+        return items.map(item => {
+          if (item.id === id) return { ...item, name: editName.trim() };
+          if (item.children) return { ...item, children: updateRecursive(item.children) };
+          return item;
+        });
+      };
+      
+      const newMenus = updateRecursive(menus);
+      setMenus(newMenus);
+      recordAction('系统设置 - 菜单管理', `修改菜单 [${id}] 名称为 "${editName.trim()}"`);
+      alert('菜单名称已更新');
+      setEditingId(null);
+      setEditName('');
     } catch (error) {
       console.error('Failed to save menu:', error);
+      alert(`菜单名称修改失败: ${error instanceof Error ? error.message : '未知错误'}`);
+      setEditingId(null);
+      setEditName('');
     }
-    setEditingId(null);
   };
 
   const findMenuById = (items: MenuItem[], id: string): MenuItem | null => {
@@ -141,33 +163,46 @@ export const MenuManagement: React.FC = () => {
     return null;
   };
 
-  const handleToggleVisible = async (id: string, currentVisible: boolean) => {
-    const updateRecursive = (items: MenuItem[]): MenuItem[] => {
-      return items.map(item => {
-        if (item.id === id) return { ...item, visible: !currentVisible };
-        if (item.children) return { ...item, children: updateRecursive(item.children) };
-        return item;
-      });
-    };
-    
-    const newMenus = updateRecursive(menus);
+  const handleToggleVisible = async (id: string) => {
     try {
       const target = findMenuById(menus, id);
-      if (target) {
-        await menuApi.update(id, {
-          menuId: id,
-          name: target.name,
-          path: target.path,
-          icon: target.icon,
-          visible: !currentVisible,
-          parentId: (target as any).parentId,
-          updatedBy: 'admin'
-        });
-        setMenus(newMenus);
-        recordAction('系统设置 - 菜单管理', `按钮:上下线 - 菜单 [ID:${id}] 状态变更为 ${!currentVisible ? '上线' : '下线'}`);
+      if (!target) {
+        alert('菜单项不存在');
+        return;
       }
+
+      const newVisibleStatus = !target.visible;
+      const updatePayload = {
+        menuId: id,
+        name: target.name,
+        path: target.path,
+        icon: target.icon,
+        visible: newVisibleStatus,
+        parentId: (target as any).parentId,
+        sortOrder: (target as any).sortOrder || 0,
+        updatedBy: 'admin'
+      };
+      
+      console.log('Toggling visibility for menu:', id, 'New status:', newVisibleStatus);
+      const response = await menuApi.update(id, updatePayload);
+      console.log('Toggle visibility response:', response);
+      
+      // 更新本地状态
+      const updateRecursive = (items: MenuItem[]): MenuItem[] => {
+        return items.map(item => {
+          if (item.id === id) return { ...item, visible: newVisibleStatus };
+          if (item.children) return { ...item, children: updateRecursive(item.children) };
+          return item;
+        });
+      };
+      
+      const newMenus = updateRecursive(menus);
+      setMenus(newMenus);
+      recordAction('系统设置 - 菜单管理', `菜单 [${id}] 状态变更为 ${newVisibleStatus ? '上线' : '下线'}`);
+      alert(`菜单已${newVisibleStatus ? '上线' : '下线'}`);
     } catch (error) {
       console.error('Failed to toggle menu visibility:', error);
+      alert(`菜单上下线操作失败: ${error instanceof Error ? error.message : '未知错误'}`);
     }
   };
 
@@ -205,7 +240,7 @@ export const MenuManagement: React.FC = () => {
           <div className="flex items-center gap-2">
             {/* Online/Offline Toggle */}
             <button 
-                onClick={() => handleToggleVisible(item.id, item.visible !== false)}
+                onClick={() => handleToggleVisible(item.id)}
                 className={`p-1.5 rounded flex items-center gap-1 text-xs font-medium transition-colors ${isOffline ? 'text-slate-500 hover:bg-slate-200' : 'text-green-600 hover:bg-green-50'}`}
                 title={isOffline ? "点击上线" : "点击下线"}
             >

@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { Shield, Plus, Trash2 } from 'lucide-react';
-import { getIpMappings, saveIpMappings, IpMapping } from '../../services/auditService';
+import React, { useState, useEffect, useRef } from 'react';
+import { Shield, Plus, Trash2, Download, Upload } from 'lucide-react';
+import { getIpMappings, saveIpMappings, IpMapping, recordAction } from '../../services/auditService';
 import { ConfirmModal } from '../../components/ConfirmModal';
+import * as XLSX from 'xlsx';
 
 const INPUT_STYLE = "w-full pl-3 pr-4 py-2 border border-slate-200 rounded-lg bg-[#f8fafc] focus:bg-white focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm text-slate-700 placeholder:text-slate-400";
 
@@ -9,6 +10,7 @@ export const IpConfig: React.FC = () => {
   const [mappings, setMappings] = useState<IpMapping[]>([]);
   const [newIp, setNewIp] = useState('');
   const [newName, setNewName] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Confirmation State
   const [confirmState, setConfirmState] = useState<{
@@ -39,6 +41,7 @@ export const IpConfig: React.FC = () => {
         setMappings(updated);
         setNewIp('');
         setNewName('');
+        recordAction('系统设置 - IP映射配置', `添加IP映射: ${newIp} -> ${newName}`);
       } catch (err) {
         alert('添加失败');
       }
@@ -62,6 +65,8 @@ export const IpConfig: React.FC = () => {
               if (!resp.ok) {
                 alert('删除失败');
                 setMappings(mappings); // Restore
+              } else {
+                recordAction('系统设置 - IP映射配置', `删除IP映射: ${ip}`);
               }
             } catch (err) {
               alert('删除失败');
@@ -69,6 +74,110 @@ export const IpConfig: React.FC = () => {
             }
         }
     });
+  };
+
+  const handleDownloadTemplate = () => {
+    const wb = XLSX.utils.book_new();
+    
+    // 说明Sheet
+    const instructionData = [
+      ['IP映射批量导入模板说明'],
+      [''],
+      ['版本号', '1.0'],
+      ['生成时间', new Date().toLocaleString('zh-CN')],
+      [''],
+      ['使用说明'],
+      ['在下面的 "IP映射数据" Sheet 中输入或修改数据'],
+      ['IP 地址列: 输入有效的 IPv4 地址，如 192.168.1.100'],
+      ['设备名称列: 输入设备的描述名称，如 "测试机1"'],
+      [''],
+      ['注意事项'],
+      ['- 表头行必须保留，不要删除或修改'],
+      ['- IP 地址需唯一，重复的 IP 会被拒绝'],
+      ['- 所有字段都是必填项'],
+    ];
+    
+    const ws1 = XLSX.utils.aoa_to_sheet(instructionData);
+    ws1['!cols'] = [{ wch: 40 }];
+    XLSX.utils.book_append_sheet(wb, ws1, '说明');
+
+    // 数据Sheet
+    const dataSheet = [
+      ['IP 地址', '设备名称'],
+      ...mappings.map(m => [m.ip, m.name])
+    ];
+    
+    const ws2 = XLSX.utils.aoa_to_sheet(dataSheet);
+    ws2['!cols'] = [{ wch: 20 }, { wch: 25 }];
+    XLSX.utils.book_append_sheet(wb, ws2, 'IP映射数据');
+
+    XLSX.writeFile(wb, `ip_mapping_template_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    recordAction('系统设置 - IP映射配置', '下载导入模板');
+  };
+
+  const handleImportFile = async (file: File) => {
+    try {
+      const data = new Uint8Array(await file.arrayBuffer());
+      const workbook = XLSX.read(data, { type: 'array' });
+      
+      const sheet = workbook.Sheets['IP映射数据'];
+      if (!sheet) {
+        alert('错误: 找不到 "IP映射数据" Sheet');
+        return;
+      }
+
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 0 }) as any[];
+      let newMappings: IpMapping[] = [];
+
+      for (const row of rows) {
+        const ip = (row['IP 地址'] || '').toString().trim();
+        const name = (row['设备名称'] || '').toString().trim();
+
+        if (!ip || !name) {
+          alert(`行数据不完整: IP=${ip}, 名称=${name}`);
+          return;
+        }
+
+        // 验证 IP 格式
+        if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ip)) {
+          alert(`IP 地址格式错误: ${ip}`);
+          return;
+        }
+
+        newMappings.push({ ip, name });
+      }
+
+      if (newMappings.length === 0) {
+        alert('没有找到有效数据');
+        return;
+      }
+
+      // 检查重复
+      const existingIps = new Set(mappings.map(m => m.ip));
+      const duplicates = newMappings.filter(m => existingIps.has(m.ip));
+      
+      if (duplicates.length > 0) {
+        const duplicateIps = duplicates.map(m => m.ip).join(', ');
+        alert(`以下 IP 已存在，将被跳过: ${duplicateIps}`);
+        // 只添加不重复的
+        newMappings = newMappings.filter(m => !existingIps.has(m.ip));
+      }
+
+      // 批量保存
+      await saveIpMappings(newMappings);
+      setMappings([...mappings, ...newMappings]);
+      
+      recordAction('系统设置 - IP映射配置', `批量导入IP映射: ${newMappings.length}条`);
+      alert(`✅ 成功导入 ${newMappings.length} 条 IP 映射`);
+
+      // 清空文件输入
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    } catch (err) {
+      console.error('Import failed:', err);
+      alert(`导入失败: ${err instanceof Error ? err.message : '未知错误'}`);
+    }
   };
 
   return (
@@ -123,6 +232,29 @@ export const IpConfig: React.FC = () => {
                 >
                     <Plus size={18} /> 添加映射
                 </button>
+            </div>
+
+            {/* Batch Import/Export Buttons */}
+            <div className="flex gap-2 mt-4">
+                <button 
+                    onClick={handleDownloadTemplate}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm transition-colors flex items-center gap-2"
+                >
+                    <Download size={18} /> 下载导入模板
+                </button>
+                <button 
+                    onClick={() => fileInputRef.current?.click()}
+                    className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm transition-colors flex items-center gap-2"
+                >
+                    <Upload size={18} /> 批量导入
+                </button>
+                <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".xlsx"
+                    onChange={(e) => e.target.files?.[0] && handleImportFile(e.target.files[0])}
+                    className="hidden"
+                />
             </div>
 
             {/* List */}

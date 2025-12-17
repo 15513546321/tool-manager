@@ -4,19 +4,17 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class SuggestionDto {
+public class DocumentCategoryDto {
     private Long id;
-    private String title;
-    private String content;
-    private String category;
-    private Integer priority;
-    private String status;
+    private String categoryName;
+    private List<String> subCategories;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private String createdBy;
-    private String ipAddress;
+    private String updatedBy;
 }

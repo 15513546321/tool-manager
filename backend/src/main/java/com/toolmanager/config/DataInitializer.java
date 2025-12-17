@@ -40,7 +40,7 @@ public class DataInitializer implements CommandLineRunner {
             menuItemRepository.save(new MenuItem(null, "1", "首页", "/dashboard", "dashboard", true, null, 1, LocalDateTime.now(), LocalDateTime.now(), "admin"));
             menuItemRepository.save(new MenuItem(null, "6", "公告通知", "/announcement", "docs", true, null, 2, LocalDateTime.now(), LocalDateTime.now(), "admin"));
             menuItemRepository.save(new MenuItem(null, "10", "优化建议", "/suggestions", "suggestions", true, null, 3, LocalDateTime.now(), LocalDateTime.now(), "admin"));
-            menuItemRepository.save(new MenuItem(null, "2", "接口管理", "/interface", "interface", true, null, 4, LocalDateTime.now(), LocalDateTime.now(), "admin"));
+            menuItemRepository.save(new MenuItem(null, "2", "接口管理", "/interface", "api", true, null, 4, LocalDateTime.now(), LocalDateTime.now(), "admin"));
             menuItemRepository.save(new MenuItem(null, "11", "数据同步", "/sync", "sync", true, null, 5, LocalDateTime.now(), LocalDateTime.now(), "admin"));
             menuItemRepository.save(new MenuItem(null, "9", "GitLab 报表", "/gitlab-reports", "gitlab", true, null, 6, LocalDateTime.now(), LocalDateTime.now(), "admin"));
             menuItemRepository.save(new MenuItem(null, "12", "Gitee管理", "/gitee", "gitee", true, null, 7, LocalDateTime.now(), LocalDateTime.now(), "admin"));

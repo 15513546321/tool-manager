@@ -4,6 +4,7 @@ import { Plus, Trash2, Filter, Search, X } from 'lucide-react';
 import { Database, TABLE } from '../services/database';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { systemParameterApi } from '../services/apiService';
+import { recordAction } from '../services/auditService';
 
 const mockParams: ParameterConfig[] = [
   { id: '1', category: 'System', subCategory: 'Timeout', key: 'SESSION_TIMEOUT', value: '3000', description: 'Session timeout in seconds' },
@@ -103,6 +104,7 @@ export const ParameterConfigPage: React.FC = () => {
   const handleAdd = () => {
     if (newParam.key && newParam.value && newParam.category) {
       saveParams([...params, { ...newParam, id: Date.now().toString() } as ParameterConfig]);
+      recordAction('系统设置 - 参数配置', `添加参数: ${newParam.key}=${newParam.value}`);
       setIsAdding(false);
       setNewParam({ category: 'System', subCategory: 'General' });
     }
@@ -118,6 +120,7 @@ export const ParameterConfigPage: React.FC = () => {
             try {
               if (paramToDelete) {
                 await systemParameterApi.delete(paramToDelete.key);
+                recordAction('系统设置 - 参数配置', `删除参数: ${paramToDelete.key}`);
               }
               saveParams(params.filter(p => p.id !== id));
             } catch (error) {

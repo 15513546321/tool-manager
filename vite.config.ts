@@ -10,9 +10,9 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     // 1. Deployment Path Configuration
-    // Use VITE_BASE_PATH environment variable or default to '/'
-    // Example: VITE_BASE_PATH=/app/ npm run build
-    base: env.VITE_BASE_PATH || '/',
+    // For JAR deployment, use '/' as base path
+    // The app will be served from http://server:8080/
+    base: '/',
     
     server: {
       // 2. Access Port Configuration (Development)
@@ -24,16 +24,25 @@ export default defineConfig(({ mode }) => {
         // Proxy API requests to backend during development
         '/api': {
           target: 'http://localhost:8080',
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api/, '')
+          changeOrigin: true
         }
       }
     },
     build: {
-      outDir: './backend/src/main/resources/static',
+      // 输出到dist目录（后端pom.xml会复制到static目录）
+      outDir: './dist',
       assetsDir: 'assets',
       sourcemap: false,
-      emptyOutDir: true
+      emptyOutDir: true,
+      // 优化构建输出
+      rollupOptions: {
+        output: {
+          // 确保资源正确引用
+          assetFileNames: 'assets/[name].[hash][extname]',
+          chunkFileNames: 'assets/[name].[hash].js',
+          entryFileNames: 'assets/[name].[hash].js',
+        }
+      }
     }
   };
 });

@@ -15,23 +15,25 @@ export interface TemplateConfig {
 
 /**
  * 扁平化 XmlField 树结构为行数组（用于 Excel 导出）
+ * 导出格式与导入模板一致，支持圆角括号标记子项
  */
-export const flattenFieldsForExport = (fields: XmlField[], parentPath: string = ''): any[] => {
+export const flattenFieldsForExport = (fields: XmlField[], depth: number = 0): any[] => {
   let rows: any[] = [];
   fields.forEach((field, idx) => {
-    const currentPath = parentPath ? `${parentPath}/${field.name}` : field.name;
+    // 根据深度添加缩进标记（用 "- " 前缀表示子项）
+    const nameWithIndent = depth > 0 ? `- ${field.name}` : field.name;
+    
     rows.push({
-      '路径/Path': currentPath,
-      '字段名/Name': field.name,
+      '字段名/Name': nameWithIndent,
       '类型/Type': field.type,
-      '描述/Description': field.description,
+      '描述/Description': field.description || '',
       '样式/Style': field.style || '',
-      '子项数/Children': (field.children || []).length
+      '备注': depth > 0 ? '子项' : ((field.children && field.children.length > 0) ? `${field.type === 'array' ? '数组' : '对象'}类型，包含${field.children.length}个子项` : '')
     });
     
     // 递归展开子项
     if (field.children && field.children.length > 0) {
-      rows = rows.concat(flattenFieldsForExport(field.children, currentPath));
+      rows = rows.concat(flattenFieldsForExport(field.children, depth + 1));
     }
   });
   return rows;
@@ -86,20 +88,20 @@ export const downloadImportTemplate = (templateConfig?: TemplateConfig) => {
   
   // 2. 导入数据页（示例）
   const dataHeader = [
-    ['字段名', '类型', '描述', '样式', '备注'],
-    ['', 'field', '普通字段', '', '默认类型'],
-    ['userId', 'string', '用户ID', 'NotNullStyle', ''],
-    ['userName', 'string', '用户名称', '', ''],
-    ['', 'array', '用户列表', '', '数组类型'],
-    ['userId', 'string', '用户ID', '', '数组子项'],
-    ['userName', 'string', '用户名称', '', '数组子项'],
-    ['', 'object', '用户信息', '', '对象类型'],
-    ['name', 'string', '姓名', '', '对象属性'],
-    ['age', 'string', '年龄', '', '对象属性'],
+    ['字段名/Name', '类型/Type', '描述/Description', '样式/Style', '备注'],
+    ['userId', 'string', '用户ID', 'NotNullStyle', '普通字段示例'],
+    ['userName', 'string', '用户名称', '', '普通字段示例'],
+    ['users', 'array', '用户列表', '', '数组类型 - 下面跟上数组子项'],
+    ['- userId', 'string', '用户ID', '', '数组子项（注意前缀 - 和空格）'],
+    ['- userName', 'string', '用户名称', '', '数组子项'],
+    ['userInfo', 'object', '用户信息', '', '对象类型 - 下面跟上对象属性'],
+    ['- name', 'string', '姓名', '', '对象属性（注意前缀 - 和空格）'],
+    ['- age', 'string', '年龄', '', '对象属性'],
+    ['createTime', 'date', '创建时间', 'yyyy-MM-dd', '日期字段示例'],
   ];
   
   const ws2 = XLSX.utils.aoa_to_sheet(dataHeader);
-  ws2['!cols'] = [{ wch: 20 }, { wch: 15 }, { wch: 20 }, { wch: 20 }, { wch: 30 }];
+  ws2['!cols'] = [{ wch: 25 }, { wch: 15 }, { wch: 25 }, { wch: 20 }, { wch: 35 }];
   XLSX.utils.book_append_sheet(wb, ws2, '导入数据');
   
   // 3. 字段类型参考页
@@ -175,13 +177,14 @@ const convertJsonToFields = (rows: any[]): XmlField[] => {
     // 🔧 Bug Fix 3: 更严格的空行检查
     if (!row || typeof row !== 'object') return;
     
-    const name = (row['字段名'] || row['Name'] || '').toString().trim();
+    // 支持多种列名格式：中文/英文混合或只有一种
+    const name = (row['字段名/Name'] || row['字段名'] || row['Name'] || '').toString().trim();
     // 完全空的行直接跳过
     if (!name) return;
     
-    const type = (row['类型'] || row['Type'] || 'field').toString().trim().toLowerCase();
-    const description = (row['描述'] || row['Description'] || '').toString().trim();
-    const style = (row['样式'] || row['Style'] || '').toString().trim();
+    const type = (row['类型/Type'] || row['类型'] || row['Type'] || 'field').toString().trim().toLowerCase();
+    const description = (row['描述/Description'] || row['描述'] || row['Description'] || '').toString().trim();
+    const style = (row['样式/Style'] || row['样式'] || row['Style'] || '').toString().trim();
     
     // 检测缩进层级（通过 "- " 前缀或其他标记）
     const isChild = name.startsWith('-') || name.startsWith('  ');
@@ -194,7 +197,7 @@ const convertJsonToFields = (rows: any[]): XmlField[] => {
       name: cleanName,
       type: type === 'array' || type === 'object' ? type : 'field',
       description,
-      style,
+      style: style || undefined,
       children: (type === 'array' || type === 'object') ? [] : undefined
     };
     
@@ -236,12 +239,11 @@ export const exportFieldsToExcel = (fields: XmlField[], fileName: string = 'inte
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.json_to_sheet(rows);
   ws['!cols'] = [
-    { wch: 30 }, // 路径
-    { wch: 20 }, // 字段名
+    { wch: 25 }, // 字段名
     { wch: 15 }, // 类型
     { wch: 25 }, // 描述
     { wch: 20 }, // 样式
-    { wch: 12 }  // 子项数
+    { wch: 35 }  // 备注
   ];
   
   XLSX.utils.book_append_sheet(wb, ws, '字段列表');

@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Copy, Code, ArrowRightLeft, Database, Plus, Trash2, Download, Save, FileDown, Upload, ChevronRight, ChevronDown, FolderPlus, Layers, FileCode } from 'lucide-react';
+import { Copy, Code, ArrowRightLeft, Database, Plus, Trash2, Download, FileDown, Upload, ChevronRight, ChevronDown, Layers, FileCode } from 'lucide-react';
 import { generateXml, generateJava } from '../../services/xmlParser'; // 假设路径不变
 import { XmlTransaction, XmlField } from '../../types';
 import { recordAction } from '../../services/auditService';
 import { apiService } from '../../services/apiService';
 import { remoteCodeService, RemoteInterface } from '../../services/remoteCodeService';
 import { downloadImportTemplate, importFieldsFromExcel, exportFieldsToExcel, exportTransactionToExcel } from '../../services/excelImportExport';
-import { downloadBatchImportTemplate, importInterfacesFromExcel, convertToTransactions } from '../../services/batchInterfaceImport';
 
 // --- 类型定义 ---
 interface FlatField {
@@ -494,6 +493,7 @@ export const CodeGenerator: React.FC = () => {
     template: 'ExecuteLogTemplate',
     trsName: '',
     actionRef: '',
+    author: '',
     inputs: [],
     outputs: [],
     module: 'Manual',
@@ -517,20 +517,77 @@ export const CodeGenerator: React.FC = () => {
   };
 
   const [metaData, setMetaData] = useState({ author: 'pmb', version: '1.0' });
-  const [templates, setTemplates] = useState<string[]>(['ExecuteLogTemplate']);
+  // 修改模板结构：支持模板名称和中文名称配置
+  const [templates, setTemplates] = useState<Array<{ name: string; chineseName: string }>>([
+    { name: 'ExecuteLogTemplate', chineseName: '执行日志模板' }
+  ]);
   const [activeTab, setActiveTab] = useState<'request' | 'response'>('request');
   const [outputTab, setOutputTab] = useState<'xml' | 'java'>('xml');
   const [generatedXml, setGeneratedXml] = useState('');
   const [generatedJava, setGeneratedJava] = useState('');
+  const [copiedType, setCopiedType] = useState<'xml' | 'java' | null>(null);
   const [remoteInterfaces, setRemoteInterfaces] = useState<RemoteInterface[]>([]);
   const [showRemoteImport, setShowRemoteImport] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
-  const [isBatchImporting, setIsBatchImporting] = useState(false);
   const [showTemplateManager, setShowTemplateManager] = useState(false);
   const [templateInput, setTemplateInput] = useState('');
+  const [templateChineseName, setTemplateChineseName] = useState('');
   const [editingTemplate, setEditingTemplate] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const batchFileInputRef = useRef<HTMLInputElement>(null);
+
+  // 加载和保存模板配置
+  useEffect(() => {
+    // 页面加载时从后端读取模板配置
+    const loadTemplates = async () => {
+      try {
+        const result = await apiService.configApi.getByKey('codeGenerator_templates');
+        if (result && result.configValue) {
+          const parsed = JSON.parse(result.configValue);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setTemplates(parsed);
+            if (!parsed.some(t => t.name === formData.template)) {
+              setFormData(prev => ({...prev, template: parsed[0].name}));
+            }
+          }
+        }
+      } catch (err) {
+        // 回退到 localStorage
+        const savedTemplates = localStorage.getItem('codeGenerator_templates');
+        if (savedTemplates) {
+          try {
+            const parsed = JSON.parse(savedTemplates);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setTemplates(parsed);
+              if (!parsed.some(t => t.name === formData.template)) {
+                setFormData(prev => ({...prev, template: parsed[0].name}));
+              }
+            }
+          } catch (e) {
+            console.warn('Failed to load saved templates:', e);
+          }
+        }
+      }
+    };
+    loadTemplates();
+  }, []);
+
+  // 当模板改变时保存到后端
+  useEffect(() => {
+    const saveTemplates = async () => {
+      try {
+        await apiService.configApi.save({
+          configKey: 'codeGenerator_templates',
+          configValue: JSON.stringify(templates),
+          configType: 'CODE_GENERATOR',
+          description: 'Code generator template configuration'
+        });
+      } catch (err) {
+        console.warn('Failed to save to backend, using localStorage:', err);
+        localStorage.setItem('codeGenerator_templates', JSON.stringify(templates));
+      }
+    };
+    saveTemplates();
+  }, [templates]);
 
   // ... (保留之前的 useEffect 加载逻辑, handleGenerate, handleGenerateAll 等) ...
 
@@ -549,8 +606,29 @@ export const CodeGenerator: React.FC = () => {
     
     const dataToProcess = { ...formData, actionRef: formData.actionRef || `${formData.id}Action` };
     setGeneratedXml(generateXml(dataToProcess));
-    setGeneratedJava(generateJava(dataToProcess, metaData.author));
+    // 使用表单中的 author 字段，如果没有则使用全局 metaData.author
+    const author = formData.author || metaData.author;
+    setGeneratedJava(generateJava(dataToProcess, author));
     recordAction('接口管理', '生成单接口代码');
+  };
+
+  // 复制到剪贴板函数
+  const handleCopyToClipboard = (type: 'xml' | 'java') => {
+    const textToCopy = type === 'xml' ? generatedXml : generatedJava;
+    
+    if (!textToCopy) {
+      alert('请先生成代码');
+      return;
+    }
+    
+    navigator.clipboard.writeText(textToCopy).then(() => {
+      setCopiedType(type);
+      recordAction('接口管理', `复制 ${type.toUpperCase()} 代码`);
+      // 2秒后重置复制状态
+      setTimeout(() => setCopiedType(null), 2000);
+    }).catch(() => {
+      alert('复制失败，请检查浏览器权限');
+    });
   };
 
   // 导入模板下载
@@ -593,103 +671,96 @@ export const CodeGenerator: React.FC = () => {
     recordAction('接口管理', `导出完整配置到 Excel`);
   };
 
-  // 批量导入多个接口 - 下载模板
-  const handleDownloadBatchTemplate = () => {
-    downloadBatchImportTemplate({ interfaceId: formData.id });
-    recordAction('接口管理', '下载批量导入模板');
-  };
+
 
   // ========== Template 管理函数 ==========
   const handleAddTemplate = () => {
     const trimmed = templateInput.trim();
+    const chineseNameTrimmed = templateChineseName.trim();
+    
     if (!trimmed) {
       alert('模板名称不能为空');
       return;
     }
-    if (templates.includes(trimmed)) {
+    if (!chineseNameTrimmed) {
+      alert('中文名称不能为空');
+      return;
+    }
+    if (templates.some(t => t.name === trimmed)) {
       alert('该模板已存在');
       return;
     }
-    setTemplates([...templates, trimmed]);
+    
+    setTemplates([...templates, { name: trimmed, chineseName: chineseNameTrimmed }]);
     setTemplateInput('');
-    recordAction('接口管理', `新增 Template: ${trimmed}`);
+    setTemplateChineseName('');
+    recordAction('接口管理', `新增 Template: ${trimmed} (${chineseNameTrimmed})`);
   };
 
   const handleUpdateTemplate = () => {
     if (!editingTemplate) return;
     const trimmed = templateInput.trim();
+    const chineseNameTrimmed = templateChineseName.trim();
+    
     if (!trimmed) {
       alert('模板名称不能为空');
       return;
     }
-    if (trimmed !== editingTemplate && templates.includes(trimmed)) {
+    if (!chineseNameTrimmed) {
+      alert('中文名称不能为空');
+      return;
+    }
+    if (trimmed !== editingTemplate && templates.some(t => t.name === trimmed)) {
       alert('该模板已存在');
       return;
     }
-    const newTemplates = templates.map(t => t === editingTemplate ? trimmed : t);
+    
+    const newTemplates = templates.map(t => 
+      t.name === editingTemplate 
+        ? { name: trimmed, chineseName: chineseNameTrimmed }
+        : t
+    );
+    
     // 如果当前选中的是被修改的模板，也要更新
     if (formData.template === editingTemplate) {
       setFormData(p => ({...p, template: trimmed}));
     }
+    
     setTemplates(newTemplates);
     setTemplateInput('');
+    setTemplateChineseName('');
     setEditingTemplate(null);
     recordAction('接口管理', `修改 Template: ${editingTemplate} -> ${trimmed}`);
   };
 
-  const handleDeleteTemplate = (template: string) => {
-    if (!confirm(`确定删除模板 "${template}" 吗？`)) return;
+  const handleDeleteTemplate = (templateName: string) => {
+    if (!confirm(`确定删除模板 "${templateName}" 吗？`)) return;
     if (templates.length === 1) {
       alert('至少保留一个模板');
       return;
     }
-    const newTemplates = templates.filter(t => t !== template);
+    const newTemplates = templates.filter(t => t.name !== templateName);
     // 如果删除的是当前选中的，切换到第一个
-    if (formData.template === template) {
-      setFormData(p => ({...p, template: newTemplates[0]}));
+    if (formData.template === templateName) {
+      setFormData(p => ({...p, template: newTemplates[0].name}));
     }
     setTemplates(newTemplates);
-    recordAction('接口管理', `删除 Template: ${template}`);
+    recordAction('接口管理', `删除 Template: ${templateName}`);
   };
 
-  const handleStartEdit = (template: string) => {
-    setEditingTemplate(template);
-    setTemplateInput(template);
+  const handleStartEdit = (templateObj: { name: string; chineseName: string }) => {
+    setEditingTemplate(templateObj.name);
+    setTemplateInput(templateObj.name);
+    setTemplateChineseName(templateObj.chineseName);
   };
 
   const handleCancelEdit = () => {
     setEditingTemplate(null);
     setTemplateInput('');
+    setTemplateChineseName('');
   };
 
-  // 批量导入多个接口 - 导入文件处理
-  const handleBatchImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    
-    setIsBatchImporting(true);
-    try {
-      const importedInterfaces = await importInterfacesFromExcel(file);
-      const newTransactions = convertToTransactions(importedInterfaces);
-      
-      // 替换当前 transactions 列表（或合并）
-      setTransactions(prev => {
-        // 选择：合并还是替换。这里采用合并策略，避免覆盖已有接口
-        const existingIds = new Set(prev.map(t => t.id));
-        const newOnes = newTransactions.filter(t => !existingIds.has(t.id));
-        return [...prev, ...newOnes];
-      });
-      
-      recordAction('接口管理', `批量导入 ${newTransactions.length} 个接口配置`);
-      alert(`✅ 成功导入 ${newTransactions.length} 个接口！`);
-    } catch (error) {
-      alert(`❌ 批量导入失败: ${error instanceof Error ? error.message : '未知错误'}`);
-      console.error('Batch import error:', error);
-    } finally {
-      setIsBatchImporting(false);
-      if (batchFileInputRef.current) batchFileInputRef.current.value = '';
-    }
-  };
+
 
   // 统一字段更新入口
   const handleFieldsChange = (newFields: XmlField[]) => {
@@ -736,6 +807,15 @@ export const CodeGenerator: React.FC = () => {
                  />
               </div>
               <div className="col-span-1">
+                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1 block">Author</label>
+                 <input 
+                    value={formData.author || ''} 
+                    onChange={e => setFormData(p => ({...p, author: e.target.value || undefined}))}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm"
+                    placeholder="Interface author (matches Java @author)"
+                 />
+              </div>
+              <div className="col-span-1">
                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1 block">Template</label>
                  <div className="flex gap-2">
                    <select 
@@ -743,12 +823,17 @@ export const CodeGenerator: React.FC = () => {
                       onChange={e => setFormData(p => ({...p, template: e.target.value}))}
                       className="flex-1 p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none text-sm"
                    >
-                      {templates.map(t => <option key={t} value={t}>{t}</option>)}
+                      {templates.map(t => (
+                        <option key={t.name} value={t.name}>
+                          {t.chineseName} ({t.name})
+                        </option>
+                      ))}
                    </select>
                    <button
                       onClick={() => {
                         setShowTemplateManager(!showTemplateManager);
                         setTemplateInput('');
+                        setTemplateChineseName('');
                         setEditingTemplate(null);
                       }}
                       className="px-3 py-2.5 bg-blue-50 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors text-xs font-bold"
@@ -814,40 +899,11 @@ export const CodeGenerator: React.FC = () => {
                        <Download size={13}/> 导出
                     </button>
                     
-                    {/* 批量导入分隔符 */}
-                    <div className="border-l border-slate-300 h-6 mx-1"></div>
-                    
-                    {/* 批量导入按钮 */}
-                    <button 
-                       onClick={handleDownloadBatchTemplate}
-                       className="px-2.5 py-1.5 text-xs bg-orange-50 text-orange-700 rounded-lg hover:bg-orange-100 transition-colors flex items-center gap-1.5 font-semibold"
-                       title="下载批量导入模板（支持一次导入多个接口）"
-                    >
-                       <FileDown size={13}/> 批量模板
-                    </button>
-                    
-                    <button 
-                       onClick={() => batchFileInputRef.current?.click()}
-                       disabled={isBatchImporting}
-                       className="px-2.5 py-1.5 text-xs bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 transition-colors flex items-center gap-1.5 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-                       title="从 Excel 批量导入多个接口配置"
-                    >
-                       <Upload size={13}/> {isBatchImporting ? '批量导入中...' : '批量导入'}
-                    </button>
-                    
                     <input
                        ref={fileInputRef}
                        type="file"
                        accept=".xlsx,.xls"
                        onChange={handleImportFile}
-                       className="hidden"
-                    />
-                    
-                    <input
-                       ref={batchFileInputRef}
-                       type="file"
-                       accept=".xlsx,.xls"
-                       onChange={handleBatchImportFile}
                        className="hidden"
                     />
                  </div>
@@ -889,10 +945,18 @@ export const CodeGenerator: React.FC = () => {
                {outputTab === 'xml' ? generatedXml : generatedJava}
             </pre>
             <button 
-              onClick={() => navigator.clipboard.writeText(outputTab === 'xml' ? generatedXml : generatedJava)}
-              className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 rounded text-white opacity-0 group-hover:opacity-100 transition-opacity"
+              onClick={() => handleCopyToClipboard(outputTab)}
+              disabled={!generatedXml && !generatedJava}
+              title={generatedXml || generatedJava ? '复制到剪贴板' : '请先生成代码'}
+              className={`absolute top-4 right-4 p-2 rounded text-white transition-all ${
+                copiedType === outputTab 
+                  ? 'bg-green-500 opacity-100' 
+                  : (generatedXml || generatedJava)
+                    ? 'bg-white/10 hover:bg-white/20 opacity-0 group-hover:opacity-100'
+                    : 'bg-slate-500 opacity-50 cursor-not-allowed'
+              }`}
             >
-               <Copy size={16}/>
+               {copiedType === outputTab ? '✓ 已复制' : <Copy size={16}/>}
             </button>
          </div>
       </div>
@@ -909,6 +973,7 @@ export const CodeGenerator: React.FC = () => {
                   setShowTemplateManager(false);
                   setEditingTemplate(null);
                   setTemplateInput('');
+                  setTemplateChineseName('');
                 }}
                 className="text-slate-400 hover:text-slate-600"
               >
@@ -923,11 +988,19 @@ export const CodeGenerator: React.FC = () => {
                 <label className="block text-xs font-bold text-slate-600 mb-2 uppercase">
                   {editingTemplate ? '编辑模板' : '添加新模板'}
                 </label>
-                <div className="flex gap-2 mb-3">
+                <div className="space-y-3 mb-3">
                   <input
                     type="text"
                     value={templateInput}
                     onChange={e => setTemplateInput(e.target.value)}
+                    placeholder="输入模板名称 (如: ExecuteLogTemplate)..."
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none text-sm focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
+                    autoFocus
+                  />
+                  <input
+                    type="text"
+                    value={templateChineseName}
+                    onChange={e => setTemplateChineseName(e.target.value)}
                     onKeyDown={e => {
                       if (e.key === 'Enter') {
                         if (editingTemplate) {
@@ -937,9 +1010,8 @@ export const CodeGenerator: React.FC = () => {
                         }
                       }
                     }}
-                    placeholder="输入模板名称..."
-                    className="flex-1 px-3 py-2 border border-slate-300 rounded-lg outline-none text-sm focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
-                    autoFocus
+                    placeholder="输入中文名称 (如: 执行日志模板)..."
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none text-sm focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
                   />
                 </div>
                 <div className="flex gap-2">
@@ -976,34 +1048,39 @@ export const CodeGenerator: React.FC = () => {
                   <div className="text-center text-slate-400 text-sm py-4">暂无模板</div>
                 ) : (
                   <div className="space-y-2">
-                    {templates.map(template => (
+                    {templates.map((templateObj) => (
                       <div
-                        key={template}
+                        key={templateObj.name}
                         className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors"
                       >
                         <div className="flex items-center gap-2 flex-1 min-w-0">
-                          <span
-                            className={`px-2 py-1 text-xs font-mono rounded ${
-                              formData.template === template
-                                ? 'bg-blue-200 text-blue-800'
-                                : 'bg-slate-200 text-slate-700'
-                            }`}
-                          >
-                            {template}
-                          </span>
-                          {formData.template === template && (
-                            <span className="text-xs text-blue-600 font-bold">当前选中</span>
+                          <div className="flex-1">
+                            <span
+                              className={`px-2 py-1 text-xs font-mono rounded block ${
+                                formData.template === templateObj.name
+                                  ? 'bg-blue-200 text-blue-800'
+                                  : 'bg-slate-200 text-slate-700'
+                              }`}
+                            >
+                              {templateObj.name}
+                            </span>
+                            <span className="text-xs text-slate-600 block mt-1">
+                              {templateObj.chineseName}
+                            </span>
+                          </div>
+                          {formData.template === templateObj.name && (
+                            <span className="text-xs text-blue-600 font-bold whitespace-nowrap">当前选中</span>
                           )}
                         </div>
                         <div className="flex gap-1 flex-shrink-0">
                           <button
-                            onClick={() => handleStartEdit(template)}
+                            onClick={() => handleStartEdit(templateObj)}
                             className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 font-bold transition-colors"
                           >
                             编辑
                           </button>
                           <button
-                            onClick={() => handleDeleteTemplate(template)}
+                            onClick={() => handleDeleteTemplate(templateObj.name)}
                             className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 font-bold transition-colors"
                             disabled={templates.length === 1}
                           >
@@ -1024,6 +1101,7 @@ export const CodeGenerator: React.FC = () => {
                   setShowTemplateManager(false);
                   setEditingTemplate(null);
                   setTemplateInput('');
+                  setTemplateChineseName('');
                 }}
                 className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 text-xs font-bold transition-colors"
               >

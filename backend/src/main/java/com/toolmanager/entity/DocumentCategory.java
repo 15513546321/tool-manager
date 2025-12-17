@@ -7,29 +7,20 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "suggestions")
+@Table(name = "document_categories")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class Suggestion {
+public class DocumentCategory {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "title", nullable = false)
-    private String title;
+    @Column(name = "category_name", nullable = false, unique = true)
+    private String categoryName;
 
-    @Column(name = "content", columnDefinition = "TEXT")
-    private String content;
-
-    @Column(name = "category")
-    private String category;
-
-    @Column(name = "priority")
-    private Integer priority;
-
-    @Column(name = "status")
-    private String status; // NEW, PROCESSING, CLOSED
+    @Column(name = "sub_categories", columnDefinition = "TEXT")
+    private String subCategories; // JSON array: ["sub1", "sub2"]
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
@@ -40,16 +31,13 @@ public class Suggestion {
     @Column(name = "created_by")
     private String createdBy;
 
-    @Column(name = "ip_address")
-    private String ipAddress;
+    @Column(name = "updated_by")
+    private String updatedBy;
 
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
-        if (status == null) {
-            status = "NEW";
-        }
     }
 
     @PreUpdate

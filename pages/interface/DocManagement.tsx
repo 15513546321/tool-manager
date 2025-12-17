@@ -78,7 +78,7 @@ export const DocManagement: React.FC = () => {
   
   // 接口检索
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchField, setSearchField] = useState<'id' | 'name' | 'module' | 'downstream'>('id');
+  const [searchField, setSearchField] = useState<'all' | 'id' | 'name' | 'module' | 'downstream'>('all');
   
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -94,27 +94,30 @@ export const DocManagement: React.FC = () => {
           setOnlineConfig(prev => ({
             ...prev,
             ...savedConfig,
-            isConnected: false // 重新连接时需要重新测试
+            isConnected: savedConfig.isConnected || false
           }));
 
-          // 尝试从缓存加载接口
-          const cachedInterfaces = remoteCodeService.getCachedInterfaces(savedConfig);
-          if (cachedInterfaces && cachedInterfaces.length > 0) {
-            // 转换为 XmlTransaction 并加载
-            const transactions = cachedInterfaces.map(iface => ({
-              id: iface.id,
-              trsName: iface.name,
-              module: iface.module,
-              actionRef: '',
-              template: 'ExecuteLogTemplate',
-              inputs: iface.inputs || [],
-              outputs: iface.outputs || [],
-              filePath: iface.filePath || '',
-              actionClass: '',
-              downstreamCalls: iface.downstreamCalls || []
-            }));
-            setTransactions(transactions);
-            recordAction('接口管理 - 文档管理', '从缓存加载接口清单');
+          // 如果连接状态为真，尝试从缓存加载接口
+          if (savedConfig.isConnected) {
+            const cachedInterfaces = remoteCodeService.getCachedInterfaces(savedConfig);
+            if (cachedInterfaces && cachedInterfaces.length > 0) {
+              // 转换为 XmlTransaction 并加载
+              const transactions = cachedInterfaces.map(iface => ({
+                id: iface.id,
+                trsName: iface.name,
+                module: iface.module,
+                actionRef: '',
+                template: 'ExecuteLogTemplate',
+                inputs: iface.inputs || [],
+                outputs: iface.outputs || [],
+                filePath: iface.filePath || '',
+                actionClass: '',
+                downstreamCalls: iface.downstreamCalls || []
+              }));
+              setTransactions(transactions);
+              setSourceMode('online');
+              recordAction('接口管理 - 文档管理', `页面初始化 - 从在线配置加载 ${transactions.length} 个接口`);
+            }
           }
         }
       } catch (err) {
@@ -132,20 +135,34 @@ export const DocManagement: React.FC = () => {
     }
   }, [onlineConfig.repoUrl, onlineConfig.authType, onlineConfig.branch, onlineConfig.isConnected]);
 
-  // 接口检索功能 - 优先应用搜索过滤（关键修复：搜索结果展示实际接口而非匹配数量）
+  // 接口检索功能 - 根据选择的字段进行过滤
   const filteredTransactions = useMemo(() => {
     if (!searchQuery.trim()) return transactions;
     
     const query = searchQuery.toLowerCase();
-    // 在所有字段中进行模糊匹配，不限制搜索字段，展示实际的接口对象
-    return transactions.filter(t => 
-      t.id.toLowerCase().includes(query) ||
-      t.trsName.toLowerCase().includes(query) ||
-      t.module.toLowerCase().includes(query) ||
-      (t.filePath && t.filePath.toLowerCase().includes(query)) ||
-      t.downstreamCalls.some(call => call.toLowerCase().includes(query))
-    );
-  }, [transactions, searchQuery]);
+    
+    return transactions.filter(t => {
+      switch(searchField) {
+        case 'id':
+          return t.id.toLowerCase().includes(query);
+        case 'name':
+          return t.trsName.toLowerCase().includes(query);
+        case 'module':
+          return t.module.toLowerCase().includes(query);
+        case 'downstream':
+          return t.downstreamCalls.some(call => call.toLowerCase().includes(query));
+        case 'all':
+        default:
+          return (
+            t.id.toLowerCase().includes(query) ||
+            t.trsName.toLowerCase().includes(query) ||
+            t.module.toLowerCase().includes(query) ||
+            (t.filePath && t.filePath.toLowerCase().includes(query)) ||
+            t.downstreamCalls.some(call => call.toLowerCase().includes(query))
+          );
+      }
+    });
+  }, [transactions, searchQuery, searchField]);
 
   // 基于过滤结果进行分页（关键修复：搜索时显示过滤后的完整结果集）
   const totalPages = Math.ceil(filteredTransactions.length / itemsPerPage);
@@ -213,30 +230,63 @@ export const DocManagement: React.FC = () => {
 
     setIsTesting(true);
     try {
-      // 模拟连接测试（实际应调用后端API）
       const authHeader = buildAuthHeader();
       
-      // 这里会调用后端API进行实际连接测试
-      // const response = await apiService.testGitConnection(onlineConfig);
+      // 调用后端API测试连接并获取分支列表
+      const response = await fetch('/api/nacos-sync/test-git-connection', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeader
+        },
+        body: JSON.stringify({
+          repoUrl: onlineConfig.repoUrl,
+          authType: onlineConfig.authType,
+          authUsername: onlineConfig.authUsername,
+          authPassword: onlineConfig.authPassword,
+          authToken: onlineConfig.authToken,
+          sshKeyContent: onlineConfig.authType === 'ssh-key' ? onlineConfig.sshKeyContent : undefined,
+          sshPassphrase: onlineConfig.authType === 'ssh-key' ? onlineConfig.sshPassphrase : undefined
+        })
+      });
       
-      // 模拟成功连接
-      setTimeout(() => {
+      const result = await response.json();
+      
+      if (result.success || result.data?.connected) {
+        const branches = result.data?.branches || ['master', 'main', 'develop'];
+        setOnlineConfig(prev => {
+          const updated = {
+            ...prev,
+            isConnected: true,
+            connectionError: undefined,
+            branches: branches
+          };
+          // 保存配置（包括分支信息）
+          remoteCodeService.saveConfig(updated as RemoteCodeConfig);
+          return updated;
+        });
+        alert('✅ 连接成功！已获取分支列表');
+        recordAction('接口管理 - 文档管理', `在线连接测试成功 - URL: ${onlineConfig.repoUrl}, 分支数: ${branches.length}`);
+      } else {
+        const errorMsg = result.message || '连接失败';
         setOnlineConfig(prev => ({
           ...prev,
-          isConnected: true,
-          connectionError: undefined,
-          branches: ['master', 'main', 'develop', 'feature/v2.0', 'feature/v3.0']
+          isConnected: false,
+          connectionError: errorMsg
         }));
-        alert('✅ 连接成功！已获取分支列表');
-        recordAction('接口管理 - 文档管理', `在线认证测试成功 - URL: ${onlineConfig.repoUrl}`);
-      }, 500);
+        alert(`❌ ${errorMsg}`);
+        recordAction('接口管理 - 文档管理', `在线连接测试失败 - ${errorMsg}`);
+      }
     } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : '未知错误';
       setOnlineConfig(prev => ({
         ...prev,
         isConnected: false,
-        connectionError: `连接失败: ${err instanceof Error ? err.message : '未知错误'}`
+        connectionError: `连接失败: ${errorMsg}`
       }));
-      recordAction('接口管理 - 文档管理', `在线认证测试失败 - ${err instanceof Error ? err.message : '未知错误'}`);
+      console.error('Test connection error:', err);
+      alert(`❌ 连接出错: ${errorMsg}`);
+      recordAction('接口管理 - 文档管理', `在线连接测试异常 - ${errorMsg}`);
     } finally {
       setIsTesting(false);
     }
@@ -283,53 +333,63 @@ export const DocManagement: React.FC = () => {
     try {
       const authHeader = buildAuthHeader();
       
-      // 实际应调用后端API: 
-      // const response = await apiService.fetchGitRepository({
-      //   url: onlineConfig.repoUrl,
-      //   branch: onlineConfig.branch,
-      //   authType: onlineConfig.authType,
-      //   headers: authHeader
-      // });
-      
-      // 模拟从在线仓库获取代码的过程
-      const mockResponse = [
-        {
-          name: 'QueryTransaction.xml',
-          path: 'src/main/config/QueryTransaction.xml',
-          content: `<?xml version="1.0"?>
-<transaction id="queryUser" name="查询用户信息">
-  <input><field name="userId" type="String"/></input>
-  <output><field name="userName" type="String"/></output>
-  <calls>queryUserService</calls>
-</transaction>`
-        }
-      ];
-
-      const newTransactions = parseProjectFiles(mockResponse);
-      setTransactions(prev => {
-        setCurrentPage(1);
-        return newTransactions;
+      // 调用后端API获取仓库代码
+      const response = await fetch('/api/nacos-sync/fetch-git-repository', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeader
+        },
+        body: JSON.stringify({
+          repoUrl: onlineConfig.repoUrl,
+          branch: onlineConfig.branch,
+          authType: onlineConfig.authType,
+          authUsername: onlineConfig.authUsername,
+          authPassword: onlineConfig.authPassword,
+          authToken: onlineConfig.authToken,
+          sshKeyContent: onlineConfig.authType === 'ssh-key' ? onlineConfig.sshKeyContent : undefined
+        })
       });
+
+      const result = await response.json();
       
-      // 缓存接口清单到远程代码服务
-      const remoteInterfaces = newTransactions.map(t => ({
-        id: t.id,
-        name: t.trsName,
-        module: t.module,
-        description: '',
-        inputs: t.inputs,
-        outputs: t.outputs,
-        downstreamCalls: t.downstreamCalls,
-        filePath: t.filePath
-      }));
-      remoteCodeService.cacheInterfaces(onlineConfig as RemoteCodeConfig, remoteInterfaces);
-      
-      recordAction('接口管理 - 文档管理', `在线获取 - 分支: ${onlineConfig.branch}, 已加载 ${newTransactions.length} 个接口`);
-      setIsConfigOpen(false);
-      alert('✅ 代码已成功解析！');
+      if (result.success && result.data && Array.isArray(result.data)) {
+        // 使用获取到的文件数据进行本地解析
+        const newTransactions = parseProjectFiles(result.data);
+        setTransactions(prev => {
+          setCurrentPage(1);
+          return newTransactions;
+        });
+        
+        // 缓存接口清单到远程代码服务
+        const remoteInterfaces = newTransactions.map(t => ({
+          id: t.id,
+          name: t.trsName,
+          module: t.module,
+          description: '',
+          inputs: t.inputs,
+          outputs: t.outputs,
+          downstreamCalls: t.downstreamCalls,
+          filePath: t.filePath
+        }));
+        remoteCodeService.cacheInterfaces(onlineConfig as RemoteCodeConfig, remoteInterfaces);
+        
+        // 保存配置
+        remoteCodeService.saveConfig(onlineConfig as RemoteCodeConfig);
+        
+        alert(`✅ 成功获取并解析 ${newTransactions.length} 个接口！`);
+        recordAction('接口管理 - 文档管理', `在线获取 - 分支: ${onlineConfig.branch}, 已加载 ${newTransactions.length} 个接口`);
+        setIsConfigOpen(false);
+      } else {
+        const errorMsg = result.message || '获取失败';
+        alert(`❌ ${errorMsg}`);
+        recordAction('接口管理 - 文档管理', `在线获取失败 - ${errorMsg}`);
+      }
     } catch (err) {
-      console.error("Failed to fetch online:", err);
-      alert('获取失败，请检查仓库配置');
+      const errorMsg = err instanceof Error ? err.message : '未知错误';
+      console.error('Fetch online error:', err);
+      alert(`❌ 获取失败: ${errorMsg}`);
+      recordAction('接口管理 - 文档管理', `在线获取异常 - ${errorMsg}`);
     } finally {
       setIsProcessing(false);
     }
@@ -412,16 +472,18 @@ export const DocManagement: React.FC = () => {
     // 2. Summary Sheet
     xmlBody += `
  <Worksheet ss:Name="Summary">
-  <Table ss:ExpandedColumnCount="5" x:FullColumns="1" x:FullRows="1" ss:DefaultRowHeight="15">
+  <Table ss:ExpandedColumnCount="6" x:FullColumns="1" x:FullRows="1" ss:DefaultRowHeight="15">
    <Column ss:Width="150"/>
    <Column ss:Width="200"/>
    <Column ss:Width="150"/>
-   <Column ss:Width="250"/>
+   <Column ss:Width="200"/>
+   <Column ss:Width="150"/>
    <Column ss:Width="100"/>
    <Row>
     <Cell ss:StyleID="Header"><Data ss:Type="String">Transaction ID</Data></Cell>
     <Cell ss:StyleID="Header"><Data ss:Type="String">Description</Data></Cell>
-    <Cell ss:StyleID="Header"><Data ss:Type="String">Module</Data></Cell>
+    <Cell ss:StyleID="Header"><Data ss:Type="String">Template</Data></Cell>
+    <Cell ss:StyleID="Header"><Data ss:Type="String">Downstream Interface Calls</Data></Cell>
     <Cell ss:StyleID="Header"><Data ss:Type="String">Path</Data></Cell>
     <Cell ss:StyleID="Header"><Data ss:Type="String">Link</Data></Cell>
    </Row>`;
@@ -430,12 +492,14 @@ export const DocManagement: React.FC = () => {
       try {
           const sheetName = getSafeSheetName(t.id, 'Trans');
           sheetNameMap[t.id] = sheetName;
+          const downstreamStr = t.downstreamCalls.join('; ') || 'None';
 
           xmlBody += `
        <Row>
         <Cell ss:StyleID="CellBorder"><Data ss:Type="String">${escapeXml(t.id)}</Data></Cell>
         <Cell ss:StyleID="CellBorder"><Data ss:Type="String">${escapeXml(t.trsName)}</Data></Cell>
-        <Cell ss:StyleID="CellBorder"><Data ss:Type="String">${escapeXml(t.module)}</Data></Cell>
+        <Cell ss:StyleID="CellBorder"><Data ss:Type="String">${escapeXml(t.template)}</Data></Cell>
+        <Cell ss:StyleID="CellBorder"><Data ss:Type="String">${escapeXml(downstreamStr)}</Data></Cell>
         <Cell ss:StyleID="CellBorder"><Data ss:Type="String">${escapeXml(t.filePath)}</Data></Cell>
         <Cell ss:StyleID="CellBorder" ss:HRef="#'${sheetName}'!A1"><Data ss:Type="String">Go to Detail</Data></Cell>
        </Row>`;
@@ -449,46 +513,7 @@ export const DocManagement: React.FC = () => {
   </Table>
  </Worksheet>`;
 
-    // --- 3. Code Generation Template Sheet (Sync with Code Generator) ---
-    xmlBody += `
- <Worksheet ss:Name="Code_Gen_Template">
-  <Table ss:ExpandedColumnCount="6" x:FullColumns="1" x:FullRows="1" ss:DefaultRowHeight="15">
-   <Column ss:Width="150"/>
-   <Column ss:Width="150"/>
-   <Column ss:Width="200"/>
-   <Column ss:Width="150"/>
-   <Column ss:Width="300"/>
-   <Column ss:Width="300"/>
-   <Row>
-    <Cell ss:StyleID="Header"><Data ss:Type="String">Transaction ID</Data></Cell>
-    <Cell ss:StyleID="Header"><Data ss:Type="String">Template</Data></Cell>
-    <Cell ss:StyleID="Header"><Data ss:Type="String">Description</Data></Cell>
-    <Cell ss:StyleID="Header"><Data ss:Type="String">Action Ref</Data></Cell>
-    <Cell ss:StyleID="Header"><Data ss:Type="String">Inputs (JSON)</Data></Cell>
-    <Cell ss:StyleID="Header"><Data ss:Type="String">Outputs (JSON)</Data></Cell>
-   </Row>`;
-    
-    transactions.forEach(t => {
-       try {
-           const inputsJson = JSON.stringify(t.inputs).replace(/"/g, '&quot;');
-           const outputsJson = JSON.stringify(t.outputs).replace(/"/g, '&quot;');
-           xmlBody += `
-       <Row>
-        <Cell ss:StyleID="CellBorder"><Data ss:Type="String">${escapeXml(t.id)}</Data></Cell>
-        <Cell ss:StyleID="CellBorder"><Data ss:Type="String">${escapeXml(t.template)}</Data></Cell>
-        <Cell ss:StyleID="CellBorder"><Data ss:Type="String">${escapeXml(t.trsName)}</Data></Cell>
-        <Cell ss:StyleID="CellBorder"><Data ss:Type="String">${escapeXml(t.actionRef)}</Data></Cell>
-        <Cell ss:StyleID="CellBorder"><Data ss:Type="String">${escapeXml(inputsJson)}</Data></Cell>
-        <Cell ss:StyleID="CellBorder"><Data ss:Type="String">${escapeXml(outputsJson)}</Data></Cell>
-       </Row>`;
-       } catch (e) {
-           console.error("Error exporting code gen template row", e);
-       }
-    });
-    
-    xmlBody += `
-  </Table>
- </Worksheet>`;
+
 
     // 4. Individual Sheets
     const recursiveRowBuilder = (fields: XmlField[], depth: number): string => {
@@ -604,6 +629,163 @@ export const DocManagement: React.FC = () => {
     document.body.removeChild(link);
   };
 
+  // 导出单个接口为 Excel（兼容代码生成导入格式）
+  const handleExportSingleInterface = (t: XmlTransaction) => {
+    recordAction('接口管理 - 文档管理', `按钮:下载接口 - 下载接口 [${t.id}]`);
+    
+    let xmlBody = `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+ <Styles>
+  <Style ss:ID="Header">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>
+   </Borders>
+   <Font ss:FontName="Calibri" x:Family="Swiss" ss:Size="11" ss:Color="#FFFFFF" ss:Bold="1"/>
+   <Interior ss:Color="#4472C4" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="CellBorder">
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>
+   </Borders>
+  </Style>
+ </Styles>
+ <Worksheet ss:Name="Summary">
+  <Table ss:ExpandedColumnCount="6" x:FullColumns="1" x:FullRows="1" ss:DefaultRowHeight="15">
+   <Column ss:Width="150"/>
+   <Column ss:Width="200"/>
+   <Column ss:Width="150"/>
+   <Column ss:Width="200"/>
+   <Column ss:Width="150"/>
+   <Column ss:Width="100"/>
+   <Row>
+    <Cell ss:StyleID="Header"><Data ss:Type="String">Transaction ID</Data></Cell>
+    <Cell ss:StyleID="Header"><Data ss:Type="String">Description</Data></Cell>
+    <Cell ss:StyleID="Header"><Data ss:Type="String">Template</Data></Cell>
+    <Cell ss:StyleID="Header"><Data ss:Type="String">Downstream Interface Calls</Data></Cell>
+    <Cell ss:StyleID="Header"><Data ss:Type="String">Path</Data></Cell>
+    <Cell ss:StyleID="Header"><Data ss:Type="String">Module</Data></Cell>
+   </Row>`;
+    
+    try {
+      const downstreamStr = t.downstreamCalls.join('; ') || 'None';
+      xmlBody += `
+   <Row>
+    <Cell ss:StyleID="CellBorder"><Data ss:Type="String">${escapeXml(t.id)}</Data></Cell>
+    <Cell ss:StyleID="CellBorder"><Data ss:Type="String">${escapeXml(t.trsName)}</Data></Cell>
+    <Cell ss:StyleID="CellBorder"><Data ss:Type="String">${escapeXml(t.template)}</Data></Cell>
+    <Cell ss:StyleID="CellBorder"><Data ss:Type="String">${escapeXml(downstreamStr)}</Data></Cell>
+    <Cell ss:StyleID="CellBorder"><Data ss:Type="String">${escapeXml(t.filePath)}</Data></Cell>
+    <Cell ss:StyleID="CellBorder"><Data ss:Type="String">${escapeXml(t.module)}</Data></Cell>
+   </Row>`;
+    } catch (e) {
+      console.error(`Error exporting interface ${t.id}`, e);
+    }
+    
+    xmlBody += `
+  </Table>
+ </Worksheet>
+ <Worksheet ss:Name="Interface Detail">
+  <Table ss:ExpandedColumnCount="5" x:FullColumns="1" x:FullRows="1" ss:DefaultRowHeight="15">
+   <Column ss:Width="200"/>
+   <Column ss:Width="200"/>
+   <Column ss:Width="100"/>
+   <Column ss:Width="150"/>
+   <Column ss:Width="80"/>
+   <Row>
+    <Cell ss:StyleID="Header" ss:MergeAcross="4"><Data ss:Type="String">${escapeXml(t.trsName)} (${escapeXml(t.id)})</Data></Cell>
+   </Row>
+   <Row>
+    <Cell ss:StyleID="CellBorder"><Data ss:Type="String">Module</Data></Cell>
+    <Cell ss:StyleID="CellBorder" ss:MergeAcross="3"><Data ss:Type="String">${escapeXml(t.module)}</Data></Cell>
+   </Row>
+   <Row>
+    <Cell ss:StyleID="CellBorder"><Data ss:Type="String">Template</Data></Cell>
+    <Cell ss:StyleID="CellBorder" ss:MergeAcross="3"><Data ss:Type="String">${escapeXml(t.template)}</Data></Cell>
+   </Row>
+   <Row>
+    <Cell ss:StyleID="CellBorder"><Data ss:Type="String">Action Class</Data></Cell>
+    <Cell ss:StyleID="CellBorder" ss:MergeAcross="3"><Data ss:Type="String">${escapeXml(t.actionClass)}</Data></Cell>
+   </Row>
+   <Row>
+    <Cell ss:StyleID="CellBorder"><Data ss:Type="String">Downstream Calls</Data></Cell>
+    <Cell ss:StyleID="CellBorder" ss:MergeAcross="3"><Data ss:Type="String">${t.downstreamCalls.join('; ')}</Data></Cell>
+   </Row>
+   <Row ss:Height="20"/>
+   <Row>
+    <Cell ss:StyleID="Header" ss:MergeAcross="4"><Data ss:Type="String">Request Parameters</Data></Cell>
+   </Row>
+   <Row>
+    <Cell ss:StyleID="Header"><Data ss:Type="String">Name</Data></Cell>
+    <Cell ss:StyleID="Header"><Data ss:Type="String">Description</Data></Cell>
+    <Cell ss:StyleID="Header"><Data ss:Type="String">Type</Data></Cell>
+    <Cell ss:StyleID="Header"><Data ss:Type="String">Format</Data></Cell>
+    <Cell ss:StyleID="Header"><Data ss:Type="String">Struct</Data></Cell>
+   </Row>`;
+    
+    const recursiveRowBuilder = (fields: XmlField[], depth: number): string => {
+      let rows = '';
+      fields.forEach(f => {
+        const indent = ' '.repeat(depth * 2);
+        const name = f.children ? `[+] ${f.name}` : f.name;
+        const type = f.type === 'field' ? (f.style || 'String') : f.type;
+        
+        rows += `
+   <Row>
+    <Cell ss:StyleID="CellBorder"><Data ss:Type="String">${indent}${escapeXml(name)}</Data></Cell>
+    <Cell ss:StyleID="CellBorder"><Data ss:Type="String">${escapeXml(f.description)}</Data></Cell>
+    <Cell ss:StyleID="CellBorder"><Data ss:Type="String">${escapeXml(type)}</Data></Cell>
+    <Cell ss:StyleID="CellBorder"><Data ss:Type="String">${escapeXml(f.pattern || f.style)}</Data></Cell>
+    <Cell ss:StyleID="CellBorder"><Data ss:Type="String">${f.children ? 'Complex' : 'Simple'}</Data></Cell>
+   </Row>`;
+        
+        if (f.children && f.children.length > 0) {
+          rows += recursiveRowBuilder(f.children, depth + 1);
+        }
+      });
+      return rows;
+    };
+    
+    xmlBody += t.inputs.length > 0 ? recursiveRowBuilder(t.inputs, 0) : '<Row><Cell ss:StyleID="CellBorder" ss:MergeAcross="4"><Data ss:Type="String">None</Data></Cell></Row>';
+    
+    xmlBody += `
+   <Row ss:Height="20"/>
+   <Row>
+    <Cell ss:StyleID="Header" ss:MergeAcross="4"><Data ss:Type="String">Output Parameters</Data></Cell>
+   </Row>
+   <Row>
+    <Cell ss:StyleID="Header"><Data ss:Type="String">Name</Data></Cell>
+    <Cell ss:StyleID="Header"><Data ss:Type="String">Description</Data></Cell>
+    <Cell ss:StyleID="Header"><Data ss:Type="String">Type</Data></Cell>
+    <Cell ss:StyleID="Header"><Data ss:Type="String">Format</Data></Cell>
+    <Cell ss:StyleID="Header"><Data ss:Type="String">Struct</Data></Cell>
+   </Row>
+   ${t.outputs.length > 0 ? recursiveRowBuilder(t.outputs, 0) : '<Row><Cell ss:StyleID="CellBorder" ss:MergeAcross="4"><Data ss:Type="String">None</Data></Cell></Row>'}
+  </Table>
+ </Worksheet>
+</Workbook>`;
+    
+    const blob = new Blob([xmlBody], { type: 'application/vnd.ms-excel' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `${t.id}_${new Date().toISOString().slice(0,10)}.xls`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleViewDetails = (t: XmlTransaction) => {
       setSelectedTransaction(t);
       recordAction('接口管理 - 文档管理', `按钮:查看详情 - 查看接口 [${t.id}]`);
@@ -681,6 +863,7 @@ export const DocManagement: React.FC = () => {
               onChange={(e) => setSearchField(e.target.value as any)}
               className="px-3 py-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-100"
             >
+              <option value="all">全部</option>
               <option value="id">按ID</option>
               <option value="name">按名称</option>
               <option value="module">按模块</option>
@@ -731,6 +914,7 @@ export const DocManagement: React.FC = () => {
                   <th className="px-6 py-4 font-semibold text-slate-700">Module / ID</th>
                   <th className="px-6 py-4 font-semibold text-slate-700">Description (CN)</th>
                   <th className="px-6 py-4 font-semibold text-slate-700">Implementation</th>
+                  <th className="px-6 py-4 font-semibold text-slate-700">Downstream Interfaces</th>
                   <th className="px-6 py-4 font-semibold text-slate-700 text-center">I/O</th>
                   <th className="px-6 py-4 font-semibold text-slate-700 text-center">Controls</th>
                 </tr>
@@ -742,7 +926,7 @@ export const DocManagement: React.FC = () => {
                         <React.Fragment key={module}>
                             {/* Group Header with Module Name */}
                             <tr className="bg-slate-100">
-                                <td colSpan={5} className="px-6 py-2 text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-2">
+                                <td colSpan={6} className="px-6 py-2 text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-2">
                                     <Layers size={14} />
                                     {module}
                                     <span className="font-normal text-slate-400 ml-2">({trans.length} in this page)</span>
@@ -770,14 +954,20 @@ export const DocManagement: React.FC = () => {
                                          <span className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[250px]" title={t.actionClass}>
                                             {t.actionClass || ''}
                                          </span>
-                                         {t.downstreamCalls.length > 0 && (
-                                            <div className="flex gap-1 mt-1">
-                                                <span className="text-[10px] bg-amber-50 text-amber-600 px-1 rounded border border-amber-100">
-                                                    Calls: {t.downstreamCalls.length}
-                                                </span>
-                                            </div>
-                                         )}
                                       </div>
+                                    </td>
+                                    <td className="px-6 py-3">
+                                      {t.downstreamCalls.length > 0 ? (
+                                        <div className="flex flex-col gap-1">
+                                          {t.downstreamCalls.map((call, idx) => (
+                                            <div key={idx} className="text-[10px] bg-amber-50 text-amber-700 px-2 py-1 rounded border border-amber-100 font-mono">
+                                              {call}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <span className="text-[10px] text-slate-400 italic">无</span>
+                                      )}
                                     </td>
                                     <td className="px-6 py-3 text-center">
                                         <div className="flex justify-center gap-2">
@@ -790,13 +980,22 @@ export const DocManagement: React.FC = () => {
                                         </div>
                                     </td>
                                     <td className="px-6 py-3 text-center">
-                                        <button 
-                                            onClick={() => handleViewDetails(t)}
-                                            className="text-slate-400 hover:text-blue-600 p-2 rounded hover:bg-blue-50 transition-all"
-                                            title="View Details"
-                                        >
-                                            <Eye size={18} />
-                                        </button>
+                                        <div className="flex justify-center gap-1">
+                                            <button 
+                                                onClick={() => handleViewDetails(t)}
+                                                className="text-slate-400 hover:text-blue-600 p-2 rounded hover:bg-blue-50 transition-all"
+                                                title="View Details"
+                                            >
+                                                <Eye size={18} />
+                                            </button>
+                                            <button 
+                                                onClick={() => handleExportSingleInterface(t)}
+                                                className="text-slate-400 hover:text-green-600 p-2 rounded hover:bg-green-50 transition-all"
+                                                title="Download"
+                                            >
+                                                <Download size={18} />
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             ))}

@@ -24,42 +24,6 @@ public class AnnouncementController {
     private final ClientIpController clientIpController;
 
     /**
-     * Get the latest published announcement
-     * GET /api/announcement/latest
-     */
-    @GetMapping("/latest")
-    public ResponseEntity<AnnouncementDto> getLatestAnnouncement() {
-        AnnouncementDto announcement = announcementService.getLatestAnnouncement();
-        if (announcement == null) {
-            return ResponseEntity.notFound().build();
-        }
-        return ResponseEntity.ok(announcement);
-    }
-
-    /**
-     * Get announcement by version
-     * GET /api/announcement/{version}
-     */
-    @GetMapping("/{version}")
-    public ResponseEntity<AnnouncementDto> getAnnouncementByVersion(@PathVariable String version) {
-        AnnouncementDto announcement = announcementService.getAnnouncementByVersion(version);
-        if (announcement == null) {
-            return ResponseEntity.notFound().build();
-        }
-        return ResponseEntity.ok(announcement);
-    }
-
-    /**
-     * Get all published announcements
-     * GET /api/announcement/all
-     */
-    @GetMapping("/list/all")
-    public ResponseEntity<List<AnnouncementDto>> getAllAnnouncements() {
-        List<AnnouncementDto> announcements = announcementService.getAllPublishedAnnouncements();
-        return ResponseEntity.ok(announcements);
-    }
-
-    /**
      * Create a new announcement
      * POST /api/announcement
      */
@@ -90,13 +54,35 @@ public class AnnouncementController {
     }
 
     /**
+     * Get the latest published announcement
+     * GET /api/announcement/latest
+     */
+    @GetMapping("/latest")
+    public ResponseEntity<AnnouncementDto> getLatestAnnouncement() {
+        AnnouncementDto announcement = announcementService.getLatestAnnouncement();
+        if (announcement == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(announcement);
+    }
+
+    /**
+     * Get all published announcements
+     * GET /api/announcement/list/all
+     */
+    @GetMapping("/list/all")
+    public ResponseEntity<List<AnnouncementDto>> getAllAnnouncements() {
+        List<AnnouncementDto> announcements = announcementService.getAllPublishedAnnouncements();
+        return ResponseEntity.ok(announcements);
+    }
+
+    /**
      * Check if the client IP has seen the current announcement version.
-     * GET /api/announcement/status
+     * GET /api/announcement/status/check
      */
     @GetMapping("/status/check")
     public ResponseEntity<Map<String, Object>> getAnnouncementStatus(HttpServletRequest request) {
-        Map<String, String> ipResponse = clientIpController.getClientIp(request).getBody();
-        String clientIp = ipResponse != null ? ipResponse.get("ip") : "UNKNOWN";
+        String clientIp = request.getRemoteAddr();
         AnnouncementDto latestAnnouncement = announcementService.getLatestAnnouncement();
         
         if (latestAnnouncement == null) {
@@ -123,8 +109,7 @@ public class AnnouncementController {
      */
     @PostMapping("/record-view")
     public ResponseEntity<Map<String, String>> recordAnnouncementView(HttpServletRequest request) {
-        Map<String, String> ipResponse = clientIpController.getClientIp(request).getBody();
-        String clientIp = ipResponse != null ? ipResponse.get("ip") : "UNKNOWN";
+        String clientIp = request.getRemoteAddr();
         AnnouncementDto latestAnnouncement = announcementService.getLatestAnnouncement();
         
         if (latestAnnouncement != null) {
@@ -135,5 +120,18 @@ public class AnnouncementController {
         response.put("message", "Announcement view recorded for IP: " + clientIp);
         response.put("recordedVersion", latestAnnouncement != null ? latestAnnouncement.getVersion() : "NONE");
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Get announcement by version (GENERIC PATH - MUST BE LAST)
+     * GET /api/announcement/{version}
+     */
+    @GetMapping("/{version}")
+    public ResponseEntity<AnnouncementDto> getAnnouncementByVersion(@PathVariable String version) {
+        AnnouncementDto announcement = announcementService.getAnnouncementByVersion(version);
+        if (announcement == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(announcement);
     }
 }

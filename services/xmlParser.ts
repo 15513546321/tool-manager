@@ -93,6 +93,7 @@ export interface FileEntry {
 export const parseProjectFiles = (files: FileEntry[]): XmlTransaction[] => {
   const transactions: XmlTransaction[] = [];
   const javaMap: Record<string, string[]> = {}; 
+  const javaAuthorMap: Record<string, string> = {}; // 新增：存储类名到作者的映射
   const propertiesMap: Record<string, string> = {}; 
   
   files.forEach(file => {
@@ -103,6 +104,12 @@ export const parseProjectFiles = (files: FileEntry[]): XmlTransaction[] => {
         const className = classMatch[1];
         const calls = extractJavaDownstreamCalls(file.content);
         javaMap[className] = calls;
+        
+        // 提取 @author 注解
+        const authorMatch = file.content.match(/@author\s+([^\n\r]+)/);
+        if (authorMatch) {
+          javaAuthorMap[className] = authorMatch[1].trim();
+        }
       }
     } else if (file.name.endsWith('.properties')) {
       const lines = file.content.split('\n');
@@ -178,6 +185,9 @@ export const parseProjectFiles = (files: FileEntry[]): XmlTransaction[] => {
             javaMap[simpleClassName].forEach(call => downstreamCalls.add(call));
           }
 
+          // 从 Java 文件中获取作者信息
+          const author = simpleClassName ? javaAuthorMap[simpleClassName] : undefined;
+
           transactions.push({
             id,
             module: moduleName,
@@ -185,7 +195,8 @@ export const parseProjectFiles = (files: FileEntry[]): XmlTransaction[] => {
             template,
             trsName,
             actionRef,
-            actionClass: fullClassPath, 
+            actionClass: fullClassPath,
+            author,
             inputs,
             outputs,
             downstreamCalls: Array.from(downstreamCalls)

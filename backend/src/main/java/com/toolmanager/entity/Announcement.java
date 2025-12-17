@@ -25,7 +25,13 @@ public class Announcement {
     @Column(name = "content", columnDefinition = "LONGTEXT")
     private String content;
 
-    @Column(name = "version", nullable = false, unique = true)
+    @Column(name = "file_name")
+    private String fileName;
+
+    @Column(name = "file_size")
+    private String fileSize;
+
+    @Column(name = "version", nullable = false)
     private String version;
 
     @Column(name = "created_at", nullable = false)

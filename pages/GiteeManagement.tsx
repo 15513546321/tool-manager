@@ -85,64 +85,182 @@ export const GiteeManagement: React.FC = () => {
   const [exportFields, setExportFields] = useState<ExportField[]>(DEFAULT_EXPORT_FIELDS);
   const [isExportConfigOpen, setIsExportConfigOpen] = useState(false);
 
-  // Load Config from localStorage
+  // Load Config from backend
   useEffect(() => {
-    const saved = localStorage.getItem('gitee-config');
-    if (saved) {
+    const loadConfig = async () => {
       try {
-        const parsed = JSON.parse(saved);
-        setConfig({ ...config, ...parsed });
-      } catch (e) {
-        console.error('Failed to load Gitee config:', e);
-      }
-    }
-    
-    // Load and clean up old export fields config
-    const savedFields = localStorage.getItem('gitee-export-fields');
-    if (savedFields) {
-      try {
-        const parsed = JSON.parse(savedFields);
-        // Filter out old fields that are no longer in DEFAULT_EXPORT_FIELDS
-        const validFieldIds = DEFAULT_EXPORT_FIELDS.map(f => f.id);
-        const filteredFields = parsed.filter((f: any) => validFieldIds.includes(f.id));
-        if (filteredFields.length > 0) {
-          setExportFields(filteredFields);
+        // Try to load from backend
+        const result = await apiService.configApi.getByKey('gitee-config');
+        if (result) {
+          setConfig({ ...config, ...result.configValue ? JSON.parse(result.configValue) : {} });
         }
-      } catch (e) {
-        console.error('Failed to load export fields config:', e);
+      } catch (err) {
+        // Fallback to localStorage if backend fails
+        const saved = localStorage.getItem('gitee-config');
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            setConfig({ ...config, ...parsed });
+          } catch (e) {
+            console.error('Failed to load Gitee config:', e);
+          }
+        }
       }
-    }
+    };
+    
+    loadConfig();
+    
+    // Load export fields configuration
+    const loadExportFields = async () => {
+      try {
+        const result = await apiService.configApi.getByKey('gitee-export-fields');
+        if (result) {
+          const parsed = JSON.parse(result.configValue);
+          const validFieldIds = DEFAULT_EXPORT_FIELDS.map(f => f.id);
+          const filteredFields = parsed.filter((f: any) => validFieldIds.includes(f.id));
+          if (filteredFields.length > 0) {
+            setExportFields(filteredFields);
+          }
+        }
+      } catch (err) {
+        // Fallback to localStorage
+        const savedFields = localStorage.getItem('gitee-export-fields');
+        if (savedFields) {
+          try {
+            const parsed = JSON.parse(savedFields);
+            const validFieldIds = DEFAULT_EXPORT_FIELDS.map(f => f.id);
+            const filteredFields = parsed.filter((f: any) => validFieldIds.includes(f.id));
+            if (filteredFields.length > 0) {
+              setExportFields(filteredFields);
+            }
+          } catch (e) {
+            console.error('Failed to load export fields config:', e);
+          }
+        }
+      }
+    };
+    
+    loadExportFields();
   }, []);
 
-  const saveConfig = () => {
-    localStorage.setItem('gitee-config', JSON.stringify(config));
-    recordAction('Gitee管理', `保存配置 - 方式: ${config.authType === 'token' ? 'HTTPS/Token' : 'SSH'}`);
-    setIsConfigOpen(false);
-    alert('连接配置已保存');
+  const saveConfig = async () => {
+    // Validation
+    if (!config.repoUrl || !config.repoUrl.trim()) {
+      alert('请输入仓库地址');
+      return;
+    }
+
+    if (config.authType === 'token' && !config.accessToken) {
+      alert('请输入 Access Token');
+      return;
+    }
+
+    if (config.authType === 'ssh' && !config.privateKey) {
+      alert('请输入私钥');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      
+      // Test connection to Gitee
+      const response = await fetch('/api/gitee/test-connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repoUrl: config.repoUrl,
+          authType: config.authType,
+          accessToken: config.authType === 'token' ? config.accessToken : undefined,
+          privateKey: config.authType === 'ssh' ? config.privateKey : undefined
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Connection test failed');
+      }
+
+      const result = await response.json();
+      
+      // Save config to backend
+      try {
+        await apiService.configApi.save({
+          configKey: 'gitee-config',
+          configValue: JSON.stringify(config),
+          configType: 'GITEE',
+          description: 'Gitee repository connection configuration'
+        });
+      } catch (err) {
+        console.warn('Failed to save config to backend, using localStorage:', err);
+        localStorage.setItem('gitee-config', JSON.stringify(config));
+      }
+      recordAction('Gitee管理', `保存配置 - 方式: ${config.authType === 'token' ? 'HTTPS/Token' : 'SSH'} - 连接测试成功`);
+      setIsConfigOpen(false);
+      alert('连接配置已保存，连接测试成功！');
+    } catch (error) {
+      console.error('Failed to test connection:', error);
+      alert(`连接测试失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const saveExportFieldsConfig = () => {
-    localStorage.setItem('gitee-export-fields', JSON.stringify(exportFields));
+  const saveExportFieldsConfig = async () => {
+    try {
+      await apiService.configApi.save({
+        configKey: 'gitee-export-fields',
+        configValue: JSON.stringify(exportFields),
+        configType: 'GITEE',
+        description: 'Gitee export fields configuration'
+      });
+    } catch (err) {
+      console.warn('Failed to save to backend, using localStorage:', err);
+      localStorage.setItem('gitee-export-fields', JSON.stringify(exportFields));
+    }
     recordAction('Gitee管理', '保存导出字段配置');
     setIsExportConfigOpen(false);
     alert('导出字段配置已保存');
   };
 
   const handleSearch = async () => {
+    if (!config.repoUrl || !config.repoUrl.trim()) {
+      alert('请先配置 Gitee 仓库地址');
+      setIsConfigOpen(true);
+      return;
+    }
+
     setLoading(true);
     setBranches([]);
     setCommits([]);
     setSelectedBranches(new Set());
     
-    setTimeout(() => {
-        let results = MOCK_BRANCHES;
-        if (searchQuery) {
-            results = MOCK_BRANCHES.filter(b => b.name.toLowerCase().includes(searchQuery.toLowerCase()));
-        }
-        setBranches(results);
-        setLoading(false);
-        recordAction('Gitee管理', `查询分支 - 关键词: ${searchQuery || 'ALL'}`);
-    }, 800);
+    try {
+      // Call backend API to fetch branches from Gitee
+      const response = await fetch('/api/gitee/branches', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repoUrl: config.repoUrl,
+          authType: config.authType,
+          accessToken: config.accessToken,
+          privateKey: config.privateKey,
+          searchQuery: searchQuery
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`API Error: ${response.status}`);
+      }
+
+      const result = await response.json();
+      setBranches(result.data || []);
+      recordAction('Gitee管理', `查询分支 - 关键词: ${searchQuery || 'ALL'}`);
+    } catch (error) {
+      console.error('Failed to fetch branches:', error);
+      alert(`获取分支失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const toggleBranchSelection = (branchName: string) => {
@@ -163,44 +281,67 @@ export const GiteeManagement: React.FC = () => {
     }
   };
 
-  const handleFetchMultiBranchChanges = () => {
+  const handleFetchMultiBranchChanges = async () => {
     if (selectedBranches.size === 0) {
       alert('请先选择至少一个分支');
       return;
     }
 
+    if (!config.repoUrl || !config.repoUrl.trim()) {
+      alert('请先配置 Gitee 仓库地址');
+      setIsConfigOpen(true);
+      return;
+    }
+
     setLoading(true);
 
-    setTimeout(() => {
-        // Generate mock changeset data for each branch
-        const newChangesetData = new Map<string, ChangesetItem[]>();
-        
-        const allAuthors = ['DevUser', 'Admin', 'TestUser', 'ReviewUser'];
-        const dates = ['2023-10-25 10:00', '2023-10-24 16:20', '2023-10-24 09:15', '2023-10-20 11:00'];
-        const messages = ['feat: add payment gateway integration', 'fix: login timeout issue', 'docs: update api spec', 'refactor: optimize database queries'];
-        
-        selectedBranches.forEach((branchName, index) => {
-          const items: ChangesetItem[] = [];
-          const commitCount = 2 + Math.floor(Math.random() * 3);
-          
-          for (let i = 0; i < commitCount; i++) {
-            items.push({
-              branch: branchName,
-              commitHash: `${String.fromCharCode(97 + i)}1b2c3d${i}`,
-              author: allAuthors[i % allAuthors.length],
-              date: dates[i % dates.length],
-              filePath: `src/main/java/com/bank/service/${i === 0 ? 'PaymentService' : 'AuthService'}.java`,
-              message: messages[i % messages.length],
-            });
+    try {
+      // Call backend API to fetch changesets from Gitee
+      const response = await fetch('/api/gitee/changesets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repoUrl: config.repoUrl,
+          authType: config.authType,
+          accessToken: config.accessToken,
+          privateKey: config.privateKey,
+          branches: Array.from(selectedBranches)
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`API Error: ${response.status}`);
+      }
+
+      const result = await response.json();
+      const newChangesetData = new Map<string, ChangesetItem[]>();
+      
+      if (result.data && Array.isArray(result.data)) {
+        result.data.forEach((item: any) => {
+          const branchName = item.branch;
+          if (!newChangesetData.has(branchName)) {
+            newChangesetData.set(branchName, []);
           }
-          newChangesetData.set(branchName, items);
+          newChangesetData.get(branchName)!.push({
+            branch: item.branch,
+            commitHash: item.commitHash,
+            author: item.author,
+            date: item.date,
+            filePath: item.filePath,
+            message: item.message,
+            requirementGroup: item.requirementGroup
+          });
         });
-        
-        setChangesetData(newChangesetData);
-        setLoading(false);
-        setChangesetOpen(true);
-        recordAction('Gitee管理', `拉取多分支变更集 - 分支数: ${selectedBranches.size}`);
-    }, 1000);
+      }
+      
+      setChangesetData(newChangesetData);
+      recordAction('Gitee管理', `获取变更集 - 分支: ${Array.from(selectedBranches).join(',')}`);
+    } catch (error) {
+      console.error('Failed to fetch changesets:', error);
+      alert(`获取变更集失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDownloadChangeset = async () => {
@@ -735,6 +876,31 @@ export const GiteeManagement: React.FC = () => {
                                     onChange={e => setConfig({...config, privateKey: e.target.value})}
                                 />
                             </div>
+                        </div>
+                        
+                        {/* SSH Configuration Helper */}
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-slate-700">
+                          <h4 className="font-bold text-blue-900 mb-2 flex items-center gap-2">
+                            <AlertTriangle size={16} className="text-blue-600" />
+                            SSH 连接配置示例
+                          </h4>
+                          <div className="space-y-2 text-xs font-mono bg-white p-2 rounded border border-blue-100">
+                            <p className="text-slate-600"><strong>仓库地址:</strong></p>
+                            <p className="bg-slate-50 p-1 rounded text-slate-700">git@gitee.com:your_username/your_repo.git</p>
+                            
+                            <p className="text-slate-600 mt-3"><strong>SSH 密钥生成命令:</strong></p>
+                            <p className="bg-slate-50 p-1 rounded text-slate-700">ssh-keygen -t ed25519 -C "your_email@example.com"</p>
+                            
+                            <p className="text-slate-600 mt-3"><strong>获取公钥内容:</strong></p>
+                            <p className="bg-slate-50 p-1 rounded text-slate-700">cat ~/.ssh/id_ed25519.pub</p>
+                            
+                            <p className="text-slate-600 mt-3"><strong>获取私钥内容:</strong></p>
+                            <p className="bg-slate-50 p-1 rounded text-slate-700">cat ~/.ssh/id_ed25519</p>
+                            
+                            <p className="text-slate-600 mt-3"><strong>Gitee 配置:</strong></p>
+                            <p className="bg-slate-50 p-1 rounded text-slate-700">设置 → 安全设置 → SSH公钥 → 添加上方的公钥内容</p>
+                          </div>
+                          <p className="text-slate-500 text-xs mt-2">提示: 建议使用 ed25519 算法，更安全、密钥更小</p>
                         </div>
                       </>
                   )}

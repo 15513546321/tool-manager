@@ -46,10 +46,10 @@ public class SuggestionService {
     }
 
     /**
-     * Create a new suggestion
+     * Create a new suggestion with IP address
      */
     @Transactional
-    public SuggestionDto createSuggestion(SuggestionDto dto) {
+    public SuggestionDto createSuggestion(SuggestionDto dto, String ipAddress) {
         Suggestion suggestion = new Suggestion();
         suggestion.setTitle(dto.getTitle());
         suggestion.setContent(dto.getContent());
@@ -57,9 +57,18 @@ public class SuggestionService {
         suggestion.setPriority(dto.getPriority());
         suggestion.setStatus(dto.getStatus() != null ? dto.getStatus() : "NEW");
         suggestion.setCreatedBy(dto.getCreatedBy());
+        suggestion.setIpAddress(ipAddress);
 
         Suggestion saved = suggestionRepository.save(suggestion);
         return convertToDto(saved);
+    }
+
+    /**
+     * Create a new suggestion without IP (for backward compatibility)
+     */
+    @Transactional
+    public SuggestionDto createSuggestion(SuggestionDto dto) {
+        return createSuggestion(dto, "Unknown");
     }
 
     /**
@@ -98,7 +107,8 @@ public class SuggestionService {
                 suggestion.getStatus(),
                 suggestion.getCreatedAt(),
                 suggestion.getUpdatedAt(),
-                suggestion.getCreatedBy()
+                suggestion.getCreatedBy(),
+                suggestion.getIpAddress()
         );
     }
 }

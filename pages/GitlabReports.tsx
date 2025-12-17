@@ -121,7 +121,7 @@ export const GitlabReports: React.FC = () => {
   const [columnsMap, setColumnsMap] = useState<Record<ReportType, ReportColumn[]>>(DEFAULT_COLUMNS);
   
   // --- Filter State ---
-  const [targetProjectId, setTargetProjectId] = useState<string>('278964'); // Default to gitlab-org/gitlab (ID: 278964) for testing
+  const [targetProjectId, setTargetProjectId] = useState<string>('');
   const [filters, setFilters] = useState({
     state: 'opened',
     assignee_id: '',
@@ -147,7 +147,7 @@ export const GitlabReports: React.FC = () => {
     milestones: DropdownOption[];
     labels: DropdownOption[];
   }>({
-    projects: [{ label: 'gitlab-org/gitlab (Test)', value: '278964' }],
+    projects: [],
     users: [],
     milestones: [],
     labels: []
@@ -163,19 +163,32 @@ export const GitlabReports: React.FC = () => {
   const [newColumnField, setNewColumnField] = useState('');
   const [newColumnTitle, setNewColumnTitle] = useState('');
 
-  // Initial Load from localStorage (now using browser cache)
+  // Initial Load from backend, with fallback to localStorage
   useEffect(() => {
-    // Load from localStorage as fallback since GitLab settings are not critical to H2
-    const saved = localStorage.getItem('gitlab-settings');
-    if (saved) {
+    const loadSettings = async () => {
       try {
-        const parsed = JSON.parse(saved);
-        if(parsed.settings) setSettings(parsed.settings);
-        if(parsed.columnsMap) setColumnsMap(parsed.columnsMap);
-      } catch (e) {
-        console.error('Failed to load GitLab settings from cache:', e);
+        // Try to load from backend
+        const result = await apiService.configApi.getByKey('gitlab-settings');
+        if (result && result.configValue) {
+          const parsed = JSON.parse(result.configValue);
+          if(parsed.settings) setSettings(parsed.settings);
+          if(parsed.columnsMap) setColumnsMap(parsed.columnsMap);
+        }
+      } catch (err) {
+        // Fallback to localStorage
+        const saved = localStorage.getItem('gitlab-settings');
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            if(parsed.settings) setSettings(parsed.settings);
+            if(parsed.columnsMap) setColumnsMap(parsed.columnsMap);
+          } catch (e) {
+            console.error('Failed to load GitLab settings from cache:', e);
+          }
+        }
       }
-    }
+    };
+    loadSettings();
   }, []);
 
   // Reset context filters when project changes
@@ -328,17 +341,29 @@ export const GitlabReports: React.FC = () => {
   }, [targetProjectId, settings.token]);
 
 
-  const saveConfig = () => {
-    // Save to localStorage as fallback cache
-    localStorage.setItem('gitlab-settings', JSON.stringify({ settings, columnsMap }));
+  const saveConfig = async () => {
+    // Save to backend
+    try {
+      await apiService.configApi.save({
+        configKey: 'gitlab-settings',
+        configValue: JSON.stringify({ settings, columnsMap }),
+        configType: 'GITLAB',
+        description: 'GitLab report settings and columns configuration'
+      });
+    } catch (err) {
+      console.warn('Failed to save to backend, using localStorage:', err);
+      localStorage.setItem('gitlab-settings', JSON.stringify({ settings, columnsMap }));
+    }
     recordAction('GitLab报表', '保存配置 - 更新了连接或列定义');
     alert('配置已保存');
   };
 
   const fetchData = async (targetPage = 1) => {
-    // Allow public fetch if no token is set but we are targeting the default public project
-    if (!settings.token && targetProjectId !== '278964') {
-        return setError("请先配置 Access Token (或者使用默认测试项目 ID: 278964)");
+    if (!settings.token) {
+        return setError("请先配置 Access Token");
+    }
+    if (!targetProjectId) {
+        return setError("请先选择项目");
     }
     
     setLoading(true);
@@ -484,8 +509,7 @@ export const GitlabReports: React.FC = () => {
                   value={targetProjectId}
                   onChange={e => setTargetProjectId(e.target.value)}
                 >
-                  <option value="">-- 全局查询 --</option>
-                  <option value="278964">gitlab-org/gitlab (Test)</option>
+                  <option value="">-- 选择项目 --</option>
                   {options.projects.map(p => (
                     <option key={p.value} value={p.value}>{p.label}</option>
                   ))}

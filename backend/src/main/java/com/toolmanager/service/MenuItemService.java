@@ -71,15 +71,23 @@ public class MenuItemService {
         MenuItem menuItem = menuItemRepository.findByMenuId(menuId)
                 .orElseThrow(() -> new IllegalArgumentException("Menu item not found: " + menuId));
 
+        // 更新所有字段
         menuItem.setName(dto.getName());
         menuItem.setPath(dto.getPath());
         menuItem.setIcon(dto.getIcon());
-        menuItem.setVisible(dto.getVisible());
+        menuItem.setVisible(dto.getVisible() != null ? dto.getVisible() : true);
         menuItem.setParentId(dto.getParentId());
-        menuItem.setSortOrder(dto.getSortOrder());
+        if (dto.getSortOrder() != null) {
+            menuItem.setSortOrder(dto.getSortOrder());
+        }
         menuItem.setUpdatedBy(dto.getUpdatedBy());
 
+        // 显式保存
         MenuItem updated = menuItemRepository.save(menuItem);
+        
+        // 验证保存成功
+        System.out.println("Menu item updated: " + menuId + ", name: " + updated.getName() + ", visible: " + updated.getVisible());
+        
         return convertToDto(updated);
     }
 
