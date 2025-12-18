@@ -48,41 +48,47 @@ export const MenuManagement: React.FC = () => {
   const [menus, setMenus] = useState<MenuItem[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
+  const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  useEffect(() => {
-    // Load from API
-    const loadMenus = async () => {
-      try {
-        const data = await menuApi.getAll();
-        // Convert API response to MenuItem format
-        const converted = data.map((item: any) => ({
+  // 加载菜单的函数，可以在多个地方调用
+  const loadMenus = async () => {
+    try {
+      const data = await menuApi.getAll();
+      // Convert API response to MenuItem format
+      // 注意：这里不过滤 visible=false，管理页面需要显示所有菜单（包括已下线的）
+      const converted = data
+        .map((item: any) => ({
           id: item.menuId,
           name: item.name,
           path: item.path,
           icon: item.icon,
           visible: item.visible !== false,
-          parentId: item.parentId
-        }));
-        
-        // Build hierarchy
-        const rootItems = converted.filter((m: any) => !m.parentId);
-        const buildTree = (parent: any) => {
-          const children = converted.filter((m: any) => m.parentId === parent.id);
-          if (children.length > 0) {
-            parent.children = children.map((c: any) => buildTree(c));
-          }
-          return parent;
-        };
-        
-        const menus = rootItems.map((item: any) => buildTree(item));
-        setMenus(menus);
-      } catch (error) {
-        console.error('Failed to load menus:', error);
-        // Fallback to default menus
-        const defaultMenus = initialMenuItems.map(m => patchVisible(m));
-        setMenus(defaultMenus);
-      }
-    };
+          parentId: item.parentId,
+          sortOrder: item.sortOrder || 0
+        }))
+        .sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0)); // Sort by sortOrder
+      
+      // Build hierarchy
+      const rootItems = converted.filter((m: any) => !m.parentId);
+      const buildTree = (parent: any) => {
+        const children = converted
+          .filter((m: any) => m.parentId === parent.id)
+          .sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0));
+        if (children.length > 0) {
+          parent.children = children.map((c: any) => buildTree(c));
+        }
+        return parent;
+      };
+      
+      const menus = rootItems.map((item: any) => buildTree(item));
+      setMenus(menus);
+    } catch (error) {
+      console.error('Failed to load menus:', error);
+    }
+  };
+
+  useEffect(() => {
     loadMenus();
   }, []);
 
@@ -100,11 +106,17 @@ export const MenuManagement: React.FC = () => {
   };
 
   const handleSave = async (id: string) => {
+    if (isLoading || loadingId) {
+      console.warn('Operation already in progress');
+      return;
+    }
+
     if (!editName.trim()) {
       alert('菜单名称不能为空');
       return;
     }
 
+    setLoadingId(id);
     try {
       const target = findMenuById(menus, id);
       if (!target) {
@@ -129,26 +141,34 @@ export const MenuManagement: React.FC = () => {
       const response = await menuApi.update(id, updatePayload);
       console.log('Menu update response:', response);
       
-      // 更新本地状态
-      const updateRecursive = (items: MenuItem[]): MenuItem[] => {
-        return items.map(item => {
-          if (item.id === id) return { ...item, name: editName.trim() };
-          if (item.children) return { ...item, children: updateRecursive(item.children) };
-          return item;
-        });
-      };
+      // Check if response indicates success before updating local state
+      // Accept various success indicators: success=true, code=200, no error field, or any non-empty response
+      const isSuccess = !response?.error && (response?.success !== false) && (response?.code !== 500 && response?.code !== 404);
       
-      const newMenus = updateRecursive(menus);
-      setMenus(newMenus);
-      recordAction('系统设置 - 菜单管理', `修改菜单 [${id}] 名称为 "${editName.trim()}"`);
-      alert('菜单名称已更新');
-      setEditingId(null);
-      setEditName('');
+      if (isSuccess) {
+        // 更新本地状态
+        const updateRecursive = (items: MenuItem[]): MenuItem[] => {
+          return items.map(item => {
+            if (item.id === id) return { ...item, name: editName.trim() };
+            if (item.children) return { ...item, children: updateRecursive(item.children) };
+            return item;
+          });
+        };
+        
+        const newMenus = updateRecursive(menus);
+        setMenus(newMenus);
+        recordAction('系统设置 - 菜单管理', `修改菜单 [${id}] 名称为 "${editName.trim()}"`);
+        alert('菜单名称已更新');
+        setEditingId(null);
+        setEditName('');
+      } else {
+        throw new Error(response?.message || '菜单名称修改失败');
+      }
     } catch (error) {
       console.error('Failed to save menu:', error);
       alert(`菜单名称修改失败: ${error instanceof Error ? error.message : '未知错误'}`);
-      setEditingId(null);
-      setEditName('');
+    } finally {
+      setLoadingId(null);
     }
   };
 
@@ -164,6 +184,12 @@ export const MenuManagement: React.FC = () => {
   };
 
   const handleToggleVisible = async (id: string) => {
+    if (isLoading || loadingId) {
+      console.warn('Operation already in progress');
+      return;
+    }
+
+    setLoadingId(id);
     try {
       const target = findMenuById(menus, id);
       if (!target) {
@@ -187,22 +213,27 @@ export const MenuManagement: React.FC = () => {
       const response = await menuApi.update(id, updatePayload);
       console.log('Toggle visibility response:', response);
       
-      // 更新本地状态
-      const updateRecursive = (items: MenuItem[]): MenuItem[] => {
-        return items.map(item => {
-          if (item.id === id) return { ...item, visible: newVisibleStatus };
-          if (item.children) return { ...item, children: updateRecursive(item.children) };
-          return item;
-        });
-      };
+      // Check if response indicates success before updating local state
+      // Accept various success indicators: success=true, code=200, no error field, or any non-empty response
+      const isSuccess = !response?.error && (response?.success !== false) && (response?.code !== 500 && response?.code !== 404);
       
-      const newMenus = updateRecursive(menus);
-      setMenus(newMenus);
-      recordAction('系统设置 - 菜单管理', `菜单 [${id}] 状态变更为 ${newVisibleStatus ? '上线' : '下线'}`);
-      alert(`菜单已${newVisibleStatus ? '上线' : '下线'}`);
+      if (isSuccess) {
+        // 菜单下线/上线后，重新加载所有菜单以保证排序正确
+        await loadMenus();
+        
+        // 触发全局菜单更新事件，让Layout中的Sidebar实时更新
+        window.dispatchEvent(new Event('menuUpdated'));
+        
+        recordAction('系统设置 - 菜单管理', `菜单 [${id}] 状态变更为 ${newVisibleStatus ? '上线' : '下线'}`);
+        alert(`菜单已${newVisibleStatus ? '上线' : '下线'}`);
+      } else {
+        throw new Error(response?.message || `菜单${newVisibleStatus ? '上线' : '下线'}失败`);
+      }
     } catch (error) {
       console.error('Failed to toggle menu visibility:', error);
       alert(`菜单上下线操作失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    } finally {
+      setLoadingId(null);
     }
   };
 
@@ -241,21 +272,42 @@ export const MenuManagement: React.FC = () => {
             {/* Online/Offline Toggle */}
             <button 
                 onClick={() => handleToggleVisible(item.id)}
-                className={`p-1.5 rounded flex items-center gap-1 text-xs font-medium transition-colors ${isOffline ? 'text-slate-500 hover:bg-slate-200' : 'text-green-600 hover:bg-green-50'}`}
+                disabled={loadingId === item.id || isLoading}
+                className={`p-1.5 rounded flex items-center gap-1 text-xs font-medium transition-colors ${
+                  loadingId === item.id || isLoading
+                    ? 'opacity-50 cursor-not-allowed'
+                    : isOffline ? 'text-slate-500 hover:bg-slate-200' : 'text-green-600 hover:bg-green-50'
+                }`}
                 title={isOffline ? "点击上线" : "点击下线"}
             >
-                {isOffline ? <EyeOff size={16}/> : <Eye size={16}/>}
-                <span className="hidden md:inline">{isOffline ? '已下线' : '在线'}</span>
+                {loadingId === item.id ? (
+                  <div className="animate-spin">⟳</div>
+                ) : isOffline ? (
+                  <EyeOff size={16}/>
+                ) : (
+                  <Eye size={16}/>
+                )}
+                <span className="hidden md:inline">{loadingId === item.id ? '处理中...' : isOffline ? '已下线' : '在线'}</span>
             </button>
 
             <div className="w-px h-4 bg-slate-200 mx-1"></div>
 
             {editingId === item.id ? (
-              <button onClick={() => handleSave(item.id)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="Save">
+              <button 
+                onClick={() => handleSave(item.id)} 
+                disabled={loadingId === item.id || isLoading}
+                className={`p-1.5 rounded ${loadingId === item.id || isLoading ? 'opacity-50 cursor-not-allowed text-slate-400' : 'text-blue-600 hover:bg-blue-50'}`}
+                title="Save"
+              >
                 <Save size={16} />
               </button>
             ) : (
-              <button onClick={() => handleEdit(item)} className="p-1.5 text-slate-500 hover:bg-blue-50 hover:text-blue-600 rounded" title="Edit Name">
+              <button 
+                onClick={() => handleEdit(item)} 
+                disabled={loadingId !== null || isLoading}
+                className={`p-1.5 rounded ${loadingId !== null || isLoading ? 'opacity-50 cursor-not-allowed' : 'text-slate-500 hover:bg-blue-50 hover:text-blue-600'}`}
+                title="Edit Name"
+              >
                 <Edit2 size={16} />
               </button>
             )}

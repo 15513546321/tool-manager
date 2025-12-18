@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Edit2, Save, X, Download, ChevronDown, ChevronUp, GitCompare } from 'lucide-react';
+import { Plus, Trash2, Edit2, Save, X, Download, ChevronDown, ChevronUp, GitCompare, ArrowRight, Play, CheckCircle } from 'lucide-react';
 import { apiService } from '../../services/apiService';
 import ExcelJS from 'exceljs';
 
@@ -283,15 +283,15 @@ export const NacosSync: React.FC = () => {
     
     worksheet.columns = [
       { width: 12 },
-      { width: 10 },
+      { width: 12 },
       { width: 50 },
       { width: 50 },
     ];
 
-    const headerRow = worksheet.addRow(['Line', 'Type', 'Source Content', 'Target Content']);
+    const headerRow = worksheet.addRow(['行号', '变更类型', '源内容', '目标内容']);
     headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 12 };
     headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E78' } };
-    headerRow.alignment = { horizontal: 'center', vertical: 'top', wrapText: true };
+    headerRow.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
     headerRow.height = 25;
 
     const sourceLines = result.sourceContent.split('\n');
@@ -307,7 +307,7 @@ export const NacosSync: React.FC = () => {
 
       const row = worksheet.addRow([
         i + 1,
-        isSourceOnly ? 'Delete' : isTargetOnly ? 'Insert' : isChanged ? 'Change' : 'Equal',
+        isSourceOnly ? '新增' : isTargetOnly ? '删除' : isChanged ? '修改' : '相同',
         sourceLine,
         targetLine,
       ]);
@@ -316,9 +316,9 @@ export const NacosSync: React.FC = () => {
       row.height = 30;
 
       if (isSourceOnly) {
-        row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF6B6B' } };
-      } else if (isTargetOnly) {
         row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF51CF66' } };
+      } else if (isTargetOnly) {
+        row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF6B6B' } };
       } else if (isChanged) {
         row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEB3B' } };
       } else if (i % 2 === 0) {
@@ -363,17 +363,141 @@ export const NacosSync: React.FC = () => {
     try {
       const workbook = new ExcelJS.Workbook();
 
-      createComparisonWorksheet(workbook, result, '详细对比');
+      // Sheet 1: Detailed comparison
+      const worksheet = workbook.addWorksheet('详细对比');
+      worksheet.columns = [
+        { width: 12 },
+        { width: 12 },
+        { width: 50 },
+        { width: 50 },
+      ];
 
+      const headerRow = worksheet.addRow(['行号', '变更类型', '源内容', '目标内容']);
+      headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 12 };
+      headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E78' } };
+      headerRow.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      headerRow.height = 25;
+
+      // Handle different status types
+      if (result.status === 'source-only') {
+        // 源独有：标记为新增（需要添加到目标）
+        const sourceLines = result.sourceContent.split('\n');
+        sourceLines.forEach((line, idx) => {
+          if (line.trim()) {
+            const excelRow = worksheet.addRow([
+              idx + 1,
+              '新增',
+              line,
+              '',
+            ]);
+            excelRow.alignment = { wrapText: true, vertical: 'top' };
+            excelRow.height = 30;
+            excelRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF51CF66' } };
+          }
+        });
+      } else if (result.status === 'target-only') {
+        // 目标独有：标记为删除（需要从目标删除）
+        const targetLines = result.targetContent.split('\n');
+        targetLines.forEach((line, idx) => {
+          if (line.trim()) {
+            const excelRow = worksheet.addRow([
+              idx + 1,
+              '删除',
+              '',
+              line,
+            ]);
+            excelRow.alignment = { wrapText: true, vertical: 'top' };
+            excelRow.height = 30;
+            excelRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF6B6B' } };
+          }
+        });
+      } else {
+        // 其他情况（same/different）：获取详细差异
+        let detailedData: DetailedDiffResult | null = null;
+        try {
+          const response = await apiService.nacosApi.compareDetailed({
+            dataId: result.dataId,
+            group: result.group,
+            sourceContent: result.sourceContent,
+            targetContent: result.targetContent,
+          });
+          if (response.success) {
+            detailedData = response.data;
+          }
+        } catch (error) {
+          console.warn('Could not fetch detailed diff', error);
+        }
+
+        if (detailedData) {
+          detailedData.diffRows.forEach((row, idx) => {
+            const typeText = row.tag === 'DELETE' ? '删除' : row.tag === 'INSERT' ? '新增' : row.tag === 'CHANGE' ? '修改' : '相同';
+            const excelRow = worksheet.addRow([
+              idx + 1,
+              typeText,
+              row.oldLine,
+              row.newLine,
+            ]);
+
+            excelRow.alignment = { wrapText: true, vertical: 'top' };
+            excelRow.height = 30;
+
+            if (row.tag === 'DELETE') {
+              excelRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF6B6B' } };
+            } else if (row.tag === 'INSERT') {
+              excelRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF51CF66' } };
+            } else if (row.tag === 'CHANGE') {
+              excelRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEB3B' } };
+            } else if (idx % 2 === 0) {
+              excelRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F5F5' } };
+            }
+          });
+        } else {
+          // Fallback: line-by-line comparison
+          const sourceLines = result.sourceContent.split('\n');
+          const targetLines = result.targetContent.split('\n');
+          const maxLines = Math.max(sourceLines.length, targetLines.length);
+
+          for (let i = 0; i < maxLines; i++) {
+            const sourceLine = sourceLines[i] || '';
+            const targetLine = targetLines[i] || '';
+            const isChanged = sourceLine !== targetLine && sourceLine && targetLine;
+            const isSourceOnly = sourceLine && !targetLine;
+            const isTargetOnly = !sourceLine && targetLine;
+
+            const row = worksheet.addRow([
+              i + 1,
+              isSourceOnly ? '新增' : isTargetOnly ? '删除' : isChanged ? '修改' : '相同',
+              sourceLine,
+              targetLine,
+            ]);
+
+            row.alignment = { wrapText: true, vertical: 'top' };
+            row.height = 30;
+
+            if (isSourceOnly) {
+              row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF51CF66' } };
+            } else if (isTargetOnly) {
+              row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF6B6B' } };
+            } else if (isChanged) {
+              row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEB3B' } };
+            } else if (i % 2 === 0) {
+              row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F5F5' } };
+            }
+          }
+        }
+      }
+
+      // Sheet 2: Description and suggestions
       const description: Record<string, string> = {
         'DataId': result.dataId,
         'Group': result.group,
-        'Status': result.status === 'same' ? '一致' : result.status === 'different' ? '差异' : result.status === 'source-only' ? '源独有' : '目标独有',
-        '说明': result.suggestion || '无特殊说明',
+        '状态': result.status === 'same' ? '一致' : result.status === 'different' ? '差异' : result.status === 'source-only' ? '源独有（需新增）' : '目标独有（需删除）',
+        '同步建议': result.suggestion || '无特殊说明',
         '源内容行数': result.sourceContent.split('\n').length.toString(),
         '目标内容行数': result.targetContent.split('\n').length.toString(),
         '导出时间': new Date().toLocaleString('zh-CN'),
       };
+
       createDescriptionSheet(workbook, `配置对比说明: ${result.dataId}`, description);
 
       const buffer = await workbook.xlsx.writeBuffer();
@@ -435,13 +559,153 @@ export const NacosSync: React.FC = () => {
       });
 
       // Sheet 2-N: Add detailed comparison worksheets for each result
-      currentComparison.results.forEach((result, idx) => {
+      for (const result of currentComparison.results) {
         // Create sheet name (max 31 chars, Excel sheet limit)
         const sheetBaseName = `${result.dataId}_${result.group}`.replace(/[\/\?\*\[\]]/g, '_');
+        const idx = currentComparison.results.indexOf(result);
         const sheetName = sheetBaseName.length > 31 ? sheetBaseName.substring(0, 27) + `_${idx}` : sheetBaseName;
         
-        createComparisonWorksheet(workbook, result, sheetName);
-      });
+        const worksheet = workbook.addWorksheet(sheetName);
+        worksheet.columns = [
+          { width: 12 },
+          { width: 12 },
+          { width: 50 },
+          { width: 50 },
+        ];
+
+        const headerRow = worksheet.addRow(['行号', '变更类型', '源内容', '目标内容']);
+        headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 12 };
+        headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E78' } };
+        headerRow.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        headerRow.height = 25;
+
+        // Handle different status types
+        if (result.status === 'source-only') {
+          // 源独有：标记为新增（需要添加到目标）
+          const sourceLines = result.sourceContent.split('\n');
+          sourceLines.forEach((line, lineIdx) => {
+            if (line.trim()) {
+              const excelRow = worksheet.addRow([
+                lineIdx + 1,
+                '新增',
+                line,
+                '',
+              ]);
+              excelRow.alignment = { wrapText: true, vertical: 'top' };
+              excelRow.height = 30;
+              excelRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF51CF66' } };
+            }
+          });
+        } else if (result.status === 'target-only') {
+          // 目标独有：标记为删除（需要从目标删除）
+          const targetLines = result.targetContent.split('\n');
+          targetLines.forEach((line, lineIdx) => {
+            if (line.trim()) {
+              const excelRow = worksheet.addRow([
+                lineIdx + 1,
+                '删除',
+                '',
+                line,
+              ]);
+              excelRow.alignment = { wrapText: true, vertical: 'top' };
+              excelRow.height = 30;
+              excelRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF6B6B' } };
+            }
+          });
+        } else if (result.status === 'same') {
+          // 一致：显示为相同
+          const sourceLines = result.sourceContent.split('\n');
+          sourceLines.forEach((line, lineIdx) => {
+            if (line.trim()) {
+              const excelRow = worksheet.addRow([
+                lineIdx + 1,
+                '相同',
+                line,
+                line,
+              ]);
+              excelRow.alignment = { wrapText: true, vertical: 'top' };
+              excelRow.height = 30;
+              if (lineIdx % 2 === 0) {
+                excelRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F5F5' } };
+              }
+            }
+          });
+        } else {
+          // 差异：获取详细的行级差异
+          let detailedData: DetailedDiffResult | null = null;
+          try {
+            const response = await apiService.nacosApi.compareDetailed({
+              dataId: result.dataId,
+              group: result.group,
+              sourceContent: result.sourceContent,
+              targetContent: result.targetContent,
+            });
+            if (response.success) {
+              detailedData = response.data;
+            }
+          } catch (error) {
+            console.warn('Could not fetch detailed diff', error);
+          }
+
+          if (detailedData) {
+            detailedData.diffRows.forEach((row, lineIdx) => {
+              const typeText = row.tag === 'DELETE' ? '删除' : row.tag === 'INSERT' ? '新增' : row.tag === 'CHANGE' ? '修改' : '相同';
+              const excelRow = worksheet.addRow([
+                lineIdx + 1,
+                typeText,
+                row.oldLine,
+                row.newLine,
+              ]);
+
+              excelRow.alignment = { wrapText: true, vertical: 'top' };
+              excelRow.height = 30;
+
+              if (row.tag === 'DELETE') {
+                excelRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF6B6B' } };
+              } else if (row.tag === 'INSERT') {
+                excelRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF51CF66' } };
+              } else if (row.tag === 'CHANGE') {
+                excelRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEB3B' } };
+              } else if (lineIdx % 2 === 0) {
+                excelRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F5F5' } };
+              }
+            });
+          } else {
+            // Fallback: line-by-line comparison
+            const sourceLines = result.sourceContent.split('\n');
+            const targetLines = result.targetContent.split('\n');
+            const maxLines = Math.max(sourceLines.length, targetLines.length);
+
+            for (let i = 0; i < maxLines; i++) {
+              const sourceLine = sourceLines[i] || '';
+              const targetLine = targetLines[i] || '';
+              const isChanged = sourceLine !== targetLine && sourceLine && targetLine;
+              const isSourceOnly = sourceLine && !targetLine;
+              const isTargetOnly = !sourceLine && targetLine;
+
+              const row = worksheet.addRow([
+                i + 1,
+                isSourceOnly ? '新增' : isTargetOnly ? '删除' : isChanged ? '修改' : '相同',
+                sourceLine,
+                targetLine,
+              ]);
+
+              row.alignment = { wrapText: true, vertical: 'top' };
+              row.height = 30;
+
+              if (isSourceOnly) {
+                row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF51CF66' } };
+              } else if (isTargetOnly) {
+                row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF6B6B' } };
+              } else if (isChanged) {
+                row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEB3B' } };
+              } else if (i % 2 === 0) {
+                row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F5F5' } };
+              }
+            }
+          }
+        }
+      }
 
       // Last Sheet: Summary description
       const descData: Record<string, string> = {
@@ -487,67 +751,74 @@ export const NacosSync: React.FC = () => {
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-slate-800 flex items-center gap-3 mb-2">
             <GitCompare size={32} className="text-blue-600" />
-            Nacos Configuration Sync
+            Nacos 配置同步
           </h1>
-          <p className="text-slate-600">Compare and synchronize Nacos configurations between environments</p>
+          <p className="text-slate-600">在不同环境之间比较和同步 Nacos 配置</p>
         </div>
 
-        {/* Configs List */}
+        {/* Configs Selection Area */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-bold text-slate-800">Saved Configurations</h2>
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-xl font-bold text-slate-800">配置任务</h2>
             <button
               onClick={handleAddConfig}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold"
             >
-              <Plus size={18} /> Add Configuration
+              <Plus size={18} /> 新增配置
             </button>
           </div>
 
           {configs.length === 0 ? (
-            <p className="text-slate-500 text-center py-8">No configurations saved yet. Click "Add Configuration" to get started.</p>
+            <p className="text-slate-500 text-center py-8">暂无保存的配置。点击"新增配置"开始使用。</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50">
-                    <th className="px-4 py-3 text-left font-semibold text-slate-700">Name</th>
-                    <th className="px-4 py-3 text-left font-semibold text-slate-700">Source</th>
-                    <th className="px-4 py-3 text-left font-semibold text-slate-700">Target</th>
-                    <th className="px-4 py-3 text-right font-semibold text-slate-700">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {configs.map((config) => (
-                    <tr key={config.id} className="border-b border-slate-100 hover:bg-slate-50">
-                      <td className="px-4 py-3 font-semibold text-slate-800">{config.name}</td>
-                      <td className="px-4 py-3 text-slate-600">{config.sourceUrl}</td>
-                      <td className="px-4 py-3 text-slate-600">{config.targetUrl}</td>
-                      <td className="px-4 py-3 text-right flex justify-end gap-2">
-                        <button
-                          onClick={() => handleEditConfig(config)}
-                          className="px-3 py-1 bg-blue-100 text-blue-600 rounded hover:bg-blue-200 flex items-center gap-1"
-                        >
-                          <Edit2 size={14} /> Edit
-                        </button>
-                        <button
-                          onClick={() => handleCompare(config)}
-                          disabled={comparing}
-                          className="px-3 py-1 bg-green-100 text-green-600 rounded hover:bg-green-200 flex items-center gap-1 disabled:opacity-50"
-                        >
-                          <GitCompare size={14} /> Compare
-                        </button>
-                        <button
-                          onClick={() => handleDeleteConfig(config.id)}
-                          className="px-3 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200 flex items-center gap-1"
-                        >
-                          <Trash2 size={14} /> Delete
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="space-y-3">
+              {configs.map((config) => (
+                <div
+                  key={config.id}
+                  className="group bg-slate-50 border border-slate-200 rounded-lg p-4 hover:border-blue-400 hover:shadow-md transition-all"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-bold text-slate-800 text-lg mb-2">{config.name}</h3>
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <p className="text-slate-600 font-semibold">源环境</p>
+                          <p className="text-slate-700 truncate">{config.sourceUrl}</p>
+                          <p className="text-xs text-slate-500">{config.sourceNamespace}</p>
+                          {config.sourceRemark && <p className="text-xs text-slate-500">{config.sourceRemark}</p>}
+                        </div>
+                        <div>
+                          <p className="text-slate-600 font-semibold">目标环境</p>
+                          <p className="text-slate-700 truncate">{config.targetUrl}</p>
+                          <p className="text-xs text-slate-500">{config.targetNamespace}</p>
+                          {config.targetRemark && <p className="text-xs text-slate-500">{config.targetRemark}</p>}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => handleEditConfig(config)}
+                        className="px-3 py-1 bg-blue-100 text-blue-600 rounded hover:bg-blue-200 flex items-center gap-1 whitespace-nowrap text-sm font-semibold"
+                      >
+                        <Edit2 size={14} /> 编辑
+                      </button>
+                      <button
+                        onClick={() => handleCompare(config)}
+                        disabled={comparing}
+                        className="px-3 py-1 bg-green-100 text-green-600 rounded hover:bg-green-200 flex items-center gap-1 disabled:opacity-50 whitespace-nowrap text-sm font-semibold"
+                      >
+                        <GitCompare size={14} /> 比较
+                      </button>
+                      <button
+                        onClick={() => handleDeleteConfig(config.id)}
+                        className="px-3 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200 flex items-center gap-1 whitespace-nowrap text-sm font-semibold"
+                      >
+                        <Trash2 size={14} /> 删除
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -558,7 +829,7 @@ export const NacosSync: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
           <div className="bg-white rounded-lg shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center">
-              <h3 className="text-xl font-bold text-slate-800">{editingConfig ? 'Edit Configuration' : 'Add Configuration'}</h3>
+              <h3 className="text-xl font-bold text-slate-800">{editingConfig ? '编辑配置' : '新增配置'}</h3>
               <button onClick={() => setIsModalVisible(false)} className="text-slate-500 hover:text-slate-700">
                 <X size={20} />
               </button>
@@ -567,19 +838,21 @@ export const NacosSync: React.FC = () => {
             <div className="p-6 space-y-6">
               {/* Config Name */}
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Configuration Name *</label>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">配置名称 *</label>
                 <input
                   type="text"
                   value={formData.name || ''}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., Dev to Prod Sync"
+                  placeholder="如：开发到生产环境同步"
                 />
               </div>
 
               {/* Source Environment */}
               <div className="border-t pt-4">
-                <h4 className="font-semibold text-slate-800 mb-4">Source Environment</h4>
+                <h4 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-blue-500"/> 源环境 (Source)
+                </h4>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-2">URL *</label>
@@ -592,7 +865,7 @@ export const NacosSync: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-2">Namespace *</label>
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">命名空间 *</label>
                     <input
                       type="text"
                       value={formData.sourceNamespace || ''}
@@ -602,7 +875,7 @@ export const NacosSync: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-2">Username *</label>
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">用户名 *</label>
                     <input
                       type="text"
                       value={formData.sourceUsername || ''}
@@ -612,7 +885,7 @@ export const NacosSync: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-2">Password *</label>
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">密码 *</label>
                     <input
                       type="password"
                       value={formData.sourcePassword || ''}
@@ -622,24 +895,24 @@ export const NacosSync: React.FC = () => {
                     />
                   </div>
                   <div className="col-span-2">
-                    <label className="block text-sm font-semibold text-slate-700 mb-2">Remark</label>
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">备注</label>
                     <input
                       type="text"
                       value={formData.sourceRemark || ''}
                       onChange={(e) => setFormData({ ...formData, sourceRemark: e.target.value })}
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="e.g., Development server"
+                      placeholder="如：开发环境服务器"
                     />
                   </div>
                   <button
                     onClick={() => handleTestConnection('source')}
-                    className="col-span-2 px-4 py-2 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200 font-semibold"
+                    className="col-span-2 px-4 py-2 bg-green-100 text-green-600 rounded-lg hover:bg-green-200 font-semibold flex items-center justify-center gap-1"
                   >
-                    Test Connection
+                    <Play size={14} /> 测试连接
                   </button>
                   {testResults.source !== undefined && (
                     <div className={`col-span-2 p-3 rounded-lg ${testResults.source ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                      {testResults.sourceMessage || (testResults.source ? 'Connection successful' : 'Connection failed')}
+                      {testResults.sourceMessage || (testResults.source ? '连接成功' : '连接失败')}
                     </div>
                   )}
                 </div>
@@ -647,7 +920,9 @@ export const NacosSync: React.FC = () => {
 
               {/* Target Environment */}
               <div className="border-t pt-4">
-                <h4 className="font-semibold text-slate-800 mb-4">Target Environment</h4>
+                <h4 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-purple-500"/> 目标环境 (Target)
+                </h4>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-2">URL *</label>
@@ -660,7 +935,7 @@ export const NacosSync: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-2">Namespace *</label>
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">命名空间 *</label>
                     <input
                       type="text"
                       value={formData.targetNamespace || ''}
@@ -670,7 +945,7 @@ export const NacosSync: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-2">Username *</label>
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">用户名 *</label>
                     <input
                       type="text"
                       value={formData.targetUsername || ''}
@@ -680,7 +955,7 @@ export const NacosSync: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-2">Password *</label>
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">密码 *</label>
                     <input
                       type="password"
                       value={formData.targetPassword || ''}
@@ -690,24 +965,24 @@ export const NacosSync: React.FC = () => {
                     />
                   </div>
                   <div className="col-span-2">
-                    <label className="block text-sm font-semibold text-slate-700 mb-2">Remark</label>
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">备注</label>
                     <input
                       type="text"
                       value={formData.targetRemark || ''}
                       onChange={(e) => setFormData({ ...formData, targetRemark: e.target.value })}
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="e.g., Production server"
+                      placeholder="如：生产环境服务器"
                     />
                   </div>
                   <button
                     onClick={() => handleTestConnection('target')}
-                    className="col-span-2 px-4 py-2 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200 font-semibold"
+                    className="col-span-2 px-4 py-2 bg-green-100 text-green-600 rounded-lg hover:bg-green-200 font-semibold flex items-center justify-center gap-1"
                   >
-                    Test Connection
+                    <Play size={14} /> 测试连接
                   </button>
                   {testResults.target !== undefined && (
                     <div className={`col-span-2 p-3 rounded-lg ${testResults.target ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                      {testResults.targetMessage || (testResults.target ? 'Connection successful' : 'Connection failed')}
+                      {testResults.targetMessage || (testResults.target ? '连接成功' : '连接失败')}
                     </div>
                   )}
                 </div>
@@ -719,13 +994,13 @@ export const NacosSync: React.FC = () => {
                   onClick={() => setIsModalVisible(false)}
                   className="px-6 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-100 font-semibold"
                 >
-                  Cancel
+                  取消
                 </button>
                 <button
                   onClick={handleSaveConfig}
                   className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold flex items-center gap-2"
                 >
-                  <Save size={18} /> Save
+                  <Save size={18} /> 保存
                 </button>
               </div>
             </div>
@@ -742,9 +1017,9 @@ export const NacosSync: React.FC = () => {
               <div className="flex justify-between items-start mb-4">
                 <div>
                   <h3 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-                    📊 {currentComparison.configName} - Comparison Results
+                    📊 {currentComparison.configName} - 比较结果
                   </h3>
-                  <p className="text-sm text-slate-500 mt-1">Completed at: {currentComparison.comparisonTime}</p>
+                  <p className="text-sm text-slate-500 mt-1">完成时间：{currentComparison.comparisonTime}</p>
                 </div>
                 <button onClick={() => setComparisonVisible(false)} className="text-slate-500 hover:text-slate-700">
                   <X size={24} />
@@ -754,13 +1029,17 @@ export const NacosSync: React.FC = () => {
               {/* Environment Info */}
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div className="bg-white p-3 rounded-lg border border-slate-200">
-                  <p className="font-semibold text-slate-700">Source</p>
+                  <p className="font-semibold text-slate-700 flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-blue-500"/> 源环境
+                  </p>
                   <p className="text-slate-600">{currentComparison.sourceUrl}</p>
                   <p className="text-xs text-slate-500">{currentComparison.sourceNamespace}</p>
                   {currentComparison.sourceRemark && <p className="text-xs text-slate-500">{currentComparison.sourceRemark}</p>}
                 </div>
                 <div className="bg-white p-3 rounded-lg border border-slate-200">
-                  <p className="font-semibold text-slate-700">Target</p>
+                  <p className="font-semibold text-slate-700 flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-purple-500"/> 目标环境
+                  </p>
                   <p className="text-slate-600">{currentComparison.targetUrl}</p>
                   <p className="text-xs text-slate-500">{currentComparison.targetNamespace}</p>
                   {currentComparison.targetRemark && <p className="text-xs text-slate-500">{currentComparison.targetRemark}</p>}
@@ -772,23 +1051,23 @@ export const NacosSync: React.FC = () => {
             <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 grid grid-cols-5 gap-4">
               <div className="bg-white p-4 rounded-lg shadow-sm hover:shadow-md">
                 <p className="text-3xl font-bold text-slate-800">📋 {currentComparison.totalFiles}</p>
-                <p className="text-sm text-slate-600">Total Files</p>
+                <p className="text-sm text-slate-600">总配置数</p>
               </div>
               <div className="bg-white p-4 rounded-lg shadow-sm hover:shadow-md">
                 <p className="text-3xl font-bold text-green-600">✅ {currentComparison.sameCount}</p>
-                <p className="text-sm text-slate-600">Same ({((currentComparison.sameCount / currentComparison.totalFiles) * 100).toFixed(1)}%)</p>
+                <p className="text-sm text-slate-600">一致 ({((currentComparison.sameCount / currentComparison.totalFiles) * 100).toFixed(1)}%)</p>
               </div>
               <div className="bg-white p-4 rounded-lg shadow-sm hover:shadow-md">
                 <p className="text-3xl font-bold text-red-600">⚠️ {currentComparison.differentCount}</p>
-                <p className="text-sm text-slate-600">Different ({((currentComparison.differentCount / currentComparison.totalFiles) * 100).toFixed(1)}%)</p>
+                <p className="text-sm text-slate-600">差异 ({((currentComparison.differentCount / currentComparison.totalFiles) * 100).toFixed(1)}%)</p>
               </div>
               <div className="bg-white p-4 rounded-lg shadow-sm hover:shadow-md">
                 <p className="text-3xl font-bold text-orange-600">→ {currentComparison.sourceOnlyCount}</p>
-                <p className="text-sm text-slate-600">Source Only ({((currentComparison.sourceOnlyCount / currentComparison.totalFiles) * 100).toFixed(1)}%)</p>
+                <p className="text-sm text-slate-600">源独有 ({((currentComparison.sourceOnlyCount / currentComparison.totalFiles) * 100).toFixed(1)}%)</p>
               </div>
               <div className="bg-white p-4 rounded-lg shadow-sm hover:shadow-md">
                 <p className="text-3xl font-bold text-blue-600">← {currentComparison.targetOnlyCount}</p>
-                <p className="text-sm text-slate-600">Target Only ({((currentComparison.targetOnlyCount / currentComparison.totalFiles) * 100).toFixed(1)}%)</p>
+                <p className="text-sm text-slate-600">目标独有 ({((currentComparison.targetOnlyCount / currentComparison.totalFiles) * 100).toFixed(1)}%)</p>
               </div>
             </div>
 
@@ -816,22 +1095,22 @@ export const NacosSync: React.FC = () => {
                             : 'bg-blue-100 text-blue-700'
                         }`}
                       >
-                        {result.status === 'same' ? '✓ Same' : result.status === 'different' ? '⚠ Different' : result.status === 'source-only' ? '→ Source Only' : '← Target Only'}
+                        {result.status === 'same' ? '✓ 一致' : result.status === 'different' ? '⚠ 差异' : result.status === 'source-only' ? '→ 源独有' : '← 目标独有'}
                       </span>
                     </div>
-                    {result.suggestion && <p className="text-sm text-slate-600 mb-3">{result.suggestion}</p>}
+                    {result.suggestion && <p className="text-sm text-slate-600 mb-3">建议：{result.suggestion}</p>}
                     <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
                         onClick={() => handleViewDetail(result)}
                         className="px-3 py-1 text-xs bg-blue-100 text-blue-600 rounded hover:bg-blue-200 font-semibold"
                       >
-                        View Details
+                        查看详情
                       </button>
                       <button
                         onClick={() => downloadSingleFile(result)}
                         className="px-3 py-1 text-xs bg-green-100 text-green-600 rounded hover:bg-green-200 font-semibold flex items-center gap-1"
                       >
-                        <Download size={12} /> Export Excel
+                        <Download size={12} /> 导出 Excel
                       </button>
                     </div>
                   </div>
@@ -842,20 +1121,20 @@ export const NacosSync: React.FC = () => {
             {/* Footer */}
             <div className="sticky bottom-0 bg-slate-50 px-6 py-4 border-t border-slate-200 flex justify-between items-center">
               <p className="text-sm text-slate-600">
-                {currentComparison.results.filter((r) => r.status !== 'same').length} items need processing
+                {currentComparison.results.filter((r) => r.status !== 'same').length} 项需要处理
               </p>
               <div className="flex gap-3">
                 <button
                   onClick={() => setComparisonVisible(false)}
                   className="px-6 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-100 font-semibold"
                 >
-                  Close
+                  关闭
                 </button>
                 <button
                   onClick={downloadAllComparisons}
                   className="px-6 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 font-semibold flex items-center gap-2"
                 >
-                  📊 Export All as Excel
+                  📊 导出全部 Excel
                 </button>
               </div>
             </div>
@@ -870,7 +1149,7 @@ export const NacosSync: React.FC = () => {
             {/* Header */}
             <div className="sticky top-0 bg-slate-800 text-white px-6 py-4 border-b border-slate-700 flex justify-between items-center">
               <div>
-                <h3 className="text-xl font-bold">Detailed Diff Comparison</h3>
+                <h3 className="text-xl font-bold">详细差异对比</h3>
                 <p className="text-xs text-slate-300 mt-1">
                   {currentDetailedResult.dataId} - {currentDetailedResult.group}
                 </p>
@@ -883,14 +1162,14 @@ export const NacosSync: React.FC = () => {
             {/* Content */}
             {detailedDiffLoading ? (
               <div className="flex-1 flex items-center justify-center p-8">
-                <p className="text-slate-600">Loading detailed diff...</p>
+                <p className="text-slate-600">加载详细差异中...</p>
               </div>
             ) : (
               <div className="flex-1 overflow-auto">
                 <div className="grid grid-cols-2 gap-1 h-full">
                   {/* Source Column */}
                   <div className="flex flex-col bg-blue-50 border-r border-slate-200">
-                    <div className="sticky top-0 bg-blue-600 text-white px-4 py-2 font-bold text-sm">Source</div>
+                    <div className="sticky top-0 bg-blue-600 text-white px-4 py-2 font-bold text-sm">源内容</div>
                     <div className="flex-1 p-4 font-mono text-xs overflow-auto">
                       {detailedDiffData.diffRows.map((row, idx) => (
                         <div key={idx} className={row.tag === 'DELETE' ? 'bg-red-100 text-red-800' : row.tag === 'CHANGE' ? 'bg-yellow-100 text-yellow-800' : ''}>
@@ -902,7 +1181,7 @@ export const NacosSync: React.FC = () => {
 
                   {/* Target Column */}
                   <div className="flex flex-col bg-green-50 border-l border-slate-200">
-                    <div className="sticky top-0 bg-green-600 text-white px-4 py-2 font-bold text-sm">Target</div>
+                    <div className="sticky top-0 bg-green-600 text-white px-4 py-2 font-bold text-sm">目标内容</div>
                     <div className="flex-1 p-4 font-mono text-xs overflow-auto">
                       {detailedDiffData.diffRows.map((row, idx) => (
                         <div key={idx} className={row.tag === 'INSERT' ? 'bg-green-100 text-green-800' : row.tag === 'CHANGE' ? 'bg-yellow-100 text-yellow-800' : ''}>
@@ -918,19 +1197,19 @@ export const NacosSync: React.FC = () => {
             {/* Footer */}
             <div className="sticky bottom-0 bg-slate-50 px-6 py-4 border-t border-slate-200 flex justify-between items-center">
               <div className="text-sm text-slate-600">
-                <span>Total Lines: {detailedDiffData.totalLines}</span>
+                <span>总行数：{detailedDiffData.totalLines}</span>
                 <span className="mx-2">|</span>
-                <span>Changed: {detailedDiffData.changedLines}</span>
+                <span>修改：{detailedDiffData.changedLines}</span>
                 <span className="mx-2">|</span>
-                <span>Inserted: {detailedDiffData.insertedLines}</span>
+                <span>新增：{detailedDiffData.insertedLines}</span>
                 <span className="mx-2">|</span>
-                <span>Deleted: {detailedDiffData.deletedLines}</span>
+                <span>删除：{detailedDiffData.deletedLines}</span>
               </div>
               <button
                 onClick={() => setDetailedDiffVisible(false)}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold flex items-center gap-2"
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold"
               >
-                📥 Export as Excel
+                关闭
               </button>
             </div>
           </div>

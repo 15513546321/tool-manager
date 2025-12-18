@@ -68,8 +68,12 @@ public class MenuItemService {
      */
     @Transactional
     public MenuItemDto updateMenuItem(String menuId, MenuItemDto dto) {
+        System.out.println("=== updateMenuItem START: menuId=" + menuId + ", dto=" + dto);
+        
         MenuItem menuItem = menuItemRepository.findByMenuId(menuId)
                 .orElseThrow(() -> new IllegalArgumentException("Menu item not found: " + menuId));
+
+        System.out.println("Found menu item: id=" + menuItem.getId() + ", name=" + menuItem.getName());
 
         // 更新所有字段
         menuItem.setName(dto.getName());
@@ -82,11 +86,14 @@ public class MenuItemService {
         }
         menuItem.setUpdatedBy(dto.getUpdatedBy());
 
+        System.out.println("Before save: menuItem=" + menuItem);
+        
         // 显式保存
         MenuItem updated = menuItemRepository.save(menuItem);
         
-        // 验证保存成功
+        System.out.println("After save: updated=" + updated);
         System.out.println("Menu item updated: " + menuId + ", name: " + updated.getName() + ", visible: " + updated.getVisible());
+        System.out.println("=== updateMenuItem END");
         
         return convertToDto(updated);
     }

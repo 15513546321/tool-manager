@@ -19,6 +19,10 @@ public class H2ServerConfig {
      * 
      * @return ���úõ�����Դ
      */
+    // 注释掉此方法，让Spring Boot使用application.properties中的配置
+    // H2ServerConfig中的DataSource Bean会覆盖application.properties的配置
+    // 导致数据库连接不稳定
+    /*
     @Bean
     public DataSource dataSource() {
         // ʹ��Ƕ��ʽģʽ��ͬʱ֧��TCP����
@@ -30,4 +34,5 @@ public class H2ServerConfig {
                 .password("")
                 .build();
     }
+    */
 }

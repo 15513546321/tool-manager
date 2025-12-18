@@ -3,24 +3,67 @@ import { Outlet, Navigate, useLocation } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { MenuItem } from '../types';
 import { initialMenuItems } from '../pages/MenuManagement';
+import { menuApi } from '../services/apiService';
 
 export const Layout: React.FC = () => {
   const user = localStorage.getItem('user');
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const location = useLocation();
 
-  // Load dynamic menus (simulating Admin allocation persistence)
+  // Load dynamic menus from backend API
   useEffect(() => {
-    const loadMenus = () => {
-      const saved = localStorage.getItem('appMenus');
-      setMenuItems(saved ? JSON.parse(saved) : initialMenuItems);
+    const loadMenusFromAPI = async () => {
+      try {
+        // Load from API instead of localStorage
+        const data = await menuApi.getAll();
+        
+        // Convert API response to MenuItem format
+        const converted = data
+          .map((item: any) => ({
+            id: item.menuId,
+            name: item.name,
+            path: item.path,
+            icon: item.icon,
+            visible: item.visible !== false,
+            parentId: item.parentId,
+            sortOrder: item.sortOrder || 0
+          }))
+          .sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0));
+        
+        // Build hierarchy
+        const rootItems = converted.filter((m: any) => !m.parentId);
+        const buildTree = (parent: any) => {
+          const children = converted
+            .filter((m: any) => m.parentId === parent.id)
+            .sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0));
+          if (children.length > 0) {
+            parent.children = children.map((c: any) => buildTree(c));
+          }
+          return parent;
+        };
+        
+        const menus = rootItems.map((item: any) => buildTree(item));
+        setMenuItems(menus);
+      } catch (error) {
+        console.error('Failed to load menus from API:', error);
+        // Fallback to initial menus if API fails
+        setMenuItems(initialMenuItems);
+      }
     };
 
-    loadMenus();
+    loadMenusFromAPI();
+    
+    // Refresh menus every 5 seconds to detect changes in real-time
+    const interval = setInterval(loadMenusFromAPI, 5000);
     
     // Listen for menu updates from MenuManagement page
-    window.addEventListener('menuUpdated', loadMenus);
-    return () => window.removeEventListener('menuUpdated', loadMenus);
+    const handleMenuUpdate = () => loadMenusFromAPI();
+    window.addEventListener('menuUpdated', handleMenuUpdate);
+    
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('menuUpdated', handleMenuUpdate);
+    };
   }, []);
 
   if (!user) {
