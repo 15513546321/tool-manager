@@ -89,3 +89,24 @@ WHERE NOT EXISTS (SELECT 1 FROM system_parameters WHERE param_key = 'TRANSFER_FE
 INSERT INTO announcements (title, description, content, version, status, created_at, updated_at, created_by, updated_by)
 SELECT '欢迎使用系统', '系统已成功部署，欢迎使用！', '这是一条欢迎公告，系统已正式上线。', '20251212', 'PUBLISHED', NOW(), NOW(), 'admin', 'admin'
 WHERE NOT EXISTS (SELECT 1 FROM announcements WHERE version = '20251212');
+-- Initialize Gitee Connections Table
+CREATE TABLE IF NOT EXISTS gitee_connections (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  repo_url VARCHAR(500) NOT NULL,
+  auth_type VARCHAR(50) NOT NULL,
+  access_token VARCHAR(2000),
+  private_key LONGTEXT,
+  public_key LONGTEXT,
+  is_default BOOLEAN DEFAULT FALSE,
+  connection_status VARCHAR(50) DEFAULT 'unknown',
+  last_test_time DATETIME,
+  last_test_message TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_by VARCHAR(255),
+  notes TEXT,
+  UNIQUE KEY uk_name_auth_type (name, auth_type),
+  INDEX idx_auth_type (auth_type),
+  INDEX idx_is_default (is_default)
+);

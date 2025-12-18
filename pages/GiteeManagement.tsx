@@ -30,21 +30,6 @@ interface ChangesetItem {
   message: string;
 }
 
-// Mock Data
-const MOCK_BRANCHES: GiteeBranch[] = [
-  { name: 'master', lastCommitHash: 'a1b2c3d', lastUpdated: '2023-10-25 10:00' },
-  { name: 'develop', lastCommitHash: 'e5f6g7h', lastUpdated: '2023-10-24 15:30' },
-  { name: 'feature/req-20231024-pay', lastCommitHash: 'i8j9k0l', lastUpdated: '2023-10-24 09:15' },
-  { name: 'feature/req-20231020-login', lastCommitHash: 'm1n2o3p', lastUpdated: '2023-10-20 11:00' },
-  { name: 'bugfix/issue-2024-001', lastCommitHash: 'p1q2r3s', lastUpdated: '2023-10-19 08:30' },
-];
-
-const MOCK_COMMITS: GiteeCommit[] = [
-  { id: 'a1b2c3d4e5f6g7h8i9j0', shortId: 'a1b2c3d', message: 'feat: add payment gateway integration', author: 'DevUser', date: '2023-10-25 10:00', filesChanged: 5 },
-  { id: 'b2c3d4e5f6g7h8i9j0k1', shortId: 'b2c3d4e', message: 'fix: login timeout issue', author: 'Admin', date: '2023-10-24 16:20', filesChanged: 2 },
-  { id: 'c3d4e5f6g7h8i9j0k1l2', shortId: 'c3d4e5f', message: 'docs: update api spec', author: 'DevUser', date: '2023-10-24 09:15', filesChanged: 1 },
-];
-
 // Default Export Fields Configuration
 const DEFAULT_EXPORT_FIELDS: ExportField[] = [
   { id: 'filePath', label: '文件路径', value: 'file_path', visible: true, type: 'text' },

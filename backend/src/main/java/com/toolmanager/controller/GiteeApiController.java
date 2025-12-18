@@ -4,6 +4,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import lombok.RequiredArgsConstructor;
 import lombok.Data;
+import com.toolmanager.service.GiteeService;
 
 import java.util.*;
 
@@ -13,6 +14,8 @@ import java.util.*;
 @CrossOrigin(origins = {"http://localhost:*", "http://127.0.0.1:*", "http://192.168.*:*", "http://10.*:*", "http://172.*:*"},
              allowCredentials = "true")
 public class GiteeApiController {
+    
+    private final GiteeService giteeService;
 
     @Data
     public static class GiteeRequest {
@@ -23,6 +26,10 @@ public class GiteeApiController {
         private String publicKey;
         private String searchQuery;
         private List<String> branches;
+        
+        // Pagination
+        private Integer pageNumber = 1;
+        private Integer pageSize = 20;
     }
 
     @Data
@@ -35,6 +42,23 @@ public class GiteeApiController {
             this.name = name;
             this.lastCommitHash = hash;
             this.lastUpdated = updated;
+        }
+    }
+
+    @Data
+    public static class PaginatedResponse<T> {
+        private List<T> items;
+        private Integer pageNumber;
+        private Integer pageSize;
+        private Long totalCount;
+        private Integer totalPages;
+
+        public PaginatedResponse(List<T> items, Integer pageNumber, Integer pageSize, Long totalCount) {
+            this.items = items;
+            this.pageNumber = pageNumber;
+            this.pageSize = pageSize;
+            this.totalCount = totalCount;
+            this.totalPages = Math.toIntExact((totalCount + pageSize - 1) / pageSize);
         }
     }
 
@@ -77,78 +101,117 @@ public class GiteeApiController {
     @PostMapping("/test-connection")
     public ResponseEntity<ApiResponse<Map<String, String>>> testConnection(@RequestBody GiteeRequest request) {
         try {
+            System.out.println("=== Testing Gitee Connection ===");
+            System.out.println("URL: " + request.getRepoUrl());
+            System.out.println("Auth Type: " + request.getAuthType());
+            System.out.println("Has Token: " + (request.getAccessToken() != null && !request.getAccessToken().isEmpty()));
+            System.out.println("Has Private Key: " + (request.getPrivateKey() != null && !request.getPrivateKey().isEmpty()));
+            
             // Validate request
             if (request.getRepoUrl() == null || request.getRepoUrl().trim().isEmpty()) {
                 return ResponseEntity.badRequest()
-                    .body(ApiResponse.error("Repository URL is required"));
+                    .body(ApiResponse.error("❌ Repository URL is required"));
             }
 
-            // Validate auth credentials
-            if ("token".equals(request.getAuthType())) {
-                if (request.getAccessToken() == null || request.getAccessToken().trim().isEmpty()) {
-                    return ResponseEntity.badRequest()
-                        .body(ApiResponse.error("Access Token is required for HTTPS/Token auth"));
-                }
-            } else if ("ssh".equals(request.getAuthType())) {
-                if (request.getPrivateKey() == null || request.getPrivateKey().trim().isEmpty()) {
-                    return ResponseEntity.badRequest()
-                        .body(ApiResponse.error("Private Key is required for SSH auth"));
-                }
+            // Call Gitee API to test connection
+            Map<String, Object> result = giteeService.testConnection(
+                request.getRepoUrl(),
+                request.getAuthType(),
+                request.getAccessToken(),
+                request.getPrivateKey()
+            );
+            
+            boolean success = (boolean) result.getOrDefault("success", false);
+            System.out.println("Connection test result: " + (success ? "SUCCESS" : "FAILED"));
+            System.out.println("Message: " + result.getOrDefault("message", ""));
+            
+            if (success) {
+                Map<String, String> response = new HashMap<>();
+                response.put("status", "connected");
+                response.put("message", (String) result.getOrDefault("message", "Successfully connected to Gitee repository"));
+                response.put("repo", (String) result.getOrDefault("repository", ""));
+                response.put("authType", request.getAuthType());
+                return ResponseEntity.ok(ApiResponse.success(response));
+            } else {
+                return ResponseEntity.ok(
+                    ApiResponse.error((String) result.getOrDefault("message", "Connection test failed"))
+                );
             }
-
-            // Simulate connection test (replace with actual Gitee API call)
-            Map<String, String> result = new HashMap<>();
-            result.put("status", "connected");
-            result.put("message", "Successfully connected to Gitee repository");
-            result.put("repo", request.getRepoUrl());
-            result.put("authType", request.getAuthType());
-
-            return ResponseEntity.ok(ApiResponse.success(result));
         } catch (Exception e) {
+            System.err.println("Exception in testConnection: " + e.getMessage());
+            e.printStackTrace();
             return ResponseEntity.status(400)
-                .body(ApiResponse.error("Connection test failed: " + e.getMessage()));
+                .body(ApiResponse.error("❌ Connection test failed: " + e.getMessage()));
         }
     }
 
     /**
-     * Fetch branches from Gitee repository
+     * Fetch branches from Gitee repository with pagination
      * POST /api/gitee/branches
      */
     @PostMapping("/branches")
-    public ResponseEntity<ApiResponse<List<BranchInfo>>> getBranches(@RequestBody GiteeRequest request) {
+    public ResponseEntity<ApiResponse<PaginatedResponse<Map<String, Object>>>> getBranches(@RequestBody GiteeRequest request) {
         try {
             if (request.getRepoUrl() == null || request.getRepoUrl().trim().isEmpty()) {
                 return ResponseEntity.badRequest()
                     .body(ApiResponse.error("Repository URL is required"));
             }
 
-            List<BranchInfo> branches = new ArrayList<>();
+            // Set defaults for pagination
+            Integer pageNumber = request.getPageNumber() != null ? request.getPageNumber() : 1;
+            Integer pageSize = request.getPageSize() != null ? request.getPageSize() : 20;
             
-            // TODO: Replace with actual Gitee API integration
-            // This should call the Gitee API to fetch real branches
-            // For now, return example data structure
-            
-            String searchQuery = request.getSearchQuery() != null ? request.getSearchQuery().toLowerCase() : "";
-            
-            // Example branches (replace with actual API call)
-            String[] exampleBranches = {
-                "master", "develop", "feature/req-20231024-pay", 
-                "feature/req-20231020-login", "bugfix/issue-2024-001"
-            };
+            if (pageNumber < 1) pageNumber = 1;
+            if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
-            for (String branchName : exampleBranches) {
-                if (searchQuery.isEmpty() || branchName.toLowerCase().contains(searchQuery)) {
-                    branches.add(new BranchInfo(
-                        branchName,
-                        "a1b2c3d" + (int)(Math.random() * 100),
-                        "2023-10-" + (20 + (int)(Math.random() * 5)) + " " + 
-                            (int)(Math.random() * 24) + ":" + String.format("%02d", (int)(Math.random() * 60))
-                    ));
-                }
+            System.out.println("=== Fetching branches ===");
+            System.out.println("Repository URL: " + request.getRepoUrl());
+            System.out.println("Auth Type: " + request.getAuthType());
+            System.out.println("Page: " + pageNumber + ", Size: " + pageSize);
+
+            // Call Gitee API to fetch real branches (supports SSH and HTTP)
+            List<Map<String, Object>> allBranches = giteeService.getBranches(
+                request.getRepoUrl(),
+                request.getAuthType(),
+                request.getAccessToken(),
+                request.getPrivateKey(),
+                request.getSearchQuery()
+            );
+
+            System.out.println("Total branches found: " + allBranches.size());
+
+            if (allBranches.isEmpty()) {
+                String errorMsg = "No branches found. Please check:\n" +
+                    "1. Repository URL format (must be: https://gitee.com/owner/repo)\n" +
+                    "2. Access Token is valid and has repo access permission\n" +
+                    "3. Repository exists and is accessible\n" +
+                    "4. Check server logs for detailed error information";
+                
+                PaginatedResponse<Map<String, Object>> response = new PaginatedResponse<>(
+                    new ArrayList<>(), pageNumber, pageSize, 0L
+                );
+                return ResponseEntity.ok(ApiResponse.success(response));
             }
 
-            return ResponseEntity.ok(ApiResponse.success(branches));
+            // Apply pagination
+            int startIndex = (pageNumber - 1) * pageSize;
+            int endIndex = Math.min(startIndex + pageSize, allBranches.size());
+            
+            List<Map<String, Object>> paginatedBranches = startIndex < allBranches.size() 
+                ? new ArrayList<>(allBranches.subList(startIndex, endIndex))
+                : new ArrayList<>();
+
+            PaginatedResponse<Map<String, Object>> response = new PaginatedResponse<>(
+                paginatedBranches, 
+                pageNumber, 
+                pageSize, 
+                (long) allBranches.size()
+            );
+
+            return ResponseEntity.ok(ApiResponse.success(response));
         } catch (Exception e) {
+            System.err.println("Exception in getBranches: " + e.getMessage());
+            e.printStackTrace();
             return ResponseEntity.status(400)
                 .body(ApiResponse.error("Failed to fetch branches: " + e.getMessage()));
         }
@@ -159,7 +222,7 @@ public class GiteeApiController {
      * POST /api/gitee/changesets
      */
     @PostMapping("/changesets")
-    public ResponseEntity<ApiResponse<List<ChangesetInfo>>> getChangesets(@RequestBody GiteeRequest request) {
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getChangesets(@RequestBody GiteeRequest request) {
         try {
             if (request.getRepoUrl() == null || request.getRepoUrl().trim().isEmpty()) {
                 return ResponseEntity.badRequest()
@@ -171,44 +234,24 @@ public class GiteeApiController {
                     .body(ApiResponse.error("At least one branch must be specified"));
             }
 
-            List<ChangesetInfo> changesets = new ArrayList<>();
+            // Call Gitee API to fetch real commits/changesets (supports SSH and HTTP)
+            List<Map<String, Object>> changesets = giteeService.getChangesets(
+                request.getRepoUrl(),
+                request.getAuthType(),
+                request.getAccessToken(),
+                request.getPrivateKey(),
+                request.getBranches()
+            );
 
-            // TODO: Replace with actual Gitee API integration
-            // This should call the Gitee API to fetch real commits for specified branches
-            
-            String[] authors = {"DevUser", "Admin", "TestUser", "ReviewUser"};
-            String[] messages = {
-                "feat: add payment gateway integration",
-                "fix: login timeout issue",
-                "docs: update api spec",
-                "refactor: optimize database queries"
-            };
-            String[] filePaths = {
-                "src/main/java/com/bank/service/PaymentService.java",
-                "src/main/java/com/bank/service/AuthService.java",
-                "src/main/resources/application.properties",
-                "src/test/java/com/bank/ServiceTest.java"
-            };
-
-            // Generate example changesets for each branch
-            for (String branch : request.getBranches()) {
-                int commitCount = 2 + (int)(Math.random() * 3);
-                
-                for (int i = 0; i < commitCount; i++) {
-                    ChangesetInfo changeset = new ChangesetInfo();
-                    changeset.setBranch(branch);
-                    changeset.setCommitHash("a1b2c3d" + i + System.currentTimeMillis() % 1000);
-                    changeset.setAuthor(authors[i % authors.length]);
-                    changeset.setDate("2023-10-" + (20 + (int)(Math.random() * 5)) + " " + 
-                        (int)(Math.random() * 24) + ":" + String.format("%02d", (int)(Math.random() * 60)));
-                    changeset.setFilePath(filePaths[i % filePaths.length]);
-                    changeset.setMessage(messages[i % messages.length]);
-                    
-                    changesets.add(changeset);
-                }
+            if (changesets.isEmpty()) {
+                return ResponseEntity.ok(
+                    ApiResponse.error("No changesets found or failed to fetch changesets. Please verify your branch names and access token.")
+                );
             }
 
-            return ResponseEntity.ok(ApiResponse.success(changesets));
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> result = (List<Map<String, Object>>) (List<?>) changesets;
+            return ResponseEntity.ok(ApiResponse.success(result));
         } catch (Exception e) {
             return ResponseEntity.status(400)
                 .body(ApiResponse.error("Failed to fetch changesets: " + e.getMessage()));
