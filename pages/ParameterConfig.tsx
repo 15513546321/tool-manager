@@ -3,6 +3,7 @@ import { ParameterConfig } from '../types';
 import { Plus, Trash2, Filter, Search, X } from 'lucide-react';
 import { Database, TABLE } from '../services/database';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { Pagination } from '../components/Pagination';
 import { systemParameterApi } from '../services/apiService';
 import { recordAction } from '../services/auditService';
 
@@ -21,6 +22,10 @@ export const ParameterConfigPage: React.FC = () => {
   const [categoryFilter, setCategoryFilter] = useState('');
   const [subCategoryFilter, setSubCategoryFilter] = useState('');
   const [searchFilter, setSearchFilter] = useState('');
+  
+  // Pagination States
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   
   // New Param State
   const [isAdding, setIsAdding] = useState(false);
@@ -100,6 +105,22 @@ export const ParameterConfigPage: React.FC = () => {
 
     return matchesCategory && matchesSubCategory && matchesSearch;
   });
+
+  // Compute pagination
+  const totalPages = Math.ceil(filteredParams.length / pageSize);
+  const paginatedParams = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredParams.slice(start, start + pageSize);
+  }, [filteredParams, currentPage, pageSize]);
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(Math.max(1, Math.min(page, totalPages || 1)));
+  };
+
+  const handlePageSizeChange = (size: number) => {
+    setPageSize(size);
+    setCurrentPage(1);
+  };
 
   const handleAdd = () => {
     if (newParam.key && newParam.value && newParam.category) {
@@ -192,6 +213,7 @@ export const ParameterConfigPage: React.FC = () => {
                onChange={(e) => {
                  setCategoryFilter(e.target.value);
                  setSubCategoryFilter('');
+                 setCurrentPage(1);
                }}
                className={INPUT_STYLE}
              >
@@ -204,7 +226,10 @@ export const ParameterConfigPage: React.FC = () => {
            <div className="md:col-span-3">
              <select 
                value={subCategoryFilter}
-               onChange={(e) => setSubCategoryFilter(e.target.value)}
+               onChange={(e) => {
+                 setSubCategoryFilter(e.target.value);
+                 setCurrentPage(1);
+               }}
                className={INPUT_STYLE}
              >
                <option value="">所有小类</option>
@@ -219,7 +244,10 @@ export const ParameterConfigPage: React.FC = () => {
                className={`${INPUT_STYLE} pl-10`}
                placeholder="搜索键、值或描述..."
                value={searchFilter}
-               onChange={e => setSearchFilter(e.target.value)}
+               onChange={e => {
+                 setSearchFilter(e.target.value);
+                 setCurrentPage(1);
+               }}
              />
              {searchFilter && (
                 <button 
@@ -245,7 +273,7 @@ export const ParameterConfigPage: React.FC = () => {
              </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {filteredParams.length > 0 ? filteredParams.map(p => (
+            {paginatedParams.length > 0 ? paginatedParams.map(p => (
               <tr key={p.id} className="hover:bg-slate-50">
                 <td className="px-6 py-3 font-medium text-slate-800">{p.category}</td>
                 <td className="px-6 py-3 text-slate-600">{p.subCategory}</td>
@@ -266,6 +294,16 @@ export const ParameterConfigPage: React.FC = () => {
             )}
           </tbody>
         </table>
+        {filteredParams.length > 0 && (
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            totalItems={filteredParams.length}
+            onPageChange={handlePageChange}
+            onPageSizeChange={handlePageSizeChange}
+          />
+        )}
       </div>
     </div>
   );

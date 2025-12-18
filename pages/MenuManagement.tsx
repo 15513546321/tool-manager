@@ -158,9 +158,18 @@ export const MenuManagement: React.FC = () => {
         const newMenus = updateRecursive(menus);
         setMenus(newMenus);
         recordAction('系统设置 - 菜单管理', `修改菜单 [${id}] 名称为 "${editName.trim()}"`);
+        
+        // 立即触发菜单更新事件，让Sidebar实时显示新菜单名称
+        window.dispatchEvent(new Event('menuNameChanged'));
+        
         alert('菜单名称已更新');
         setEditingId(null);
         setEditName('');
+        
+        // 延迟1秒后自动刷新页面
+        setTimeout(() => {
+          window.location.reload();
+        }, 1000);
       } else {
         throw new Error(response?.message || '菜单名称修改失败');
       }

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Lightbulb, Plus, X, Search } from 'lucide-react';
 import { apiService } from '../services/apiService';
 import { getIpMappings, IpMapping } from '../services/auditService';
+import { Pagination } from '../components/Pagination';
 import { SuggestionItem } from '../types';
 
 const INPUT_STYLE = "w-full pl-3 pr-4 py-2 border border-slate-200 rounded-lg bg-[#f8fafc] focus:bg-white focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm text-slate-700 placeholder:text-slate-400";
@@ -15,6 +16,8 @@ export const Suggestions: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [mappings, setMappings] = useState<IpMapping[]>([]);
   const [searchFilter, setSearchFilter] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   // Load Data from API
   useEffect(() => {
@@ -73,6 +76,22 @@ export const Suggestions: React.FC = () => {
       item.ip.includes(lower)
     );
   }, [displayItems, searchFilter]);
+
+  // Compute pagination
+  const totalPages = Math.ceil(filteredItems.length / pageSize);
+  const paginatedItems = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredItems.slice(start, start + pageSize);
+  }, [filteredItems, currentPage, pageSize]);
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(Math.max(1, Math.min(page, totalPages || 1)));
+  };
+
+  const handlePageSizeChange = (size: number) => {
+    setPageSize(size);
+    setCurrentPage(1);
+  };
 
   const handleAdd = async () => {
     if (!formData.title.trim()) {
@@ -145,7 +164,10 @@ export const Suggestions: React.FC = () => {
                  className={`${INPUT_STYLE} pl-10`}
                  placeholder="搜索提交人、标题、内容或IP..."
                  value={searchFilter}
-                 onChange={e => setSearchFilter(e.target.value)}
+                 onChange={e => {
+                   setSearchFilter(e.target.value);
+                   setCurrentPage(1);
+                 }}
                />
             </div>
          </div>
@@ -174,7 +196,7 @@ export const Suggestions: React.FC = () => {
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                        {filteredItems.map(item => (
+                        {paginatedItems.map(item => (
                             <tr key={item.id} className="hover:bg-slate-50 transition-colors">
                                 <td className="px-6 py-3 text-slate-500 font-mono text-xs">{item.timestamp}</td>
                                 <td className="px-6 py-3 text-slate-500 font-mono">{item.ip}</td>
@@ -186,12 +208,22 @@ export const Suggestions: React.FC = () => {
                                 <td className="px-6 py-3 text-slate-600 truncate max-w-xs" title={item.description}>{item.description || '-'}</td>
                             </tr>
                         ))}
-                        {filteredItems.length === 0 && !loading && (
+                        {paginatedItems.length === 0 && !loading && (
                             <tr><td colSpan={5} className="text-center py-8 text-slate-400 italic">暂无建议，欢迎提交！</td></tr>
                         )}
                     </tbody>
                 </table>
               </div>
+              {filteredItems.length > 0 && (
+                <Pagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  pageSize={pageSize}
+                  totalItems={filteredItems.length}
+                  onPageChange={handlePageChange}
+                  onPageSizeChange={handlePageSizeChange}
+                />
+              )}
            </div>
         </div>
 

@@ -56,13 +56,20 @@ export const Layout: React.FC = () => {
     // Refresh menus every 5 seconds to detect changes in real-time
     const interval = setInterval(loadMenusFromAPI, 5000);
     
-    // Listen for menu updates from MenuManagement page
-    const handleMenuUpdate = () => loadMenusFromAPI();
+    // Listen for immediate menu updates from MenuManagement page
+    const handleMenuUpdate = (event: Event) => {
+      console.log('Menu update event received:', event);
+      loadMenusFromAPI();
+    };
+    
+    // Listen for both 'menuUpdated' and 'menuNameChanged' events for immediate updates
     window.addEventListener('menuUpdated', handleMenuUpdate);
+    window.addEventListener('menuNameChanged', handleMenuUpdate);
     
     return () => {
       clearInterval(interval);
       window.removeEventListener('menuUpdated', handleMenuUpdate);
+      window.removeEventListener('menuNameChanged', handleMenuUpdate);
     };
   }, []);
 

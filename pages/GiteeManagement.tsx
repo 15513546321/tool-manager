@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { GitPullRequest, Search, Download, Settings, RefreshCw, Save, Key, User, Calendar, FileText, ArrowRight, Lock, Globe, GitBranch, CheckSquare, Square, FolderOpen, AlertTriangle, Code2, Eye, ChevronUp, ChevronDown, Trash2 } from 'lucide-react';
 import { apiService } from '../services/apiService';
 import { recordAction } from '../services/auditService';
+import { Pagination } from '../components/Pagination';
 import { GiteeConfig, GiteeBranch, GiteeCommit } from '../types';
 import * as XLSX from 'xlsx';
 
@@ -80,6 +81,9 @@ export const GiteeManagement: React.FC = () => {
   const [changesetData, setChangesetData] = useState<Map<string, ChangesetItem[]>>(new Map());
   const [changesetOpen, setChangesetOpen] = useState(false);
   const [selectedCommitDetail, setSelectedCommitDetail] = useState<ChangesetItem | null>(null);
+  
+  // Pagination state for each branch (branch name -> { page, size })
+  const [branchPagination, setBranchPagination] = useState<Map<string, { page: number; size: number }>>(new Map());
   
   // Export Configuration
   const [exportFields, setExportFields] = useState<ExportField[]>(DEFAULT_EXPORT_FIELDS);
@@ -315,12 +319,14 @@ export const GiteeManagement: React.FC = () => {
 
       const result = await response.json();
       const newChangesetData = new Map<string, ChangesetItem[]>();
+      const newPagination = new Map<string, { page: number; size: number }>();
       
       if (result.data && Array.isArray(result.data)) {
         result.data.forEach((item: any) => {
           const branchName = item.branch;
           if (!newChangesetData.has(branchName)) {
             newChangesetData.set(branchName, []);
+            newPagination.set(branchName, { page: 1, size: 10 });
           }
           newChangesetData.get(branchName)!.push({
             branch: item.branch,
@@ -335,6 +341,7 @@ export const GiteeManagement: React.FC = () => {
       }
       
       setChangesetData(newChangesetData);
+      setBranchPagination(newPagination);
       recordAction('Gitee管理', `获取变更集 - 分支: ${Array.from(selectedBranches).join(',')}`);
     } catch (error) {
       console.error('Failed to fetch changesets:', error);
@@ -342,6 +349,27 @@ export const GiteeManagement: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Pagination handlers
+  const handleBranchPageChange = (branchName: string, page: number) => {
+    const items = changesetData.get(branchName) || [];
+    const pagination = branchPagination.get(branchName) || { page: 1, size: 10 };
+    const totalPages = Math.ceil(items.length / pagination.size);
+    const newPage = Math.max(1, Math.min(page, totalPages || 1));
+    
+    setBranchPagination(new Map(branchPagination).set(branchName, { ...pagination, page: newPage }));
+  };
+
+  const handleBranchPageSizeChange = (branchName: string, size: number) => {
+    setBranchPagination(new Map(branchPagination).set(branchName, { page: 1, size }));
+  };
+
+  const getPaginatedItems = (branchName: string) => {
+    const items = changesetData.get(branchName) || [];
+    const pagination = branchPagination.get(branchName) || { page: 1, size: 10 };
+    const start = (pagination.page - 1) * pagination.size;
+    return items.slice(start, start + pagination.size);
   };
 
   const handleDownloadChangeset = async () => {
@@ -1046,7 +1074,7 @@ export const GiteeManagement: React.FC = () => {
                                   
                                   {/* Commits List */}
                                   <div className="divide-y divide-slate-100">
-                                      {(changesetData.get(branchName) || []).map((item, idx) => (
+                                      {getPaginatedItems(branchName).map((item, idx) => (
                                           <div key={idx} className="p-3 hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => setSelectedCommitDetail(item)}>
                                               <div className="flex items-start justify-between gap-2">
                                                   <div className="flex-1 min-w-0">
@@ -1072,6 +1100,23 @@ export const GiteeManagement: React.FC = () => {
                                           </div>
                                       ))}
                                   </div>
+
+                                  {/* Pagination for this branch */}
+                                  {(() => {
+                                    const items = changesetData.get(branchName) || [];
+                                    const pagination = branchPagination.get(branchName) || { page: 1, size: 10 };
+                                    const totalPages = Math.ceil(items.length / pagination.size);
+                                    return items.length > pagination.size ? (
+                                      <Pagination
+                                        currentPage={pagination.page}
+                                        totalPages={totalPages}
+                                        pageSize={pagination.size}
+                                        totalItems={items.length}
+                                        onPageChange={(page) => handleBranchPageChange(branchName, page)}
+                                        onPageSizeChange={(size) => handleBranchPageSizeChange(branchName, size)}
+                                      />
+                                    ) : null;
+                                  })()}
                               </div>
                           ))}
                       </div>

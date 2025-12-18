@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Search, Activity } from 'lucide-react';
 import { getLogs, getIpMappings, LogEntry, IpMapping } from '../services/auditService';
+import { Pagination } from '../components/Pagination';
 
 const INPUT_STYLE = "w-full pl-3 pr-4 py-2 border border-slate-200 rounded-lg bg-[#f8fafc] focus:bg-white focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm text-slate-700 placeholder:text-slate-400";
 
@@ -9,6 +10,8 @@ export const AuditLog: React.FC = () => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [logSearch, setLogSearch] = useState('');
   const [mappings, setMappings] = useState<IpMapping[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
     // Fetch logs and mappings from backend
@@ -53,6 +56,22 @@ export const AuditLog: React.FC = () => {
     );
   }, [displayLogs, logSearch]);
 
+  // Compute pagination
+  const totalPages = Math.ceil(filteredLogs.length / pageSize);
+  const paginatedLogs = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredLogs.slice(start, start + pageSize);
+  }, [filteredLogs, currentPage, pageSize]);
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(Math.max(1, Math.min(page, totalPages || 1)));
+  };
+
+  const handlePageSizeChange = (size: number) => {
+    setPageSize(size);
+    setCurrentPage(1);
+  };
+
   return (
     <div className="p-6 h-full flex flex-col bg-slate-50">
       <div className="flex justify-between items-center mb-6">
@@ -71,7 +90,10 @@ export const AuditLog: React.FC = () => {
                    className={`${INPUT_STYLE} pl-10`}
                    placeholder="搜索姓名、IP、操作内容..."
                    value={logSearch}
-                   onChange={e => setLogSearch(e.target.value)}
+                   onChange={e => {
+                     setLogSearch(e.target.value);
+                     setCurrentPage(1);
+                   }}
                  />
               </div>
            </div>
@@ -90,7 +112,7 @@ export const AuditLog: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {filteredLogs.map(log => (
+                    {paginatedLogs.map(log => (
                       <tr key={log.id} className="hover:bg-slate-50 transition-colors">
                         <td className="px-6 py-3 text-slate-500 font-mono text-xs">{log.timestamp}</td>
                         <td className="px-6 py-3 font-medium text-slate-800 flex items-center gap-2">
@@ -108,12 +130,22 @@ export const AuditLog: React.FC = () => {
                         </td>
                       </tr>
                     ))}
-                    {filteredLogs.length === 0 && (
+                    {paginatedLogs.length === 0 && (
                         <tr><td colSpan={5} className="text-center py-8 text-slate-400 italic">暂无日志记录</td></tr>
                     )}
                   </tbody>
                 </table>
               </div>
+              {filteredLogs.length > 0 && (
+                <Pagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  pageSize={pageSize}
+                  totalItems={filteredLogs.length}
+                  onPageChange={handlePageChange}
+                  onPageSizeChange={handlePageSizeChange}
+                />
+              )}
            </div>
         </div>
     </div>
