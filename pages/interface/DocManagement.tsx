@@ -1,12 +1,23 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Download, Folder, Eye, X, FileJson, ChevronDown, FileCode, Layers, ChevronLeft, ChevronRight, Activity, ArrowRightLeft, Info, GitBranch, Network, Settings } from 'lucide-react';
+import { Download, Folder, Eye, X, FileJson, ChevronDown, FileCode, Layers, ChevronLeft, ChevronRight, Activity, ArrowRightLeft, Info, GitBranch, Network, Settings, Lock, Key, Globe, AlertTriangle } from 'lucide-react';
 import { parseProjectFiles, FileEntry } from '../../services/xmlParser';
 import { XmlTransaction, XmlField } from '../../types';
 import { recordAction } from '../../services/auditService';
-import { remoteCodeService, RemoteCodeConfig } from '../../services/remoteCodeService';
+import { apiService } from '../../services/apiService';
 
-// 增强的配置类型定义
-interface OnlineSourceConfig extends RemoteCodeConfig {
+// 增强的配置类型定义 - 与Gitee管理复用相同的认证类型
+interface OnlineSourceConfig {
+  repoUrl: string;
+  authType: 'token' | 'ssh';
+  authUsername?: string;
+  authPassword?: string;
+  authToken?: string;
+  sshKeyContent?: string;
+  sshPassphrase?: string;
+  branch: string;
+  branches: string[];
+  isConnected: boolean;
+  connectionError?: string;
 }
 
 // Helper to escape XML special characters
@@ -67,14 +78,117 @@ export const DocManagement: React.FC = () => {
   const [sourceMode, setSourceMode] = useState<'local' | 'online'>('online');
   const [onlineConfig, setOnlineConfig] = useState<OnlineSourceConfig>({
     repoUrl: '',
-    authType: 'none',
-    branch: 'master',
-    branches: ['master', 'main', 'develop'],
+    authType: 'token',
+    authUsername: undefined,
+    authPassword: undefined,
+    authToken: undefined,
+    sshKeyContent: undefined,
+    sshPassphrase: undefined,
+    branch: '',
+    branches: [],
     isConnected: false,
     connectionError: undefined
   });
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
+  
+  // 打开配置对话框时，重新加载配置信息
+  const handleOpenConfig = async () => {
+    try {
+      // 重新加载认证方式 - 如果数据库中没有，使用默认值 'token'
+      let authType = 'token';  // 默认使用 token 方式
+      try {
+        const authTypeResult = await apiService.configApi.getByKey('doc-management-auth-type');
+        if (authTypeResult?.configValue) {
+          authType = JSON.parse(authTypeResult.configValue);
+        }
+      } catch (err) {
+        console.warn('Failed to load auth type, using default (token):', err);
+      }
+      
+      let repoUrl = '';
+      let accessToken = '';
+      let privateKey = '';
+      let publicKey = '';
+      let selectedBranch = '';
+      
+      // 从对应的认证类型配置中加载
+      if (authType === 'token') {
+        try {
+          const tokenResult = await apiService.configApi.getByKey('doc-management-token-config');
+          if (tokenResult && tokenResult.configValue) {
+            const tokenConfig = JSON.parse(tokenResult.configValue);
+            repoUrl = tokenConfig.repoUrl || '';
+            accessToken = tokenConfig.accessToken || '';
+            console.log('✓ Loaded token config:', { repoUrl: repoUrl.substring(0, 30) });
+          }
+        } catch (err) {
+          console.warn('Failed to load token config:', err);
+        }
+      } else if (authType === 'ssh') {
+        try {
+          const sshResult = await apiService.configApi.getByKey('doc-management-ssh-config');
+          if (sshResult && sshResult.configValue) {
+            const sshConfig = JSON.parse(sshResult.configValue);
+            repoUrl = sshConfig.repoUrl || '';
+            privateKey = sshConfig.privateKey || '';
+            publicKey = sshConfig.publicKey || '';
+            console.log('✓ Loaded SSH config:', { repoUrl: repoUrl.substring(0, 30) });
+          }
+        } catch (err) {
+          console.warn('Failed to load SSH config:', err);
+        }
+      }
+      
+      // 加载上次选择的分支
+      try {
+        const branchResult = await apiService.configApi.getByKey('doc-management-selected-branch');
+        if (branchResult && branchResult.configValue) {
+          selectedBranch = JSON.parse(branchResult.configValue);
+          console.log('✓ Loaded selected branch:', selectedBranch);
+        }
+      } catch (err) {
+        console.warn('Failed to load selected branch:', err);
+      }
+      
+      // 更新状态 - 确保所有字段都被正确初始化
+      const finalAuthType = (authType === 'ssh' ? 'ssh' : 'token') as ('token' | 'ssh');
+      
+      setOnlineConfig({
+        repoUrl,
+        authType: finalAuthType,
+        authUsername: finalAuthType === 'ssh' ? publicKey : undefined,
+        authPassword: undefined,
+        authToken: finalAuthType === 'token' ? accessToken : undefined,
+        sshKeyContent: finalAuthType === 'ssh' ? privateKey : undefined,
+        sshPassphrase: undefined,
+        branch: selectedBranch,
+        branches: [],
+        isConnected: false,
+        connectionError: undefined
+      });
+      
+      console.log('✓ Config dialog opened with auth type:', authType);
+    } catch (err) {
+      console.warn('Failed to reload configuration:', err);
+      // 即使加载失败，也显示对话框，使用默认值
+      setOnlineConfig({
+        repoUrl: '',
+        authType: 'token',
+        authUsername: undefined,
+        authPassword: undefined,
+        authToken: undefined,
+        sshKeyContent: undefined,
+        sshPassphrase: undefined,
+        branch: '',
+        branches: [],
+        isConnected: false,
+        connectionError: undefined
+      });
+    }
+    
+    setIsConfigOpen(true);
+  };
   
   // 接口检索
   const [searchQuery, setSearchQuery] = useState('');
@@ -84,25 +198,87 @@ export const DocManagement: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  // 页面加载时自动加载配置（从remoteCodeService）
+  // 页面加载时自动加载配置（从apiService.configApi）
   useEffect(() => {
     const loadConfiguration = async () => {
       try {
-        // 从全局远程代码配置加载
-        const savedConfig = remoteCodeService.loadConfig();
-        if (savedConfig) {
-          setOnlineConfig(prev => ({
-            ...prev,
-            ...savedConfig,
-            isConnected: savedConfig.isConnected || false
-          }));
-
-          // 如果连接状态为真，尝试从缓存加载接口
-          if (savedConfig.isConnected) {
-            const cachedInterfaces = remoteCodeService.getCachedInterfaces(savedConfig);
-            if (cachedInterfaces && cachedInterfaces.length > 0) {
+        // 首先加载认证方式 - 使用独立的doc-management-*配置key
+        let authType = 'token';  // 默认使用 token 方式
+        try {
+          const authTypeResult = await apiService.configApi.getByKey('doc-management-auth-type');
+          if (authTypeResult?.configValue) {
+            authType = JSON.parse(authTypeResult.configValue);
+          }
+        } catch (err) {
+          console.warn('Failed to load auth type, using default (token):', err);
+        }
+        
+        let repoUrl = '';
+        let accessToken = '';
+        let privateKey = '';
+        let publicKey = '';
+        let selectedBranch = '';
+        
+        // 从对应的认证类型配置中加载 - 使用独立的doc-management配置
+        if (authType === 'token') {
+          try {
+            const tokenResult = await apiService.configApi.getByKey('doc-management-token-config');
+            if (tokenResult && tokenResult.configValue) {
+              const tokenConfig = JSON.parse(tokenResult.configValue);
+              repoUrl = tokenConfig.repoUrl || '';
+              accessToken = tokenConfig.accessToken || '';
+            }
+          } catch (err) {
+            console.warn('Failed to load token config:', err);
+          }
+        } else if (authType === 'ssh') {
+          try {
+            const sshResult = await apiService.configApi.getByKey('doc-management-ssh-config');
+            if (sshResult && sshResult.configValue) {
+              const sshConfig = JSON.parse(sshResult.configValue);
+              repoUrl = sshConfig.repoUrl || '';
+              privateKey = sshConfig.privateKey || '';
+              publicKey = sshConfig.publicKey || '';
+            }
+          } catch (err) {
+            console.warn('Failed to load SSH config:', err);
+          }
+        }
+        
+        // 加载上次选择的分支
+        try {
+          const branchResult = await apiService.configApi.getByKey('doc-management-selected-branch');
+          if (branchResult && branchResult.configValue) {
+            selectedBranch = JSON.parse(branchResult.configValue);
+          }
+        } catch (err) {
+          console.warn('Failed to load selected branch:', err);
+        }
+        
+        const finalAuthType = (authType === 'ssh' ? 'ssh' : 'token') as ('token' | 'ssh');
+        
+        setOnlineConfig({
+          repoUrl,
+          authType: finalAuthType,
+          authUsername: finalAuthType === 'ssh' ? publicKey : undefined,
+          authPassword: undefined,
+          authToken: finalAuthType === 'token' ? accessToken : undefined,
+          sshKeyContent: finalAuthType === 'ssh' ? privateKey : undefined,
+          sshPassphrase: undefined,
+          branch: selectedBranch,
+          branches: [],  // 分支列表初始为空，只在测试连接后才填充
+          isConnected: false,
+          connectionError: undefined
+        });
+        
+        // 如果有有效的仓库配置，尝试从缓存加载接口
+        if (repoUrl) {
+          const cachedResult = await apiService.configApi.getByKey('doc-management-interface-cache');
+          if (cachedResult && cachedResult.configValue) {
+            const cacheData = JSON.parse(cachedResult.configValue);
+            if (cacheData.interfaces && Array.isArray(cacheData.interfaces)) {
               // 转换为 XmlTransaction 并加载
-              const transactions = cachedInterfaces.map(iface => ({
+              const transactions = cacheData.interfaces.map((iface: any) => ({
                 id: iface.id,
                 trsName: iface.name,
                 module: iface.module,
@@ -122,18 +298,31 @@ export const DocManagement: React.FC = () => {
         }
       } catch (err) {
         console.warn('Failed to load saved configuration:', err);
+        // 即使加载失败，也要初始化onlineConfig，避免undefined错误
+        setOnlineConfig({
+          repoUrl: '',
+          authType: 'token',
+          branch: '',
+          branches: [],
+          isConnected: false,
+          connectionError: undefined
+        });
       }
     };
 
     loadConfiguration();
   }, []);
 
-  // 保存配置到全局服务
+  // 当配置加载完成且有完整的配置信息时，自动加载接口
   useEffect(() => {
-    if (onlineConfig.repoUrl && onlineConfig.isConnected) {
-      remoteCodeService.saveConfig(onlineConfig as RemoteCodeConfig);
+    if (onlineConfig.repoUrl && onlineConfig.branch && onlineConfig.authType) {
+      // 配置完整，自动加载接口（静默模式）
+      console.log('Auto-loading interfaces from saved configuration...');
+      handleFetchOnline(true).catch(err => {
+        console.warn('Auto-load encountered error (silently ignored):', err);
+      });
     }
-  }, [onlineConfig.repoUrl, onlineConfig.authType, onlineConfig.branch, onlineConfig.isConnected]);
+  }, []); // 仅在组件挂载时执行一次
 
   // 接口检索功能 - 根据选择的字段进行过滤
   const filteredTransactions = useMemo(() => {
@@ -221,7 +410,74 @@ export const DocManagement: React.FC = () => {
     }
   };
 
-  // 测试在线连接
+  // 处理认证类型切换 - 从数据库加载对应认证方式的配置
+  const handleAuthTypeChange = async (newAuthType: 'token' | 'ssh') => {
+    console.log('Switching auth type to:', newAuthType);
+    
+    try {
+      let repoUrl = '';
+      let accessToken = '';
+      let privateKey = '';
+      let publicKey = '';
+      let selectedBranch = '';
+
+      // 从数据库加载新认证方式的配置 - 使用独立的doc-management-*配置key
+      if (newAuthType === 'token') {
+        try {
+          const tokenResult = await apiService.configApi.getByKey('doc-management-token-config');
+          if (tokenResult && tokenResult.configValue) {
+            const tokenConfig = JSON.parse(tokenResult.configValue);
+            repoUrl = tokenConfig.repoUrl || '';
+            accessToken = tokenConfig.accessToken || '';
+            console.log('✓ Loaded Token config from database:', { repoUrl: repoUrl.substring(0, 30) + '...', hasToken: !!accessToken });
+          }
+        } catch (err) {
+          console.warn('Failed to load Token config from database:', err);
+        }
+      } else if (newAuthType === 'ssh') {
+        try {
+          const sshResult = await apiService.configApi.getByKey('doc-management-ssh-config');
+          if (sshResult && sshResult.configValue) {
+            const sshConfig = JSON.parse(sshResult.configValue);
+            repoUrl = sshConfig.repoUrl || '';
+            privateKey = sshConfig.privateKey || '';
+            publicKey = sshConfig.publicKey || '';
+            console.log('✓ Loaded SSH config from database:', { repoUrl: repoUrl.substring(0, 30) + '...', hasKeys: !!privateKey });
+          }
+        } catch (err) {
+          console.warn('Failed to load SSH config from database:', err);
+        }
+      }
+      
+      // 加载上次选择的分支
+      try {
+        const branchResult = await apiService.configApi.getByKey('doc-management-selected-branch');
+        if (branchResult && branchResult.configValue) {
+          selectedBranch = JSON.parse(branchResult.configValue);
+        }
+      } catch (err) {
+        console.warn('Failed to load selected branch:', err);
+      }
+
+      // 使用新的认证方式和加载的凭证更新配置 - 分支列表清空，只在测试连接后才填充
+      setOnlineConfig({
+        repoUrl,
+        authType: newAuthType,
+        authUsername: newAuthType === 'token' ? undefined : publicKey,
+        authPassword: newAuthType === 'token' ? undefined : onlineConfig.authPassword,
+        authToken: newAuthType === 'token' ? accessToken : undefined,
+        sshKeyContent: newAuthType === 'ssh' ? privateKey : undefined,
+        sshPassphrase: newAuthType === 'ssh' ? onlineConfig.sshPassphrase : undefined,
+        branch: selectedBranch,
+        branches: [],  // 分支列表始终清空，只在测试连接后才填充
+        isConnected: false,
+        connectionError: undefined
+      });
+    } catch (err) {
+      console.error('Error switching auth type:', err);
+    }
+  };
+
   const handleTestConnection = async () => {
     if (!onlineConfig.repoUrl.trim()) {
       alert('请输入仓库URL');
@@ -230,41 +486,118 @@ export const DocManagement: React.FC = () => {
 
     setIsTesting(true);
     try {
-      const authHeader = buildAuthHeader();
-      
-      // 调用后端API测试连接并获取分支列表
-      const response = await fetch('/api/nacos-sync/test-git-connection', {
+      // 使用与Gitee管理相同的连接测试API - /api/gitee/test-connection
+      // 这保证了连接逻辑与Gitee管理功能一致
+      const response = await fetch('/api/gitee/test-connection', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          ...authHeader
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           repoUrl: onlineConfig.repoUrl,
-          authType: onlineConfig.authType,
-          authUsername: onlineConfig.authUsername,
-          authPassword: onlineConfig.authPassword,
-          authToken: onlineConfig.authToken,
-          sshKeyContent: onlineConfig.authType === 'ssh-key' ? onlineConfig.sshKeyContent : undefined,
-          sshPassphrase: onlineConfig.authType === 'ssh-key' ? onlineConfig.sshPassphrase : undefined
+          authType: onlineConfig.authType === 'token' ? 'token' : 'ssh',
+          accessToken: onlineConfig.authType === 'token' ? onlineConfig.authToken : undefined,
+          privateKey: onlineConfig.authType === 'ssh' ? onlineConfig.sshKeyContent : undefined
         })
       });
       
       const result = await response.json();
       
-      if (result.success || result.data?.connected) {
-        const branches = result.data?.branches || ['master', 'main', 'develop'];
-        setOnlineConfig(prev => {
-          const updated = {
-            ...prev,
-            isConnected: true,
-            connectionError: undefined,
-            branches: branches
-          };
-          // 保存配置（包括分支信息）
-          remoteCodeService.saveConfig(updated as RemoteCodeConfig);
-          return updated;
-        });
+      if (result.success) {
+        // 连接成功 - 需要单独调用API获取真实的分支列表
+        let branches: string[] = [];
+        
+        try {
+          // 调用/api/gitee/branches API获取真实分支列表
+          const branchResponse = await fetch('/api/gitee/branches', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              repoUrl: onlineConfig.repoUrl,
+              authType: onlineConfig.authType,
+              accessToken: onlineConfig.authType === 'token' ? onlineConfig.authToken : undefined,
+              privateKey: onlineConfig.authType === 'ssh' ? onlineConfig.sshKeyContent : undefined,
+              searchQuery: '',
+              pageNumber: 1,
+              pageSize: 100  // 获取前100个分支
+            })
+          });
+          
+          const branchResult = await branchResponse.json();
+          console.log('Branch API response:', branchResult);
+          
+          // 处理分页响应结构 - /api/gitee/branches 返回 PaginatedResponse
+          if (branchResult.success && branchResult.data?.items && Array.isArray(branchResult.data.items)) {
+            // 提取分支名称，支持两种格式：
+            // 1. {name: "branch-name"} 格式
+            // 2. 直接的字符串值
+            branches = branchResult.data.items.map((b: any) => {
+              if (typeof b === 'string') {
+                return b;
+              } else if (b.name) {
+                return b.name;
+              }
+              return '';
+            }).filter((name: string) => name !== '');
+          }
+          
+          console.log(`✓ Fetched ${branches.length} real branches:`, branches);
+        } catch (err) {
+          console.warn('Failed to fetch branches from API:', err);
+          // 如果获取分支失败，不使用任何默认值，保持为空
+          branches = [];
+        }
+        
+        const updated = {
+          ...onlineConfig,
+          isConnected: true,
+          connectionError: undefined,
+          branches: branches
+        };
+        
+        // 保存配置到数据库 - 使用独立的doc-management-*配置key
+        try {
+          if (onlineConfig.authType === 'token') {
+            // Save token config - 不保存branches，分支只用于当前会话
+            await apiService.configApi.save({
+              configKey: 'doc-management-token-config',
+              configValue: JSON.stringify({
+                repoUrl: updated.repoUrl,
+                accessToken: updated.authToken
+              }),
+              configType: 'DOC_MANAGEMENT',
+              description: 'Document Management HTTPS/Token authentication'
+            });
+            console.log('✓ Token config saved');
+          } else if (onlineConfig.authType === 'ssh') {
+            // Save SSH config - 不保存branches，分支只用于当前会话
+            await apiService.configApi.save({
+              configKey: 'doc-management-ssh-config',
+              configValue: JSON.stringify({
+                repoUrl: updated.repoUrl,
+                privateKey: updated.sshKeyContent,
+                publicKey: updated.authUsername
+              }),
+              configType: 'DOC_MANAGEMENT',
+              description: 'Document Management SSH authentication'
+            });
+            console.log('✓ SSH config saved');
+          }
+          
+          // 同时保存认证类型
+          await apiService.configApi.save({
+            configKey: 'doc-management-auth-type',
+            configValue: onlineConfig.authType,
+            configType: 'DOC_MANAGEMENT',
+            description: 'Document Management authentication type (token or ssh)'
+          });
+        } catch (err) {
+          console.warn('Failed to save config to database:', err);
+        }
+        
+        setOnlineConfig(updated);
         alert('✅ 连接成功！已获取分支列表');
         recordAction('接口管理 - 文档管理', `在线连接测试成功 - URL: ${onlineConfig.repoUrl}, 分支数: ${branches.length}`);
       } else {
@@ -292,62 +625,49 @@ export const DocManagement: React.FC = () => {
     }
   };
 
-  // 构建认证请求头
-  const buildAuthHeader = (): Record<string, string> => {
-    const headers: Record<string, string> = {};
-    
-    switch(onlineConfig.authType) {
-      case 'http-basic':
-        if (onlineConfig.authUsername && onlineConfig.authPassword) {
-          const encoded = btoa(`${onlineConfig.authUsername}:${onlineConfig.authPassword}`);
-          headers['Authorization'] = `Basic ${encoded}`;
-        }
-        break;
-      case 'http-token':
-        if (onlineConfig.authToken) {
-          headers['Authorization'] = `Bearer ${onlineConfig.authToken}`;
-        }
-        break;
-      case 'ssh-key':
-        // SSH密钥需要后端处理
-        headers['X-SSH-Key'] = 'configured';
-        break;
-    }
-    
-    return headers;
-  };
+  // 在线获取代码并解析 - 与Gitee管理复用相同的连接逻辑
+  // silent参数：true时不显示alert和对话框操作，仅记录日志（用于自动加载）
+  const handleFetchOnline = async (silent: boolean = false) => {
+    // 如果是静默模式且没有必要的配置，直接返回不报错
+    if (silent) {
+      if (!onlineConfig.repoUrl?.trim()) {
+        console.log('Auto-load skipped: no repository URL');
+        return;
+      }
+      if (!onlineConfig.branch?.trim()) {
+        console.log('Auto-load skipped: no branch selected');
+        return;
+      }
+    } else {
+      // 交互模式：显示提示
+      if (!onlineConfig.repoUrl.trim()) {
+        alert('请输入仓库URL');
+        return;
+      }
 
-  // 在线获取代码并解析
-  const handleFetchOnline = async () => {
-    if (!onlineConfig.repoUrl.trim()) {
-      alert('请输入仓库URL');
-      return;
-    }
-
-    if (!onlineConfig.isConnected) {
-      alert('请先测试连接');
-      return;
+      if (!onlineConfig.isConnected) {
+        alert('请先测试连接');
+        return;
+      }
     }
 
     setIsProcessing(true);
     try {
-      const authHeader = buildAuthHeader();
-      
       // 调用后端API获取仓库代码
+      // 注：仓库代码获取使用nacos-sync接口，它使用git命令行工具
+      // 认证信息（authType/accessToken/privateKey）需要在系统环境中配置
+      // （例如：SSH key agent或git credentials）
       const response = await fetch('/api/nacos-sync/fetch-git-repository', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          ...authHeader
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           repoUrl: onlineConfig.repoUrl,
           branch: onlineConfig.branch,
-          authType: onlineConfig.authType,
-          authUsername: onlineConfig.authUsername,
-          authPassword: onlineConfig.authPassword,
-          authToken: onlineConfig.authToken,
-          sshKeyContent: onlineConfig.authType === 'ssh-key' ? onlineConfig.sshKeyContent : undefined
+          authType: onlineConfig.authType === 'token' ? 'token' : 'ssh',
+          accessToken: onlineConfig.authType === 'token' ? onlineConfig.authToken : undefined,
+          privateKey: onlineConfig.authType === 'ssh' ? onlineConfig.sshKeyContent : undefined
         })
       });
 
@@ -361,7 +681,7 @@ export const DocManagement: React.FC = () => {
           return newTransactions;
         });
         
-        // 缓存接口清单到远程代码服务
+        // 缓存接口清单到数据库
         const remoteInterfaces = newTransactions.map(t => ({
           id: t.id,
           name: t.trsName,
@@ -372,23 +692,42 @@ export const DocManagement: React.FC = () => {
           downstreamCalls: t.downstreamCalls,
           filePath: t.filePath
         }));
-        remoteCodeService.cacheInterfaces(onlineConfig as RemoteCodeConfig, remoteInterfaces);
         
-        // 保存配置
-        remoteCodeService.saveConfig(onlineConfig as RemoteCodeConfig);
+        await apiService.configApi.save({
+          configKey: 'doc-management-interface-cache',
+          configValue: JSON.stringify({
+            interfaces: remoteInterfaces,
+            timestamp: Date.now(),
+            repoUrl: onlineConfig.repoUrl,
+            branch: onlineConfig.branch
+          }),
+          configType: 'DOC_MANAGEMENT',
+          description: 'Document Management interface cache'
+        });
         
-        alert(`✅ 成功获取并解析 ${newTransactions.length} 个接口！`);
+        if (!silent) {
+          alert(`✅ 成功获取并解析 ${newTransactions.length} 个接口！`);
+          setIsConfigOpen(false);
+        }
+        
+        console.log(`✓ Auto-loaded ${newTransactions.length} interfaces from ${onlineConfig.repoUrl}`);
         recordAction('接口管理 - 文档管理', `在线获取 - 分支: ${onlineConfig.branch}, 已加载 ${newTransactions.length} 个接口`);
-        setIsConfigOpen(false);
       } else {
         const errorMsg = result.message || '获取失败';
-        alert(`❌ ${errorMsg}`);
+        if (!silent) {
+          alert(`❌ ${errorMsg}`);
+        }
+        console.warn('Failed to fetch online:', errorMsg);
         recordAction('接口管理 - 文档管理', `在线获取失败 - ${errorMsg}`);
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '未知错误';
       console.error('Fetch online error:', err);
-      alert(`❌ 获取失败: ${errorMsg}`);
+      if (!silent) {
+        alert(`❌ 获取失败: ${errorMsg}`);
+      }
+      // 静默模式下失败不报错，仅记录日志
+      console.warn('Auto-load failed:', errorMsg);
       recordAction('接口管理 - 文档管理', `在线获取异常 - ${errorMsg}`);
     } finally {
       setIsProcessing(false);
@@ -823,7 +1162,7 @@ export const DocManagement: React.FC = () => {
             </button>
 
             <button 
-                onClick={() => setIsConfigOpen(true)}
+                onClick={handleOpenConfig}
                 className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 shadow-sm transition-colors"
             >
                 <GitBranch size={18} />
@@ -1147,128 +1486,204 @@ export const DocManagement: React.FC = () => {
             </div>
 
             <div className="p-6 space-y-5">
-              {/* 仓库URL */}
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">仓库URL (Repository URL)</label>
-                <div className="relative">
+              {/* Auth Type Selector */}
+              <div className="flex gap-6 mb-4">
+                <label className="flex items-center gap-2 cursor-pointer">
                   <input 
-                    type="text"
-                    value={onlineConfig.repoUrl}
-                    onChange={(e) => setOnlineConfig({...onlineConfig, repoUrl: e.target.value})}
-                    placeholder="例: https://gitee.com/yourname/yourrepo 或 git@gitee.com:yourname/yourrepo.git"
-                    className="w-full px-4 py-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-100"
+                    type="radio" 
+                    name="authType" 
+                    checked={onlineConfig.authType === 'token'}
+                    onChange={() => handleAuthTypeChange('token')}
+                    className="text-blue-600 focus:ring-blue-500"
                   />
-                  <span className="absolute right-3 top-2.5 text-xs text-slate-400">HTTP / SSH</span>
-                </div>
+                  <span className="text-sm font-medium text-slate-700 flex items-center gap-1"><Lock size={14}/> HTTPS + Token (推荐)</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input 
+                    type="radio" 
+                    name="authType" 
+                    checked={onlineConfig.authType === 'ssh'}
+                    onChange={() => handleAuthTypeChange('ssh')}
+                    className="text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-sm font-medium text-slate-700 flex items-center gap-1"><Key size={14}/> SSH Key</span>
+                </label>
               </div>
 
-              {/* 认证方式选择 */}
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-3">认证方式 (Authentication Method)</label>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {['none', 'http-basic', 'http-token', 'ssh-key'].map((method) => (
-                    <button
-                      key={method}
-                      onClick={() => setOnlineConfig({...onlineConfig, authType: method as any})}
-                      className={`p-3 rounded-lg border-2 transition-all text-sm font-medium ${
-                        onlineConfig.authType === method
-                          ? 'border-purple-500 bg-purple-50 text-purple-700'
-                          : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                      }`}
-                    >
-                      {method === 'none' && '无认证'}
-                      {method === 'http-basic' && 'HTTP Basic'}
-                      {method === 'http-token' && 'HTTP Token'}
-                      {method === 'ssh-key' && 'SSH Key'}
-                    </button>
-                  ))}
-                </div>
+              <div className="space-y-4 max-w-4xl bg-slate-50 p-4 rounded-lg border border-slate-100">
+                {onlineConfig.authType === 'token' ? (
+                  // HTTPS / Token Config
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Repository URL (HTTPS)</label>
+                        <div className="relative">
+                          <Globe className="absolute left-3 top-2.5 text-slate-400" size={16}/>
+                          <input 
+                            className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg bg-[#f8fafc] focus:bg-white focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm text-slate-700 placeholder:text-slate-400"
+                            placeholder="https://gitee.com/username/repo.git" 
+                            value={onlineConfig.repoUrl}
+                            onChange={e => setOnlineConfig({...onlineConfig, repoUrl: e.target.value})}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Personal Access Token</label>
+                      <input 
+                        className="w-full pl-4 pr-4 py-2 border border-slate-200 rounded-lg bg-[#f8fafc] focus:bg-white focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm text-slate-700 placeholder:text-slate-400"
+                        type="password"
+                        placeholder="Your Gitee Personal Access Token" 
+                        value={onlineConfig.authToken || ''}
+                        onChange={e => setOnlineConfig({...onlineConfig, authToken: e.target.value})}
+                      />
+                      <p className="text-[10px] text-slate-400 mt-1">建议使用 Token 代替密码以提高安全性。</p>
+                    </div>
+                  </>
+                ) : (
+                  // SSH Config
+                  <>
+                    <div>
+                      <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Repository URL (SSH)</label>
+                      <div className="relative">
+                        <Key className="absolute left-3 top-2.5 text-slate-400" size={16}/>
+                        <input 
+                          className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg bg-[#f8fafc] focus:bg-white focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm text-slate-700 placeholder:text-slate-400"
+                          placeholder="git@gitee.com:username/repo.git" 
+                          value={onlineConfig.repoUrl}
+                          onChange={e => setOnlineConfig({...onlineConfig, repoUrl: e.target.value})}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Public Key (公钥)</label>
+                        <textarea 
+                          className="w-full p-3 border border-slate-200 rounded-lg bg-[#f8fafc] focus:bg-white focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm text-slate-700 font-mono resize-none"
+                          rows={4}
+                          placeholder="ssh-rsa AAAA... (Optional for display/verification)" 
+                          value={onlineConfig.authUsername || ''}
+                          onChange={e => setOnlineConfig({...onlineConfig, authUsername: e.target.value})}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Private Key (私钥)</label>
+                        <textarea 
+                          className="w-full p-3 border border-slate-200 rounded-lg bg-[#f8fafc] focus:bg-white focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm text-slate-700 font-mono resize-none"
+                          rows={4}
+                          placeholder="-----BEGIN OPENSSH PRIVATE KEY-----..." 
+                          value={onlineConfig.sshKeyContent || ''}
+                          onChange={e => setOnlineConfig({...onlineConfig, sshKeyContent: e.target.value})}
+                        />
+                      </div>
+                    </div>
+                    
+                    {/* SSH Configuration Helper */}
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-slate-700">
+                      <h4 className="font-bold text-blue-900 mb-2 flex items-center gap-2">
+                        <AlertTriangle size={16} className="text-blue-600" />
+                        SSH 连接配置示例
+                      </h4>
+                      <div className="space-y-2 text-xs font-mono bg-white p-2 rounded border border-blue-100">
+                        <p className="text-slate-600"><strong>仓库地址:</strong></p>
+                        <p className="bg-slate-50 p-1 rounded text-slate-700">git@gitee.com:your_username/your_repo.git</p>
+                        
+                        <p className="text-slate-600 mt-3"><strong>SSH 密钥生成命令:</strong></p>
+                        <p className="bg-slate-50 p-1 rounded text-slate-700">ssh-keygen -t ed25519 -C "your_email@example.com"</p>
+                        
+                        <p className="text-slate-600 mt-3"><strong>获取公钥内容:</strong></p>
+                        <p className="bg-slate-50 p-1 rounded text-slate-700">cat ~/.ssh/id_ed25519.pub</p>
+                        
+                        <p className="text-slate-600 mt-3"><strong>获取私钥内容:</strong></p>
+                        <p className="bg-slate-50 p-1 rounded text-slate-700">cat ~/.ssh/id_ed25519</p>
+                        
+                        <p className="text-slate-600 mt-3"><strong>Gitee 配置:</strong></p>
+                        <p className="bg-slate-50 p-1 rounded text-slate-700">设置 → 安全设置 → SSH公钥 → 添加上方的公钥内容</p>
+                      </div>
+                      <p className="text-slate-500 text-xs mt-2">提示: 建议使用 ed25519 算法，更安全、密钥更小</p>
+                    </div>
+                  </>
+                )}
               </div>
-
-              {/* HTTP Basic Auth */}
-              {onlineConfig.authType === 'http-basic' && (
-                <div className="space-y-3 bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-2">用户名 (Username)</label>
-                    <input 
-                      type="text"
-                      value={onlineConfig.authUsername || ''}
-                      onChange={(e) => setOnlineConfig({...onlineConfig, authUsername: e.target.value})}
-                      placeholder="Gitee/GitHub 用户名"
-                      className="w-full px-4 py-2 border border-blue-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-200"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-2">密码 (Password)</label>
-                    <input 
-                      type="password"
-                      value={onlineConfig.authPassword || ''}
-                      onChange={(e) => setOnlineConfig({...onlineConfig, authPassword: e.target.value})}
-                      placeholder="输入你的密码或应用密码"
-                      className="w-full px-4 py-2 border border-blue-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-200"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* HTTP Token Auth */}
-              {onlineConfig.authType === 'http-token' && (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <label className="block text-sm font-bold text-slate-700 mb-2">Access Token</label>
-                  <input 
-                    type="password"
-                    value={onlineConfig.authToken || ''}
-                    onChange={(e) => setOnlineConfig({...onlineConfig, authToken: e.target.value})}
-                    placeholder="输入你的 Personal Access Token"
-                    className="w-full px-4 py-2 border border-green-200 rounded-lg outline-none focus:ring-2 focus:ring-green-200"
-                  />
-                  <p className="text-xs text-slate-600 mt-2">💡 Gitee Token 获取: 设置 → 私人令牌 → 生成新令牌</p>
-                </div>
-              )}
-
-              {/* SSH Key Auth */}
-              {onlineConfig.authType === 'ssh-key' && (
-                <div className="space-y-3 bg-orange-50 border border-orange-200 rounded-lg p-4">
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-2">SSH 私钥 (Private Key Content)</label>
-                    <textarea 
-                      value={onlineConfig.sshKeyContent || ''}
-                      onChange={(e) => setOnlineConfig({...onlineConfig, sshKeyContent: e.target.value})}
-                      placeholder="粘贴你的 SSH 私钥内容 (-----BEGIN RSA PRIVATE KEY-----)..."
-                      className="w-full h-24 px-4 py-2 border border-orange-200 rounded-lg outline-none focus:ring-2 focus:ring-orange-200 font-mono text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-2">密码短语 (Passphrase, 可选)</label>
-                    <input 
-                      type="password"
-                      value={onlineConfig.sshPassphrase || ''}
-                      onChange={(e) => setOnlineConfig({...onlineConfig, sshPassphrase: e.target.value})}
-                      placeholder="如果私钥有密码，请输入"
-                      className="w-full px-4 py-2 border border-orange-200 rounded-lg outline-none focus:ring-2 focus:ring-orange-200"
-                    />
-                  </div>
-                  <p className="text-xs text-slate-600">💡 SSH 密钥获取: ~/.ssh/id_rsa (Linux/Mac) 或 %USERPROFILE%\.ssh\id_rsa (Windows)</p>
-                </div>
-              )}
 
               {/* 分支选择 */}
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-3">分支 (Branch)</label>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Branch (分支)</label>
                 <div className="flex gap-2">
-                  <select 
-                    value={onlineConfig.branch}
-                    onChange={(e) => setOnlineConfig({...onlineConfig, branch: e.target.value})}
-                    className="flex-1 px-4 py-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-100"
-                  >
-                    {onlineConfig.branches.map(b => (
-                      <option key={b} value={b}>{b}</option>
-                    ))}
-                  </select>
+                  {onlineConfig.branches.length > 0 ? (
+                    // 有分支列表时，提供下拉选择或手动输入
+                    <>
+                      <select 
+                        value={onlineConfig.branch}
+                        onChange={(e) => {
+                          const newBranch = e.target.value;
+                          setOnlineConfig({...onlineConfig, branch: newBranch});
+                          // 保存分支选择到数据库
+                          apiService.configApi.save({
+                            configKey: 'doc-management-selected-branch',
+                            configValue: newBranch,
+                            configType: 'DOC_MANAGEMENT',
+                            description: 'Document Management selected branch'
+                          }).catch(err => console.warn('Failed to save selected branch:', err));
+                        }}
+                        className="flex-1 px-4 py-2 border border-slate-200 rounded-lg bg-[#f8fafc] focus:bg-white focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm text-slate-700"
+                      >
+                        <option value="">-- 选择分支 --</option>
+                        {onlineConfig.branches.map(b => (
+                          <option key={b} value={b}>{b}</option>
+                        ))}
+                      </select>
+                      <span className="text-slate-500 px-2 py-2 text-sm">或</span>
+                      <input 
+                        type="text"
+                        placeholder="手动输入分支名称"
+                        value={onlineConfig.branch}
+                        onChange={(e) => {
+                          const newBranch = e.target.value;
+                          setOnlineConfig({...onlineConfig, branch: newBranch});
+                        }}
+                        onBlur={() => {
+                          // 保存分支选择到数据库
+                          if (onlineConfig.branch.trim()) {
+                            apiService.configApi.save({
+                              configKey: 'doc-management-selected-branch',
+                              configValue: onlineConfig.branch,
+                              configType: 'DOC_MANAGEMENT',
+                              description: 'Document Management selected branch'
+                            }).catch(err => console.warn('Failed to save selected branch:', err));
+                          }
+                        }}
+                        className="flex-1 px-4 py-2 border border-slate-200 rounded-lg bg-[#f8fafc] focus:bg-white focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm text-slate-700"
+                      />
+                    </>
+                  ) : (
+                    // 没有分支列表时，提供手动输入
+                    <input 
+                      type="text"
+                      placeholder="请先测试连接以获取分支列表，或手动输入分支名称"
+                      value={onlineConfig.branch}
+                      onChange={(e) => {
+                        const newBranch = e.target.value;
+                        setOnlineConfig({...onlineConfig, branch: newBranch});
+                      }}
+                      onBlur={() => {
+                        // 保存分支选择到数据库
+                        if (onlineConfig.branch.trim()) {
+                          apiService.configApi.save({
+                            configKey: 'doc-management-selected-branch',
+                            configValue: onlineConfig.branch,
+                            configType: 'DOC_MANAGEMENT',
+                            description: 'Document Management selected branch'
+                          }).catch(err => console.warn('Failed to save selected branch:', err));
+                        }
+                      }}
+                      className="flex-1 px-4 py-2 border border-slate-200 rounded-lg bg-[#f8fafc] focus:bg-white focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm text-slate-700"
+                    />
+                  )}
                   <button 
                     onClick={handleTestConnection}
                     disabled={isTesting || !onlineConfig.repoUrl.trim()}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium flex items-center gap-2 whitespace-nowrap"
+                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-bold flex items-center gap-2 whitespace-nowrap shadow-sm transition-colors"
                   >
                     {isTesting ? <Activity className="animate-spin" size={16} /> : <Network size={16} />}
                     {isTesting ? '测试中...' : '测试连接'}
@@ -1309,7 +1724,7 @@ export const DocManagement: React.FC = () => {
                 取消
               </button>
               <button 
-                onClick={handleFetchOnline}
+                onClick={() => handleFetchOnline(false)}
                 disabled={isProcessing || !onlineConfig.repoUrl.trim() || !onlineConfig.isConnected}
                 className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium disabled:opacity-50 flex items-center gap-2"
               >

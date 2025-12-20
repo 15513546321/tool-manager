@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { GitPullRequest, Search, Download, Settings, RefreshCw, Save, Key, User, Calendar, FileText, ArrowRight, Lock, Globe, GitBranch, CheckSquare, Square, FolderOpen, AlertTriangle, Code2, Eye, ChevronUp, ChevronDown, Trash2 } from 'lucide-react';
+import { GitPullRequest, Search, Download, Settings, RefreshCw, Save, Key, User, Calendar, FileText, ArrowRight, Lock, Globe, GitBranch, CheckSquare, Square, FolderOpen, AlertTriangle, Code2, Eye, ChevronUp, ChevronDown, Trash2, X } from 'lucide-react';
 import { apiService } from '../services/apiService';
 import { recordAction } from '../services/auditService';
 import { Pagination } from '../components/Pagination';
@@ -17,6 +17,13 @@ interface ExportField {
   visible: boolean;
   type?: 'text' | 'single-choice' | 'multi-choice';
   options?: string[];
+}
+
+// Excel Export Style Configuration
+interface ExcelExportStyle {
+  rowHeight: number; // 行高，单位为点(pt)
+  columnWidth: number; // 默认列宽，单位为字符数
+  headerRowHeight: number; // 表头行高
 }
 
 // Changeset item with branch information
@@ -42,6 +49,13 @@ const DEFAULT_EXPORT_FIELDS: ExportField[] = [
   { id: 'fileStatus', label: '文件状态', value: 'file_status', visible: false, type: 'single-choice', options: ['新增', '修改', '删除'] },
 ];
 
+// Default Excel Export Style Configuration
+const DEFAULT_EXCEL_STYLE: ExcelExportStyle = {
+  rowHeight: 18,
+  columnWidth: 20,
+  headerRowHeight: 22
+};
+
 export const GiteeManagement: React.FC = () => {
   // Config State
   const [config, setConfig] = useState<GiteeConfig>({ 
@@ -55,6 +69,9 @@ export const GiteeManagement: React.FC = () => {
 
   // Search State
   const [searchQuery, setSearchQuery] = useState('');
+  const [branchNameFilter, setBranchNameFilter] = useState(''); // Branch name filter for branch search
+  const [branchAuthorFilter, setBranchAuthorFilter] = useState(''); // Author filter for branches (last commit author)
+  const [authorFilter, setAuthorFilter] = useState(''); // Author filter for commits
   const [loading, setLoading] = useState(false);
   
   // Data State
@@ -73,27 +90,94 @@ export const GiteeManagement: React.FC = () => {
   // Export Configuration
   const [exportFields, setExportFields] = useState<ExportField[]>(DEFAULT_EXPORT_FIELDS);
   const [isExportConfigOpen, setIsExportConfigOpen] = useState(false);
+  
+  // Excel Export Style Configuration
+  const [excelExportStyle, setExcelExportStyle] = useState<ExcelExportStyle>(DEFAULT_EXCEL_STYLE);
+  const [isExcelStyleOpen, setIsExcelStyleOpen] = useState(false);
 
   // Load Config from backend
   useEffect(() => {
     const loadConfig = async () => {
       try {
-        // Try to load from backend
-        const result = await apiService.configApi.getByKey('gitee-config');
-        if (result) {
-          setConfig({ ...config, ...result.configValue ? JSON.parse(result.configValue) : {} });
+        // Load auth type first - this determines which config to use
+        const authTypeResult = await apiService.configApi.getByKey('gitee-auth-type');
+        const authType = authTypeResult ? authTypeResult.configValue : 'token';
+        console.log('Loaded auth type:', authType);
+
+        let repoUrl = '';
+        let accessToken = '';
+        let privateKey = '';
+        let publicKey = '';
+
+        // Load ONLY the config that matches the current auth type
+        // This prevents loading Token config when in SSH mode or vice versa
+        try {
+          if (authType === 'token') {
+            const tokenResult = await apiService.configApi.getByKey('gitee-token-config');
+            if (tokenResult && tokenResult.configValue) {
+              const tokenConfig = JSON.parse(tokenResult.configValue);
+              repoUrl = tokenConfig.repoUrl || '';
+              accessToken = tokenConfig.accessToken || '';
+              console.log('✓ Loaded Token config from database');
+            }
+            // Explicitly do NOT load SSH config to prevent mixing
+          } else if (authType === 'ssh') {
+            const sshResult = await apiService.configApi.getByKey('gitee-ssh-config');
+            if (sshResult && sshResult.configValue) {
+              const sshConfig = JSON.parse(sshResult.configValue);
+              repoUrl = sshConfig.repoUrl || '';
+              privateKey = sshConfig.privateKey || '';
+              publicKey = sshConfig.publicKey || '';
+              console.log('✓ Loaded SSH config from database');
+            }
+            // Explicitly do NOT load Token config to prevent mixing
+          }
+        } catch (err) {
+          console.error('Failed to load auth credentials:', err);
         }
+
+        setConfig({
+          repoUrl,
+          authType,
+          accessToken,
+          privateKey,
+          publicKey
+        });
       } catch (err) {
-        // Fallback to localStorage if backend fails
-        const saved = localStorage.getItem('gitee-config');
-        if (saved) {
-          try {
-            const parsed = JSON.parse(saved);
-            setConfig({ ...config, ...parsed });
-          } catch (e) {
-            console.error('Failed to load Gitee config:', e);
+        console.warn('Failed to load config from backend, trying localStorage:', err);
+        // Fallback to localStorage with separated keys per auth type
+        const authType = (localStorage.getItem('gitee-auth-type') || 'token') as 'token' | 'ssh';
+        
+        let repoUrl = '';
+        let accessToken = '';
+        let privateKey = '';
+        let publicKey = '';
+
+        // Load ONLY from localStorage key that matches authType
+        if (authType === 'token') {
+          const tokenConfig = localStorage.getItem('gitee-token-config');
+          if (tokenConfig) {
+            const parsed = JSON.parse(tokenConfig);
+            repoUrl = parsed.repoUrl || '';
+            accessToken = parsed.accessToken || '';
+          }
+        } else if (authType === 'ssh') {
+          const sshConfig = localStorage.getItem('gitee-ssh-config');
+          if (sshConfig) {
+            const parsed = JSON.parse(sshConfig);
+            repoUrl = parsed.repoUrl || '';
+            privateKey = parsed.privateKey || '';
+            publicKey = parsed.publicKey || '';
           }
         }
+
+        setConfig({
+          repoUrl,
+          authType,
+          accessToken,
+          privateKey,
+          publicKey
+        });
       }
     };
     
@@ -130,7 +214,107 @@ export const GiteeManagement: React.FC = () => {
     };
     
     loadExportFields();
+    
+    // Load Excel export style configuration
+    const loadExcelStyle = async () => {
+      try {
+        const result = await apiService.configApi.getByKey('gitee-excel-style');
+        if (result) {
+          const parsed = JSON.parse(result.configValue);
+          setExcelExportStyle({
+            rowHeight: parsed.rowHeight || DEFAULT_EXCEL_STYLE.rowHeight,
+            columnWidth: parsed.columnWidth || DEFAULT_EXCEL_STYLE.columnWidth,
+            headerRowHeight: parsed.headerRowHeight || DEFAULT_EXCEL_STYLE.headerRowHeight
+          });
+        }
+      } catch (err) {
+        // Fallback to localStorage
+        const savedStyle = localStorage.getItem('gitee-excel-style');
+        if (savedStyle) {
+          try {
+            const parsed = JSON.parse(savedStyle);
+            setExcelExportStyle({
+              rowHeight: parsed.rowHeight || DEFAULT_EXCEL_STYLE.rowHeight,
+              columnWidth: parsed.columnWidth || DEFAULT_EXCEL_STYLE.columnWidth,
+              headerRowHeight: parsed.headerRowHeight || DEFAULT_EXCEL_STYLE.headerRowHeight
+            });
+          } catch (e) {
+            console.error('Failed to load excel style config:', e);
+          }
+        }
+      }
+    };
+    
+    loadExcelStyle();
   }, []);
+
+  // Handle auth type switching - load config from database for the selected auth type
+  const handleAuthTypeChange = async (newAuthType: 'token' | 'ssh') => {
+    console.log('Switching auth type to:', newAuthType);
+    
+    try {
+      let repoUrl = '';
+      let accessToken = '';
+      let privateKey = '';
+      let publicKey = '';
+
+      // Load config for the new auth type from database
+      if (newAuthType === 'token') {
+        try {
+          const tokenResult = await apiService.configApi.getByKey('gitee-token-config');
+          if (tokenResult && tokenResult.configValue) {
+            const tokenConfig = JSON.parse(tokenResult.configValue);
+            repoUrl = tokenConfig.repoUrl || '';
+            accessToken = tokenConfig.accessToken || '';
+            console.log('✓ Loaded Token config from database:', { repoUrl: repoUrl.substring(0, 30) + '...', hasToken: !!accessToken });
+          }
+        } catch (err) {
+          console.warn('Failed to load Token config from database:', err);
+          // Try localStorage as fallback
+          const localToken = localStorage.getItem('gitee-token-config');
+          if (localToken) {
+            const tokenConfig = JSON.parse(localToken);
+            repoUrl = tokenConfig.repoUrl || '';
+            accessToken = tokenConfig.accessToken || '';
+            console.log('✓ Loaded Token config from localStorage');
+          }
+        }
+      } else if (newAuthType === 'ssh') {
+        try {
+          const sshResult = await apiService.configApi.getByKey('gitee-ssh-config');
+          if (sshResult && sshResult.configValue) {
+            const sshConfig = JSON.parse(sshResult.configValue);
+            repoUrl = sshConfig.repoUrl || '';
+            privateKey = sshConfig.privateKey || '';
+            publicKey = sshConfig.publicKey || '';
+            console.log('✓ Loaded SSH config from database:', { repoUrl: repoUrl.substring(0, 30) + '...', hasKeys: !!privateKey });
+          }
+        } catch (err) {
+          console.warn('Failed to load SSH config from database:', err);
+          // Try localStorage as fallback
+          const localSsh = localStorage.getItem('gitee-ssh-config');
+          if (localSsh) {
+            const sshConfig = JSON.parse(localSsh);
+            repoUrl = sshConfig.repoUrl || '';
+            privateKey = sshConfig.privateKey || '';
+            publicKey = sshConfig.publicKey || '';
+            console.log('✓ Loaded SSH config from localStorage');
+          }
+        }
+      }
+
+      // Update config with new auth type and loaded credentials
+      setConfig({
+        repoUrl,
+        authType: newAuthType,
+        accessToken,
+        privateKey,
+        publicKey
+      });
+    } catch (err) {
+      console.error('Error switching auth type:', err);
+    }
+  };
 
   const saveConfig = async () => {
     // Validation
@@ -171,24 +355,88 @@ export const GiteeManagement: React.FC = () => {
 
       const result = await response.json();
       
-      // Save config to backend
-      try {
-        await apiService.configApi.save({
-          configKey: 'gitee-config',
-          configValue: JSON.stringify(config),
-          configType: 'GITEE',
-          description: 'Gitee repository connection configuration'
-        });
-      } catch (err) {
-        console.warn('Failed to save config to backend, using localStorage:', err);
-        localStorage.setItem('gitee-config', JSON.stringify(config));
+      // Check if connection test succeeded
+      // ApiResponse format: { success: boolean, message: string, data: {...} }
+      if (!result.success) {
+        throw new Error(result.message || 'Connection test failed');
       }
+      
+      // Save config to backend - use separate keys for token and SSH configs
+      try {
+        // Save auth type
+        const authTypeRes = await apiService.configApi.save({
+          configKey: 'gitee-auth-type',
+          configValue: config.authType,
+          configType: 'GITEE',
+          description: 'Gitee authentication type (token or ssh)'
+        });
+        console.log('✓ Auth type saved:', authTypeRes);
+
+        // Save auth credentials and repo URL separately based on auth type
+        // Both Token and SSH configs are kept independent - no deletion
+        if (config.authType === 'token') {
+          // Save token config with repo URL
+          const tokenRes = await apiService.configApi.save({
+            configKey: 'gitee-token-config',
+            configValue: JSON.stringify({
+              repoUrl: config.repoUrl,
+              accessToken: config.accessToken
+            }),
+            configType: 'GITEE',
+            description: 'Gitee HTTPS/Token authentication'
+          });
+          console.log('✓ Token config saved (SSH config preserved in database):', tokenRes);
+        } else if (config.authType === 'ssh') {
+          // Save SSH config with repo URL
+          const sshRes = await apiService.configApi.save({
+            configKey: 'gitee-ssh-config',
+            configValue: JSON.stringify({
+              repoUrl: config.repoUrl,
+              privateKey: config.privateKey,
+              publicKey: config.publicKey
+            }),
+            configType: 'GITEE',
+            description: 'Gitee SSH authentication'
+          });
+          console.log('✓ SSH config saved (Token config preserved in database):', sshRes);
+        }
+      } catch (err) {
+        console.error('Failed to save config to backend:', err);
+        // Do NOT fallback to localStorage - user must fix and retry
+        throw new Error(`配置保存失败: ${err instanceof Error ? err.message : '未知错误'}`);
+      }
+
+      // Verify configuration was saved
+      try {
+        const validateRes = await fetch('/api/gitee/validate-config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            repoUrl: config.repoUrl,
+            authType: config.authType,
+            accessToken: config.authType === 'token' ? config.accessToken : undefined,
+            privateKey: config.authType === 'ssh' ? config.privateKey : undefined,
+            publicKey: config.authType === 'ssh' ? config.publicKey : undefined
+          })
+        });
+        
+        const validateResult = await validateRes.json();
+        if (validateResult.success && validateResult.data?.valid) {
+          console.log('✓ Configuration validation passed');
+        } else {
+          console.warn('Configuration validation warning:', validateResult.data?.reason || validateResult.message);
+        }
+      } catch (err) {
+        console.warn('Failed to validate configuration:', err);
+      }
+
       recordAction('Gitee管理', `保存配置 - 方式: ${config.authType === 'token' ? 'HTTPS/Token' : 'SSH'} - 连接测试成功`);
       setIsConfigOpen(false);
-      alert('连接配置已保存，连接测试成功！');
+      alert('✓ 连接配置已保存，连接测试成功！');
     } catch (error) {
       console.error('Failed to test connection:', error);
-      alert(`连接测试失败: ${error instanceof Error ? error.message : '未知错误'}`);
+      // Don't save config if connection test fails
+      alert(`✗ 连接测试失败: ${error instanceof Error ? error.message : '未知错误'}`);
     } finally {
       setLoading(false);
     }
@@ -209,6 +457,31 @@ export const GiteeManagement: React.FC = () => {
     recordAction('Gitee管理', '保存导出字段配置');
     setIsExportConfigOpen(false);
     alert('导出字段配置已保存');
+  };
+
+  const saveExcelStyleConfig = async () => {
+    try {
+      const result = await apiService.configApi.save({
+        configKey: 'gitee-excel-style',
+        configValue: JSON.stringify(excelExportStyle),
+        configType: 'GITEE',
+        description: 'Gitee Excel export style configuration'
+      });
+      
+      // 验证保存成功
+      if (result) {
+        console.log('✓ Excel样式配置已保存到数据库:', excelExportStyle);
+        // 同时保存到localStorage作为备份
+        localStorage.setItem('gitee-excel-style', JSON.stringify(excelExportStyle));
+      }
+    } catch (err) {
+      console.warn('Failed to save to backend, using localStorage:', err);
+      localStorage.setItem('gitee-excel-style', JSON.stringify(excelExportStyle));
+      alert('⚠️ 保存到数据库失败，已保存到本地存储。请检查网络连接。');
+    }
+    recordAction('Gitee管理', '保存Excel导出样式配置');
+    setIsExcelStyleOpen(false);
+    alert('✅ Excel导出样式配置已保存，新导出的文件将应用此样式');
   };
 
   const handleSearch = async () => {
@@ -233,7 +506,9 @@ export const GiteeManagement: React.FC = () => {
           authType: config.authType,
           accessToken: config.accessToken,
           privateKey: config.privateKey,
-          searchQuery: searchQuery
+          searchQuery: searchQuery,
+          branchName: branchNameFilter || undefined, // Pass branch name filter if specified
+          author: branchAuthorFilter || undefined // Pass branch author filter if specified
         })
       });
 
@@ -242,7 +517,28 @@ export const GiteeManagement: React.FC = () => {
       }
 
       const result = await response.json();
-      setBranches(result.data || []);
+      console.log('🔍 Branches API response:', result);
+      console.log('📦 result.data:', result.data);
+      console.log('📦 result.data?.items:', result.data?.items);
+      
+      // Handle paginated response structure - PaginatedResponse uses 'items' field
+      const branchesData = result.data?.items || [];
+      console.log('✅ branchesData extracted:', branchesData);
+      console.log('✅ branchesData is array?', Array.isArray(branchesData));
+      console.log('✅ branchesData length:', branchesData.length);
+      
+      if (Array.isArray(branchesData) && branchesData.length > 0) {
+        const typedBranches: GiteeBranch[] = branchesData.map(b => ({
+          name: b.name || '',
+          lastCommitHash: b.lastCommitHash || 'N/A',
+          lastUpdated: b.lastUpdated || 'N/A'
+        }));
+        console.log('✅ Typed branches:', typedBranches);
+        setBranches(typedBranches);
+      } else {
+        console.log('⚠️ No branches data found');
+        setBranches([]);
+      }
       recordAction('Gitee管理', `查询分支 - 关键词: ${searchQuery || 'ALL'}`);
     } catch (error) {
       console.error('Failed to fetch branches:', error);
@@ -263,11 +559,32 @@ export const GiteeManagement: React.FC = () => {
   };
 
   const toggleAllBranches = () => {
-    if (selectedBranches.size === branches.length && branches.length > 0) {
+    // Get filtered branches based on branchNameFilter
+    const filteredBranches = branches.filter(b => !branchNameFilter || b.name.toLowerCase().includes(branchNameFilter.toLowerCase()));
+    
+    if (selectedBranches.size === filteredBranches.length && filteredBranches.length > 0) {
       setSelectedBranches(new Set());
     } else {
-      setSelectedBranches(new Set(branches.map(b => b.name)));
+      setSelectedBranches(new Set(filteredBranches.map(b => b.name)));
     }
+  };
+
+  // Helper function to deduplicate changeset items within a branch
+  // Deduplication is based on the combination of commitHash and filePath
+  const deduplicateChangesetItems = (items: ChangesetItem[]): ChangesetItem[] => {
+    const seen = new Set<string>();
+    const deduplicated: ChangesetItem[] = [];
+    
+    items.forEach(item => {
+      // Create a unique key combining commitHash and filePath
+      const key = `${item.commitHash}|${item.filePath.trim()}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        deduplicated.push(item);
+      }
+    });
+    
+    return deduplicated;
   };
 
   const handleFetchMultiBranchChanges = async () => {
@@ -294,7 +611,8 @@ export const GiteeManagement: React.FC = () => {
           authType: config.authType,
           accessToken: config.accessToken,
           privateKey: config.privateKey,
-          branches: Array.from(selectedBranches)
+          branches: Array.from(selectedBranches),
+          author: authorFilter || undefined // Pass author filter if specified
         })
       });
 
@@ -307,13 +625,19 @@ export const GiteeManagement: React.FC = () => {
       const newPagination = new Map<string, { page: number; size: number }>();
       
       if (result.data && Array.isArray(result.data)) {
+        // Group items by branch first
+        const branchMap = new Map<string, any[]>();
         result.data.forEach((item: any) => {
           const branchName = item.branch;
-          if (!newChangesetData.has(branchName)) {
-            newChangesetData.set(branchName, []);
-            newPagination.set(branchName, { page: 1, size: 10 });
+          if (!branchMap.has(branchName)) {
+            branchMap.set(branchName, []);
           }
-          newChangesetData.get(branchName)!.push({
+          branchMap.get(branchName)!.push(item);
+        });
+        
+        // Process each branch: convert to ChangesetItem and deduplicate
+        branchMap.forEach((items, branchName) => {
+          const changesetItems: ChangesetItem[] = items.map((item: any) => ({
             branch: item.branch,
             commitHash: item.commitHash,
             author: item.author,
@@ -321,7 +645,13 @@ export const GiteeManagement: React.FC = () => {
             filePath: item.filePath,
             message: item.message,
             requirementGroup: item.requirementGroup
-          });
+          }));
+          
+          // Deduplicate within each branch
+          const deduplicatedItems = deduplicateChangesetItems(changesetItems);
+          
+          newChangesetData.set(branchName, deduplicatedItems);
+          newPagination.set(branchName, { page: 1, size: 10 });
         });
       }
       
@@ -366,47 +696,15 @@ export const GiteeManagement: React.FC = () => {
     try {
       const timestamp = new Date().toISOString().slice(0, 10);
       
-      // Get visible fields in order
-      const visibleFields = exportFields.filter(f => f.visible);
-      
-      // Prepare export data
-      const exportData: any[] = [];
-      
-      // Iterate through each branch in order
+      // Collect all items from all branches
+      const allItems: ChangesetItem[] = [];
       Array.from(changesetData.keys()).sort().forEach(branchName => {
         const items = changesetData.get(branchName) || [];
-        
-        items.forEach(item => {
-          const row: any = {};
-          // Use the ordered visible fields
-          visibleFields.forEach(field => {
-            if (field.id === 'branch') {
-              row[field.label] = item.branch;
-            } else if (field.id === 'filePath') {
-              row[field.label] = item.filePath;
-            } else if (field.id === 'commitHash') {
-              row[field.label] = item.commitHash;
-            } else if (field.id === 'message') {
-              row[field.label] = item.message;
-            } else if (field.id === 'author') {
-              row[field.label] = item.author;
-            } else if (field.id === 'date') {
-              row[field.label] = item.date;
-            } else if (field.id === 'reviewStatus') {
-              row[field.label] = '未评审';
-            } else if (field.id === 'fileStatus') {
-              row[field.label] = '修改';
-            } else {
-              row[field.label] = '';
-            }
-          });
-          
-          // Only add rows that have actual file path data
-          if (item.filePath && item.filePath.trim()) {
-            exportData.push(row);
-          }
-        });
+        allItems.push(...items);
       });
+      
+      // Use the same prepare function for consistent data format
+      const { exportData, visibleFields } = prepareExportData(allItems);
 
       // Prepare validation rules for backend
       const validationRules: any[] = [];
@@ -421,8 +719,9 @@ export const GiteeManagement: React.FC = () => {
       });
 
       console.log('Export Data:', { headers: visibleFields.map(f => f.label), dataCount: exportData.length, sample: exportData.slice(0, 2) });
+      console.log('✓ 应用Excel样式配置:', excelExportStyle);
 
-      // Call backend to generate Excel with validation
+      // Call backend to generate Excel with validation and style configuration
       const response = await fetch('/api/gitee/export-excel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -430,7 +729,8 @@ export const GiteeManagement: React.FC = () => {
           filename: `gitee_changeset_${timestamp}`,
           headers: visibleFields.map(f => f.label),
           data: exportData,
-          validationRules: validationRules
+          validationRules: validationRules,
+          excelStyle: excelExportStyle
         })
       });
 
@@ -456,37 +756,74 @@ export const GiteeManagement: React.FC = () => {
     }
   };
 
-  const handleDownloadList = () => {
+  const handleDownloadList = async () => {
     if (changesetData.size === 0) {
       alert('请先导出变更集');
       return;
     }
 
-    // Build content organized by branch - only file paths
-    const lines: string[] = [];
-    
-    Array.from(changesetData.keys()).sort().forEach(branchName => {
-      lines.push(`=== 分支: ${branchName} ===`);
-      const items = changesetData.get(branchName) || [];
-      items.forEach(item => {
-        lines.push(item.filePath);
-      });
+    try {
+      const timestamp = new Date().toISOString().slice(0, 10);
+      
+      // Generate TXT content - organized by branch with file lists
+      const lines: string[] = [];
+      lines.push(`=== Gitee 分支变更汇总 ===`);
+      lines.push(`生成时间: ${new Date().toLocaleString('zh-CN')}`);
       lines.push('');
-    });
 
-    const content = lines.join('\n');
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const timestamp = new Date().toISOString().slice(0, 10);
-    const filename = `gitee_changeset_${timestamp}.txt`;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    recordAction('Gitee管理', `导出变更清单文件: ${filename}`);
+      let totalFiles = 0;
+      let totalCommits = 0;
+
+      // Add each branch section - list unique files
+      Array.from(changesetData.keys()).sort().forEach(branchName => {
+        const items = changesetData.get(branchName) || [];
+        
+        // Collect unique files for this branch
+        const uniqueFiles = new Set<string>();
+        items.forEach(item => {
+          // Split by newlines in case filePath contains multiple files
+          const files = item.filePath ? item.filePath.split('\n').filter(f => f.trim()) : [];
+          files.forEach(f => uniqueFiles.add(f.trim()));
+        });
+
+        const fileCount = uniqueFiles.size;
+        const commitCount = items.length;
+        totalFiles += fileCount;
+        totalCommits += commitCount;
+        
+        lines.push(`\n【分支】${branchName}`);
+        lines.push(`【提交数】${commitCount}`);
+        lines.push(`【文件数】${fileCount}`);
+        lines.push(`【变更的文件列表】`);
+        
+        // List all unique files for this branch
+        Array.from(uniqueFiles).sort().forEach(filePath => {
+          lines.push(`  - ${filePath}`);
+        });
+      });
+
+      lines.push('');
+      lines.push(`=== 统计汇总 ===`);
+      lines.push(`分支总数: ${changesetData.size}`);
+      lines.push(`提交总数: ${totalCommits}`);
+      lines.push(`涉及文件总数: ${totalFiles}`);
+
+      // Create and download TXT file
+      const content = lines.join('\n');
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `gitee_changeset_list_${timestamp}.txt`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      recordAction('Gitee管理', `导出分支变更汇总 - 分支数: ${changesetData.size}, 提交数: ${totalCommits}, 文件数: ${totalFiles}`);
+    } catch (error: any) {
+      alert('导出失败: ' + error.message);
+    }
   };
 
   // Download single commit detail as TXT
@@ -541,29 +878,23 @@ export const GiteeManagement: React.FC = () => {
     recordAction('Gitee管理', `导出单个分支TXT: ${branchName}`);
   };
 
-  // Download single branch as Excel
-  const downloadBranchExcel = async (branchName: string) => {
-    const items = changesetData.get(branchName) || [];
-    if (items.length === 0) {
-      alert('该分支没有提交记录');
-      return;
-    }
+  // Helper function to prepare export data from items
+  const prepareExportData = (items: ChangesetItem[]): { exportData: any[], visibleFields: ExportField[] } => {
+    const visibleFields = exportFields.filter(f => f.visible);
+    const exportData: any[] = [];
 
-    try {
-      const timestamp = new Date().toISOString().slice(0, 10);
-      const visibleFields = exportFields.filter(f => f.visible);
+    items.forEach(item => {
+      // If filePath contains multiple files (separated by newlines), create one row per file
+      const files = item.filePath ? item.filePath.split('\n').filter((f: string) => f.trim()) : [''];
       
-      // Prepare export data
-      const exportData: any[] = [];
-
-      items.forEach(item => {
+      files.forEach(filePath => {
         const row: any = {};
-        // Use ordered visible fields
+        // Use ordered visible fields to build row
         visibleFields.forEach(field => {
           if (field.id === 'branch') {
             row[field.label] = item.branch;
           } else if (field.id === 'filePath') {
-            row[field.label] = item.filePath;
+            row[field.label] = filePath.trim(); // One file per row
           } else if (field.id === 'commitHash') {
             row[field.label] = item.commitHash;
           } else if (field.id === 'message') {
@@ -581,11 +912,25 @@ export const GiteeManagement: React.FC = () => {
           }
         });
         
-        if (item.filePath && item.filePath.trim()) {
-          exportData.push(row);
-        }
+        exportData.push(row);
       });
+    });
 
+    return { exportData, visibleFields };
+  };
+
+  // Download single branch as Excel
+  const downloadBranchExcel = async (branchName: string) => {
+    const items = changesetData.get(branchName) || [];
+    if (items.length === 0) {
+      alert('该分支没有提交记录');
+      return;
+    }
+
+    try {
+      const timestamp = new Date().toISOString().slice(0, 10);
+      const { exportData, visibleFields } = prepareExportData(items);
+      
       // Prepare validation rules for backend
       const validationRules: any[] = [];
       visibleFields.forEach((field, colIdx) => {
@@ -598,7 +943,9 @@ export const GiteeManagement: React.FC = () => {
         }
       });
 
-      // Call backend to generate Excel with validation
+      console.log('✓ 应用Excel样式配置:', excelExportStyle);
+
+      // Call backend to generate Excel with validation and style configuration
       const response = await fetch('/api/gitee/export-excel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -606,7 +953,8 @@ export const GiteeManagement: React.FC = () => {
           filename: `gitee_${branchName}`,
           headers: visibleFields.map(f => f.label),
           data: exportData,
-          validationRules: validationRules
+          validationRules: validationRules,
+          excelStyle: excelExportStyle
         })
       });
 
@@ -643,6 +991,12 @@ export const GiteeManagement: React.FC = () => {
            <p className="text-slate-500 text-sm mt-1">支持多分支选择、按需求分组导出变更集，导出字段可配置</p>
         </div>
         <div className="flex gap-2">
+          <button 
+              onClick={() => setIsExcelStyleOpen(!isExcelStyleOpen)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition-all shadow-sm ${isExcelStyleOpen ? 'bg-slate-200 text-slate-700' : 'bg-white text-purple-600 border border-slate-200 hover:bg-slate-50'}`}
+          >
+              <Settings size={18}/> {isExcelStyleOpen ? '收起样式' : 'Excel样式'}
+          </button>
           <button 
               onClick={() => setIsExportConfigOpen(!isExportConfigOpen)}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition-all shadow-sm ${isExportConfigOpen ? 'bg-slate-200 text-slate-700' : 'bg-white text-green-600 border border-slate-200 hover:bg-slate-50'}`}
@@ -783,6 +1137,122 @@ export const GiteeManagement: React.FC = () => {
           </div>
       )}
 
+      {/* Excel Style Config Panel */}
+      {isExcelStyleOpen && (
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-6 animate-in fade-in slide-in-from-top-4">
+              <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2">
+                  <Settings size={18} className="text-purple-500"/> Excel导出样式配置
+              </h3>
+              <p className="text-xs text-slate-500 mb-6">调整导出Excel文件的行高、列宽等样式设置</p>
+              
+              <div className="space-y-6">
+                  {/* Row Height */}
+                  <div className="p-4 bg-slate-50 rounded-lg border border-slate-100">
+                      <label className="block font-bold text-slate-700 mb-3 text-sm">数据行高 (点/pt)</label>
+                      <div className="flex items-center gap-4">
+                          <input
+                              type="range"
+                              min="1"
+                              max="100"
+                              value={excelExportStyle.rowHeight}
+                              onChange={(e) => setExcelExportStyle({ ...excelExportStyle, rowHeight: parseInt(e.target.value) })}
+                              className="flex-1 h-2 bg-slate-300 rounded-lg appearance-none cursor-pointer"
+                          />
+                          <input
+                              type="number"
+                              min="1"
+                              max="100"
+                              value={excelExportStyle.rowHeight}
+                              onChange={(e) => setExcelExportStyle({ ...excelExportStyle, rowHeight: Math.max(1, parseInt(e.target.value) || 18) })}
+                              className={INPUT_STYLE}
+                              style={{ width: '80px' }}
+                          />
+                      </div>
+                      <p className="text-xs text-slate-500 mt-2">当前: {excelExportStyle.rowHeight}pt</p>
+                  </div>
+
+                  {/* Header Row Height */}
+                  <div className="p-4 bg-slate-50 rounded-lg border border-slate-100">
+                      <label className="block font-bold text-slate-700 mb-3 text-sm">表头行高 (点/pt)</label>
+                      <div className="flex items-center gap-4">
+                          <input
+                              type="range"
+                              min="1"
+                              max="100"
+                              value={excelExportStyle.headerRowHeight}
+                              onChange={(e) => setExcelExportStyle({ ...excelExportStyle, headerRowHeight: parseInt(e.target.value) })}
+                              className="flex-1 h-2 bg-slate-300 rounded-lg appearance-none cursor-pointer"
+                          />
+                          <input
+                              type="number"
+                              min="1"
+                              max="100"
+                              value={excelExportStyle.headerRowHeight}
+                              onChange={(e) => setExcelExportStyle({ ...excelExportStyle, headerRowHeight: Math.max(1, parseInt(e.target.value) || 22) })}
+                              className={INPUT_STYLE}
+                              style={{ width: '80px' }}
+                          />
+                      </div>
+                      <p className="text-xs text-slate-500 mt-2">当前: {excelExportStyle.headerRowHeight}pt</p>
+                  </div>
+
+                  {/* Column Width */}
+                  <div className="p-4 bg-slate-50 rounded-lg border border-slate-100">
+                      <label className="block font-bold text-slate-700 mb-3 text-sm">默认列宽 (字符数)</label>
+                      <div className="flex items-center gap-4">
+                          <input
+                              type="range"
+                              min="1"
+                              max="100"
+                              value={excelExportStyle.columnWidth}
+                              onChange={(e) => setExcelExportStyle({ ...excelExportStyle, columnWidth: parseInt(e.target.value) })}
+                              className="flex-1 h-2 bg-slate-300 rounded-lg appearance-none cursor-pointer"
+                          />
+                          <input
+                              type="number"
+                              min="1"
+                              max="100"
+                              value={excelExportStyle.columnWidth}
+                              onChange={(e) => setExcelExportStyle({ ...excelExportStyle, columnWidth: Math.max(1, parseInt(e.target.value) || 20) })}
+                              className={INPUT_STYLE}
+                              style={{ width: '80px' }}
+                          />
+                      </div>
+                      <p className="text-xs text-slate-500 mt-2">当前: {excelExportStyle.columnWidth} 字符</p>
+                  </div>
+
+                  {/* Preview */}
+                  <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                      <p className="text-xs font-bold text-blue-700 mb-2">效果预览</p>
+                      <div style={{ 
+                          height: `${excelExportStyle.rowHeight}px`, 
+                          backgroundColor: '#f0f0f0', 
+                          border: '1px solid #ccc',
+                          width: `${excelExportStyle.columnWidth * 8}px`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          paddingLeft: '8px',
+                          fontSize: '12px'
+                      }}>
+                          示例数据
+                      </div>
+                  </div>
+              </div>
+
+              <div className="flex justify-end pt-4 gap-2">
+                  <button onClick={() => setIsExcelStyleOpen(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-medium">取消</button>
+                  <button onClick={() => {
+                      setExcelExportStyle(DEFAULT_EXCEL_STYLE);
+                  }} className="bg-slate-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-slate-700 transition-colors">
+                      恢复默认
+                  </button>
+                  <button onClick={saveExcelStyleConfig} className="bg-purple-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-purple-700 flex items-center gap-2 shadow-sm transition-colors">
+                      <Save size={18}/> 保存样式
+                  </button>
+              </div>
+          </div>
+      )}
+
       {/* Config Panel */}
       {isConfigOpen && (
           <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-6 animate-in fade-in slide-in-from-top-4">
@@ -797,7 +1267,7 @@ export const GiteeManagement: React.FC = () => {
                         type="radio" 
                         name="authType" 
                         checked={config.authType === 'token'}
-                        onChange={() => setConfig({...config, authType: 'token'})}
+                        onChange={() => handleAuthTypeChange('token')}
                         className="text-blue-600 focus:ring-blue-500"
                       />
                       <span className="text-sm font-medium text-slate-700 flex items-center gap-1"><Lock size={14}/> HTTPS + Token (推荐)</span>
@@ -807,7 +1277,7 @@ export const GiteeManagement: React.FC = () => {
                         type="radio" 
                         name="authType" 
                         checked={config.authType === 'ssh'}
-                        onChange={() => setConfig({...config, authType: 'ssh'})}
+                        onChange={() => handleAuthTypeChange('ssh')}
                         className="text-blue-600 focus:ring-blue-500"
                       />
                       <span className="text-sm font-medium text-slate-700 flex items-center gap-1"><Key size={14}/> SSH Key</span>
@@ -949,23 +1419,81 @@ export const GiteeManagement: React.FC = () => {
                           <ArrowRight size={16}/>
                       </button>
                   </div>
-                  {branches.length > 0 && (
-                      <div className="flex items-center justify-between">
-                          <span className="text-xs text-slate-600 font-medium">
-                              已选中: <span className="font-bold text-blue-600">{selectedBranches.size}</span> / {branches.length}
-                          </span>
+                  <div className="relative mb-3">
+                      <GitBranch className="absolute left-3 top-2.5 text-slate-400" size={14}/>
+                      <input 
+                          type="text"
+                          placeholder="按分支名称过滤..."
+                          value={branchNameFilter}
+                          onChange={(e) => setBranchNameFilter(e.target.value)}
+                          className={`${INPUT_STYLE} pl-9 pr-8 text-xs`}
+                      />
+                      {branchNameFilter && (
                           <button
-                              onClick={toggleAllBranches}
-                              className="text-xs font-bold text-blue-600 hover:text-blue-700 px-2 py-1 rounded hover:bg-blue-50"
+                              onClick={() => setBranchNameFilter('')}
+                              className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
                           >
-                              {selectedBranches.size === branches.length && branches.length > 0 ? '取消全选' : '全选'}
+                              <X size={14}/>
                           </button>
+                      )}
+                  </div>
+                  <div className="relative mb-3">
+                      <User className="absolute left-3 top-2.5 text-slate-400" size={14}/>
+                      <input 
+                          type="text"
+                          placeholder="按分支提交人过滤..."
+                          value={branchAuthorFilter}
+                          onChange={(e) => setBranchAuthorFilter(e.target.value)}
+                          className={`${INPUT_STYLE} pl-9 pr-8 text-xs`}
+                      />
+                      {branchAuthorFilter && (
+                          <button
+                              onClick={() => setBranchAuthorFilter('')}
+                              className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
+                          >
+                              <X size={14}/>
+                          </button>
+                      )}
+                  </div>
+                  {branches.length > 0 && (
+                      <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                              <span className="text-xs text-slate-600 font-medium">
+                                  已选中: <span className="font-bold text-blue-600">{selectedBranches.size}</span> / {branches.filter(b => !branchNameFilter || b.name.toLowerCase().includes(branchNameFilter.toLowerCase())).length}
+                              </span>
+                              <button
+                                  onClick={toggleAllBranches}
+                                  className="text-xs font-bold text-blue-600 hover:text-blue-700 px-2 py-1 rounded hover:bg-blue-50"
+                              >
+                                  {selectedBranches.size === branches.filter(b => !branchNameFilter || b.name.toLowerCase().includes(branchNameFilter.toLowerCase())).length && branches.filter(b => !branchNameFilter || b.name.toLowerCase().includes(branchNameFilter.toLowerCase())).length > 0 ? '取消全选' : '全选'}
+                              </button>
+                          </div>
+                          <div className="relative">
+                              <User className="absolute left-3 top-2.5 text-slate-400" size={14}/>
+                              <input 
+                                  type="text"
+                                  placeholder="按作者名称过滤提交记录..."
+                                  value={authorFilter}
+                                  onChange={(e) => setAuthorFilter(e.target.value)}
+                                  className={`${INPUT_STYLE} pl-9 pr-3 text-xs`}
+                              />
+                              {authorFilter && (
+                                  <button
+                                      onClick={() => setAuthorFilter('')}
+                                      className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
+                                  >
+                                      <X size={14}/>
+                                  </button>
+                              )}
+                          </div>
                       </div>
                   )}
               </div>
               <div className="flex-1 overflow-y-auto p-2">
                   {branches.length > 0 ? (
-                      branches.map(branch => (
+                      branches
+                        .filter(branch => !branchNameFilter || branch.name.toLowerCase().includes(branchNameFilter.toLowerCase()))
+                        .map(branch => (
                           <div 
                               key={branch.name}
                               onClick={() => toggleBranchSelection(branch.name)}
@@ -985,7 +1513,10 @@ export const GiteeManagement: React.FC = () => {
                                               {branch.name}
                                           </div>
                                           <div className="text-xs text-slate-400 mt-1 flex items-center gap-1">
-                                              <Calendar size={12}/> {branch.lastUpdated}
+                                              <Calendar size={12}/> 
+                                              {branch.lastUpdated && branch.lastUpdated !== 'N/A' && branch.lastUpdated !== 'Unknown' 
+                                                ? new Date(branch.lastUpdated).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+                                                : '暂无信息'}
                                           </div>
                                       </div>
                                   </div>
@@ -1119,7 +1650,7 @@ export const GiteeManagement: React.FC = () => {
                           onClick={handleDownloadList}
                           className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-bold flex items-center gap-2 shadow-sm transition-colors"
                       >
-                          <Download size={16}/> 下载 TXT
+                          <Download size={16}/> 下载清单
                       </button>
                       <button 
                           onClick={() => handleDownloadChangeset().catch(e => alert('导出失败: ' + e.message))}
@@ -1177,9 +1708,11 @@ export const GiteeManagement: React.FC = () => {
                           </div>
                           
                           <div>
-                              <label className="text-xs font-bold text-slate-500 uppercase">文件路径</label>
-                              <div className="mt-1 p-3 bg-slate-50 rounded-lg text-sm text-slate-700 font-mono flex items-center gap-2">
-                                  <FileText size={16} className="text-orange-500"/> {selectedCommitDetail.filePath}
+                              <label className="text-xs font-bold text-slate-500 uppercase">文件清单</label>
+                              <div className="mt-1 p-3 bg-slate-50 rounded-lg text-sm text-slate-700 font-mono">
+                                  <pre className="whitespace-pre-wrap break-words text-xs leading-relaxed">
+                                      {selectedCommitDetail.filePath}
+                                  </pre>
                               </div>
                           </div>
                       </div>

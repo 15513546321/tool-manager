@@ -28,8 +28,8 @@ export const initialMenuItems: MenuItem[] = [
     icon: 'sync',
     visible: true,
     children: [
-      { id: '11-1', name: 'Nacos配置同步', path: '/sync/nacos', icon: 'nacos', visible: true },
-      { id: '11-2', name: 'Oracle DDL同步', path: '/sync/oracle', icon: 'oracle', visible: true },
+      { id: '11-1', name: 'Nacos 配置同步', path: '/sync/nacos', icon: 'nacos', visible: true },
+      { id: '11-2', name: 'Oracle DDL 同步', path: '/sync/oracle', icon: 'oracle', visible: true },
     ] 
   },
   { id: '9', name: 'GitLab 报表', path: '/gitlab-reports', icon: 'gitlab', visible: true },

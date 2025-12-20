@@ -33,41 +33,9 @@ import { recordAction } from '../services/auditService';
 import { decodeBase64Content, base64ToUint8Array } from '../services/utils';
 import { Database, TABLE } from '../services/database';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { documentApi } from '../services/apiService';
 
-// --- Mock Data ---
-const initialDocs: DocItem[] = [
-  { 
-    id: '1', 
-    category: '技术规范', 
-    subCategory: '后端开发', 
-    title: 'Java 编码规范 v2.0', 
-    description: '公司统一 Java 后端开发风格指南',
-    versions: [
-      { id: 'v2', versionNumber: '2.0', fileName: 'java_style_v2.md', fileContent: '# Java Style Guide v2\n\n1. Naming\n2. Formatting...', updatedAt: '2023-10-01 10:00', updatedBy: 'admin', size: '12KB' },
-      { id: 'v1', versionNumber: '1.0', fileName: 'java_style_v1.md', fileContent: '# Java Style Guide v1\n\nInitial release.', updatedAt: '2023-01-15 09:30', updatedBy: 'admin', size: '10KB' }
-    ]
-  },
-  { 
-    id: '2', 
-    category: '技术规范', 
-    subCategory: '前端开发', 
-    title: 'React 组件库使用手册', 
-    description: '内部 UI 组件库 API 文档',
-    versions: [
-      { id: 'v1', versionNumber: '1.0', fileName: 'ui_lib.md', fileContent: '# UI Lib\n\n## Button\n...', updatedAt: '2023-09-20 14:00', updatedBy: 'user', size: '5KB' }
-    ]
-  },
-  { 
-    id: '3', 
-    category: '业务文档', 
-    subCategory: '支付中心', 
-    title: '支付网关接入流程', 
-    description: '商户接入支付网关的标准流程',
-    versions: [
-      { id: 'v1', versionNumber: '1.0', fileName: 'pay_flow.txt', fileContent: 'Flow:\n1. Sign contract\n2. Get keys...', updatedAt: '2023-10-05 11:20', updatedBy: 'admin', size: '2KB' }
-    ]
-  }
-];
+// 默认分类 - 仅在后端无数据时使用
 
 const DEFAULT_CATEGORIES = {
   '技术规范': ['后端开发', '前端开发', '运维部署'],
@@ -86,7 +54,8 @@ interface HeadingItem {
 }
 
 export const DocRepository: React.FC = () => {
-  const [docs, setDocs] = useState<DocItem[]>(initialDocs);
+  const [docs, setDocs] = useState<DocItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [categoryMap, setCategoryMap] = useState<Record<string, string[]>>(() => {
     const saved = Database.findObject<Record<string, string[]>>(TABLE.DOC_CATEGORIES);
@@ -151,19 +120,33 @@ export const DocRepository: React.FC = () => {
       type?: 'danger' | 'info';
   }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
 
-  // Init Data from DB
+  // 从后端 API 加载文档
   useEffect(() => {
-      const savedDocs = Database.findAll<DocItem>(TABLE.DOCS);
-      if (savedDocs.length > 0) {
-          setDocs(savedDocs);
-      } else {
-          setDocs(initialDocs);
+    const loadDocuments = async () => {
+      try {
+        setIsLoading(true);
+        const docsData = await documentApi.getAll();
+        // 确保 docsData 是数组，且每个 doc 都有 versions 数组
+        if (Array.isArray(docsData)) {
+          const validDocs = docsData.filter(doc => doc && Array.isArray(doc.versions) && doc.versions.length > 0);
+          setDocs(validDocs);
+        } else {
+          console.warn('Unexpected response format:', docsData);
+          setDocs([]);
+        }
+      } catch (error) {
+        console.error('Failed to load documents:', error);
+        setDocs([]);
+      } finally {
+        setIsLoading(false);
       }
+    };
+    loadDocuments();
   }, []);
 
+  // 更新本地状态
   const saveDocs = (newDocs: DocItem[]) => {
       setDocs(newDocs);
-      Database.save(TABLE.DOCS, newDocs);
   };
 
   // Derived Data
@@ -516,41 +499,96 @@ export const DocRepository: React.FC = () => {
     };
 
     if (modalMode === 'create') {
-      const newDoc: DocItem = {
-        id: Date.now().toString(),
-        title: formData.title,
-        category: formData.category,
-        subCategory: formData.subCategory,
-        description: formData.description,
-        versions: [newVersion]
-      };
-      saveDocs([newDoc, ...docs]);
-      setSelectedDocId(newDoc.id);
-      recordAction('Create Knowledge Doc', `Created: ${formData.title}`);
-    } else if (modalMode === 'update' && selectedDoc) {
-      const updatedDocs = docs.map(d => {
-        if (d.id === selectedDoc.id) {
-          let updatedVersions = [...d.versions];
-          if (formData.updateType === 'overwrite') {
-             updatedVersions[0] = { ...newVersion, versionNumber: updatedVersions[0].versionNumber };
-          } else {
-             updatedVersions = [newVersion, ...updatedVersions];
-          }
-          return {
-            ...d,
-            title: formData.title,
-            category: formData.category,
-            subCategory: formData.subCategory,
-            description: formData.description,
-            versions: updatedVersions
-          };
+      try {
+        // Create document without id and versions - those will be handled separately
+        const newDoc = {
+          title: formData.title,
+          category: formData.category,
+          subCategory: formData.subCategory,
+          description: formData.description
+        };
+        // Create document and get the response with real ID
+        const createdDoc = await documentApi.create(newDoc);
+        
+        // Add version to the created document
+        if (createdDoc.id) {
+          await documentApi.saveVersion(createdDoc.id, {
+            documentId: createdDoc.id,
+            versionNumber: newVersion.versionNumber,
+            fileName: newVersion.fileName,
+            fileContent: newVersion.fileContent,
+            fileSize: newVersion.size,
+            updatedBy: 'admin'
+          });
         }
-        return d;
-      });
-      saveDocs(updatedDocs);
-      recordAction('Update Knowledge Doc', `Updated: ${formData.title}`);
+        
+        // Fetch updated document with versions
+        const updated = await documentApi.getById(createdDoc.id);
+        setDocs([updated, ...docs]);
+        setSelectedDocId(updated.id.toString());
+        recordAction('Create Knowledge Doc', `Created: ${formData.title}`);
+      } catch (error) {
+        console.error('Failed to create document:', error);
+        alert('创建文档失败');
+      }
+    } else if (modalMode === 'update' && selectedDoc) {
+      try {
+        // Update document attributes only (without versions)
+        const updateDoc = {
+          id: selectedDoc.id,
+          title: formData.title,
+          category: formData.category,
+          subCategory: formData.subCategory,
+          description: formData.description
+        };
+        await documentApi.update(Number(selectedDoc.id), updateDoc);
+        
+        // Handle version update if file was selected
+        if (formData.updateType === 'overwrite' && file) {
+          // For overwrite, update the latest version
+          if (selectedDoc.versions.length > 0) {
+            await documentApi.saveVersion(Number(selectedDoc.id), {
+              documentId: Number(selectedDoc.id),
+              versionNumber: selectedDoc.versions[0].versionNumber,
+              fileName: newVersion.fileName,
+              fileContent: newVersion.fileContent,
+              fileSize: newVersion.size,
+              updatedBy: 'admin'
+            });
+          }
+        } else if (formData.updateType === 'new' && file) {
+          // For new version, create a new version entry
+          await documentApi.saveVersion(Number(selectedDoc.id), {
+            documentId: Number(selectedDoc.id),
+            versionNumber: newVersion.versionNumber,
+            fileName: newVersion.fileName,
+            fileContent: newVersion.fileContent,
+            fileSize: newVersion.size,
+            updatedBy: 'admin'
+          });
+        }
+        
+        // Fetch updated document with all versions
+        const updated = await documentApi.getById(Number(selectedDoc.id));
+        const updatedDocs = docs.map(d => d.id === selectedDoc.id ? updated : d);
+        setDocs(updatedDocs);
+        recordAction('Update Knowledge Doc', `Updated: ${formData.title}`);
+      } catch (error) {
+        console.error('Failed to update document:', error);
+        alert('更新文档失败');
+      }
     }
 
+    // Reset form and close modal
+    setFormData({
+      title: '',
+      category: '',
+      subCategory: '',
+      description: '',
+      versionNumber: '1.0',
+      updateType: 'new',
+    });
+    setFile(null);
     setIsModalOpen(false);
   };
 
@@ -579,6 +617,64 @@ export const DocRepository: React.FC = () => {
     a.click();
     URL.revokeObjectURL(url);
     recordAction('Download Knowledge Doc', `Downloaded: ${v.fileName}`);
+  };
+
+  const handleDeleteVersion = (v: DocVersion) => {
+    if (!selectedDoc) return;
+    
+    // 如果只有一个版本，不能删除
+    if (selectedDoc.versions.length === 1) {
+      alert('无法删除：文档至少需要保留一个版本');
+      return;
+    }
+
+    setConfirmState({
+      isOpen: true,
+      title: '删除版本',
+      message: `确定要删除版本 v${v.versionNumber} (${v.fileName}) 吗?`,
+      type: 'danger',
+      onConfirm: async () => {
+        try {
+          await documentApi.deleteVersion(Number(v.id));
+          // 重新加载文档信息
+          const updated = await documentApi.getById(Number(selectedDoc.id));
+          const updatedDocs = docs.map(d => d.id === selectedDoc.id ? updated : d);
+          setDocs(updatedDocs);
+          setSelectedDocId(updated.id.toString());
+          // 删除后自动显示最新版本（第一个）
+          if (updated.versions && updated.versions.length > 0) {
+            setPreviewVersionId(null); // 确保显示最新版本
+          }
+          recordAction('Delete Knowledge Doc Version', `Deleted v${v.versionNumber}`);
+        } catch (error) {
+          console.error('Failed to delete version:', error);
+          alert('删除版本失败');
+        }
+      }
+    });
+  };
+
+  const handleDeleteDocument = () => {
+    if (!selectedDoc) return;
+
+    setConfirmState({
+      isOpen: true,
+      title: '删除文档',
+      message: `确定要删除文档 "${selectedDoc.title}" 及其所有版本吗? 这个操作无法撤销。`,
+      type: 'danger',
+      onConfirm: async () => {
+        try {
+          await documentApi.delete(Number(selectedDoc.id));
+          const updatedDocs = docs.filter(d => d.id !== selectedDoc.id);
+          setDocs(updatedDocs);
+          setSelectedDocId(null);
+          recordAction('Delete Knowledge Doc', `Deleted: ${selectedDoc.title}`);
+        } catch (error) {
+          console.error('Failed to delete document:', error);
+          alert('删除文档失败');
+        }
+      }
+    });
   };
 
   const getFileIcon = (fileName: string) => {
@@ -757,22 +853,30 @@ export const DocRepository: React.FC = () => {
 
         {/* List Area */}
         <div className="flex-1 overflow-y-auto p-2 space-y-1 bg-slate-50/30">
-          {paginatedDocs.length === 0 ? (
+          {isLoading ? (
+            <div className="text-center text-slate-400 py-8 text-sm">加载中...</div>
+          ) : paginatedDocs.length === 0 ? (
             <div className="text-center text-slate-400 py-8 text-sm">暂无文档</div>
           ) : (
-            paginatedDocs.map(doc => (
-              <button
+            paginatedDocs.map(doc => {
+              const firstVersion = doc.versions && doc.versions.length > 0 ? doc.versions[0] : null;
+              if (!firstVersion) return null; // Skip documents without versions
+              
+              return (
+              <div
                 key={doc.id}
-                onClick={() => { setSelectedDocId(doc.id); setPreviewVersionId(null); }}
                 className={`w-full text-left p-3 rounded-lg border transition-all group ${
                   selectedDocId === doc.id 
                     ? 'bg-blue-50 border-blue-200 shadow-sm' 
                     : 'bg-white border-transparent hover:bg-slate-50 hover:border-slate-100'
                 }`}
               >
-                <div className="flex items-start gap-3">
+                <button
+                  onClick={() => { setSelectedDocId(doc.id); setPreviewVersionId(null); }}
+                  className="w-full text-left flex items-start gap-3"
+                >
                   <div className={`mt-1 p-2 rounded-lg ${selectedDocId === doc.id ? 'bg-blue-100' : 'bg-slate-100'}`}>
-                    {getFileIcon(doc.versions[0].fileName)}
+                    {getFileIcon(firstVersion.fileName || '')}
                   </div>
                   <div className="flex-1 min-w-0">
                     <h3 className={`font-medium truncate ${selectedDocId === doc.id ? 'text-blue-900' : 'text-slate-700'}`}>
@@ -781,12 +885,31 @@ export const DocRepository: React.FC = () => {
                     <div className="flex items-center gap-2 mt-1 text-xs text-slate-400">
                        <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-500">{doc.category}</span>
                        <span>•</span>
-                       <span>{doc.subCategory}</span>
+                       <span>{doc.subCategory || '未分类'}</span>
                     </div>
                   </div>
+                </button>
+                <div className="flex gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {selectedDocId === doc.id && (
+                    <>
+                      <button
+                        onClick={handleOpenUpdate}
+                        className="flex-1 text-xs px-2 py-1 text-blue-600 border border-blue-200 rounded hover:bg-blue-50 transition-colors"
+                      >
+                        <Edit size={12} className="inline mr-1" /> 编辑
+                      </button>
+                      <button
+                        onClick={handleDeleteDocument}
+                        className="flex-1 text-xs px-2 py-1 text-red-600 border border-red-200 rounded hover:bg-red-50 transition-colors"
+                      >
+                        <Trash2 size={12} className="inline mr-1" /> 删除
+                      </button>
+                    </>
+                  )}
                 </div>
-              </button>
-            ))
+              </div>
+              );
+            })
           )}
         </div>
 
@@ -831,9 +954,9 @@ export const DocRepository: React.FC = () => {
                     )}
                   </div>
                   <div className="flex items-center gap-4 text-sm text-slate-500">
-                    <span className="flex items-center gap-1">{getFileIcon(activeVersion.fileName)} {activeVersion.fileName}</span>
-                    <span className="flex items-center gap-1"><Clock size={14}/> {activeVersion.updatedAt}</span>
-                    <span className="flex items-center gap-1">by {activeVersion.updatedBy}</span>
+                    <span className="flex items-center gap-1">{getFileIcon(activeVersion?.fileName || '')} {activeVersion?.fileName || '未知'}</span>
+                    <span className="flex items-center gap-1"><Clock size={14}/> {activeVersion?.updatedAt || '未知'}</span>
+                    <span className="flex items-center gap-1">by {activeVersion?.updatedBy || 'unknown'}</span>
                   </div>
                   {selectedDoc.description && (
                     <p className="mt-3 text-slate-600 text-sm max-w-2xl">{selectedDoc.description}</p>
@@ -846,7 +969,7 @@ export const DocRepository: React.FC = () => {
                  >
                    <Download size={16} /> 下载
                  </button>
-                 {!previewVersionId && (
+                 {!previewVersionId && selectedDoc && selectedDoc.versions && selectedDoc.versions.length > 0 && selectedDoc.versions[0].id === activeVersion?.id && (
                    <button 
                      onClick={handleOpenUpdate}
                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm transition-colors shadow-sm"
@@ -884,21 +1007,30 @@ export const DocRepository: React.FC = () => {
                        >
                          <div className="flex justify-between items-start mb-1">
                            <span className={`font-bold text-sm ${activeVersion.id === v.id ? 'text-blue-700' : 'text-slate-700'}`}>v{v.versionNumber}</span>
-                           <span className="text-xs text-slate-400">{v.updatedAt.split(' ')[0]}</span>
+                           <div className="flex gap-1 items-center">
+                             {idx === 0 && (
+                               <span className="text-xs text-green-600 bg-green-50 px-1.5 py-0.5 rounded border border-green-100 font-medium">最新</span>
+                             )}
+                             <span className="text-xs text-slate-400">{v.updatedAt.split(' ')[0]}</span>
+                           </div>
                          </div>
                          <div className="text-xs text-slate-500 mb-2 truncate" title={v.fileName}>
                            {v.fileName}
                          </div>
                          <div className="flex gap-2">
-                            {idx !== 0 || previewVersionId ? (
-                                <button 
-                                  onClick={() => setPreviewVersionId(v.id === selectedDoc.versions[0].id ? null : v.id)}
-                                  className="flex-1 flex items-center justify-center gap-1 py-1 text-xs bg-white border border-slate-200 rounded text-slate-600 hover:text-blue-600 hover:border-blue-300 transition-colors"
-                                >
-                                  <Eye size={12} /> {activeVersion.id === v.id ? '当前' : '预览'}
-                                </button>
-                            ) : (
-                                <span className="flex-1 py-1 text-center text-xs text-green-600 bg-green-50 rounded border border-green-100 font-medium">最新版本</span>
+                            <button 
+                              onClick={() => handleDownload(v)}
+                              className="flex-1 flex items-center justify-center gap-1 py-1 text-xs bg-white border border-slate-200 rounded text-slate-600 hover:text-blue-600 hover:border-blue-300 transition-colors"
+                            >
+                              <Download size={12} /> 下载
+                            </button>
+                            {selectedDoc.versions.length > 1 && (
+                              <button
+                                onClick={() => handleDeleteVersion(v)}
+                                className="flex-1 flex items-center justify-center gap-1 py-1 text-xs bg-white border border-slate-200 rounded text-slate-600 hover:text-red-600 hover:border-red-300 transition-colors"
+                              >
+                                <Trash2 size={12} /> 删除
+                              </button>
                             )}
                          </div>
                        </div>

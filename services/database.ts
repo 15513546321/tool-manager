@@ -11,6 +11,7 @@ export const TABLE = {
   ANNOUNCEMENTS: 'announcements',
   DOCS: 'docs',
   DOC_CATEGORIES: 'docCategories',
+  PARAMETER_CATEGORIES: 'parameterCategories',
   PARAMS: 'sysParams',
   MENUS: 'appMenus',
   AUDIT_LOGS: 'auditLogs',

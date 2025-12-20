@@ -159,6 +159,23 @@ export const systemParameterApi = {
     });
     if (!res.ok) throw new Error('Failed to delete parameter');
   },
+
+  // Parameter Category APIs
+  getCategories: async () => {
+    const res = await fetch(`${API_BASE_URL}/system-param/categories/all`);
+    if (!res.ok) throw new Error('Failed to fetch parameter categories');
+    return res.json();
+  },
+
+  saveCategories: async (categories: Record<string, string[]>) => {
+    const res = await fetch(`${API_BASE_URL}/system-param/categories`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(categories),
+    });
+    if (!res.ok) throw new Error('Failed to save parameter categories');
+    return res.json();
+  },
 };
 
 // Suggestion APIs
@@ -361,32 +378,39 @@ export const codeTemplateApi = {
 
 // Document API
 export const documentApi = {
+  // Document Management
   getAll: async () => {
-    const res = await fetch(`${API_BASE_URL}/document/all`);
+    const res = await fetch(`${API_BASE_URL}/documents/all`);
     if (!res.ok) throw new Error('Failed to fetch documents');
     return res.json();
   },
 
   getByCategory: async (category: string) => {
-    const res = await fetch(`${API_BASE_URL}/document/category/${category}`);
+    const res = await fetch(`${API_BASE_URL}/documents/category/${category}`);
     if (!res.ok) throw new Error('Failed to fetch documents by category');
     return res.json();
   },
 
-  getByType: async (type: string) => {
-    const res = await fetch(`${API_BASE_URL}/document/type/${type}`);
-    if (!res.ok) throw new Error('Failed to fetch documents by type');
+  getBySubCategory: async (category: string, subCategory: string) => {
+    const res = await fetch(`${API_BASE_URL}/documents/category/${category}/sub/${subCategory}`);
+    if (!res.ok) throw new Error('Failed to fetch documents by subcategory');
+    return res.json();
+  },
+
+  search: async (title: string) => {
+    const res = await fetch(`${API_BASE_URL}/documents/search?title=${encodeURIComponent(title)}`);
+    if (!res.ok) throw new Error('Failed to search documents');
     return res.json();
   },
 
   getById: async (id: number) => {
-    const res = await fetch(`${API_BASE_URL}/document/${id}`);
+    const res = await fetch(`${API_BASE_URL}/documents/${id}`);
     if (!res.ok) throw new Error('Failed to fetch document');
     return res.json();
   },
 
   create: async (data: any) => {
-    const res = await fetch(`${API_BASE_URL}/document`, {
+    const res = await fetch(`${API_BASE_URL}/documents`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -396,8 +420,8 @@ export const documentApi = {
   },
 
   update: async (id: number, data: any) => {
-    const res = await fetch(`${API_BASE_URL}/document/${id}`, {
-      method: 'PUT',
+    const res = await fetch(`${API_BASE_URL}/documents/${id}`, {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
@@ -406,10 +430,40 @@ export const documentApi = {
   },
 
   delete: async (id: number) => {
-    const res = await fetch(`${API_BASE_URL}/document/${id}`, {
+    const res = await fetch(`${API_BASE_URL}/documents/${id}`, {
       method: 'DELETE',
     });
     if (!res.ok) throw new Error('Failed to delete document');
+  },
+
+  // Document Version Management
+  getVersions: async (documentId: number) => {
+    const res = await fetch(`${API_BASE_URL}/documents/${documentId}/versions`);
+    if (!res.ok) throw new Error('Failed to fetch versions');
+    return res.json();
+  },
+
+  getVersion: async (documentId: number, versionNumber: string) => {
+    const res = await fetch(`${API_BASE_URL}/documents/${documentId}/versions/${versionNumber}`);
+    if (!res.ok) throw new Error('Failed to fetch version');
+    return res.json();
+  },
+
+  saveVersion: async (documentId: number, versionData: any) => {
+    const res = await fetch(`${API_BASE_URL}/documents/${documentId}/versions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(versionData),
+    });
+    if (!res.ok) throw new Error('Failed to save version');
+    return res.json();
+  },
+
+  deleteVersion: async (versionId: number) => {
+    const res = await fetch(`${API_BASE_URL}/documents/versions/${versionId}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error('Failed to delete version');
   },
 };
 

@@ -93,8 +93,9 @@ public class GiteeService {
     /**
      * Fetch branches from Gitee repository
      * Supports both SSH and Token (HTTP) authentication
+     * @param author optional filter by last commit author (null means no filter)
      */
-    public List<Map<String, Object>> getBranches(String repoUrl, String authType, String accessToken, String privateKey, String searchQuery) {
+    public List<Map<String, Object>> getBranches(String repoUrl, String authType, String accessToken, String privateKey, String searchQuery, String author) {
         List<Map<String, Object>> branches = new ArrayList<>();
         try {
             if ("ssh".equals(authType)) {
@@ -107,7 +108,7 @@ public class GiteeService {
                     return branches;
                 }
                 // Fallback to Gitee API
-                return getBranchesHTTP(repoUrl, accessToken, searchQuery);
+                return getBranchesHTTP(repoUrl, accessToken, searchQuery, author);
             } else {
                 System.err.println("Unknown auth type: " + authType);
                 return branches;
@@ -122,7 +123,7 @@ public class GiteeService {
     /**
      * Fetch branches from Gitee repository using HTTP API
      */
-    private List<Map<String, Object>> getBranchesHTTP(String repoUrl, String accessToken, String searchQuery) {
+    private List<Map<String, Object>> getBranchesHTTP(String repoUrl, String accessToken, String searchQuery, String author) {
         List<Map<String, Object>> branches = new ArrayList<>();
         try {
             if (!"token".equals("token") || accessToken == null || accessToken.trim().isEmpty()) {
@@ -138,7 +139,7 @@ public class GiteeService {
             
             String owner = urlParts[0];
             String repo = urlParts[1];
-            System.out.println("Fetching branches for: " + owner + "/" + repo);
+            System.out.println("Fetching branches for: " + owner + "/" + repo + ", author filter: " + (author != null ? author : "None"));
             
             String apiUrl = String.format("%s/repos/%s/%s/branches?per_page=100", GITEE_API_BASE, owner, repo);
             System.out.println("Calling Gitee API: " + apiUrl);
@@ -155,18 +156,53 @@ public class GiteeService {
                         
                         // Get commit info for this branch
                         Map<String, Object> commit = (Map<String, Object>) branch.get("commit");
+                        String lastAuthor = "Unknown";
+                        String lastUpdated = "Unknown";
+                        String lastCommitHash = "N/A";
+                        
                         if (commit != null) {
-                            branchInfo.put("lastCommitHash", commit.get("sha"));
-                            branchInfo.put("lastUpdated", commit.get("created_at"));
-                        } else {
-                            branchInfo.put("lastCommitHash", "N/A");
-                            branchInfo.put("lastUpdated", "N/A");
+                            Object sha = commit.get("sha");
+                            if (sha != null) {
+                                lastCommitHash = sha.toString();
+                            }
+                            
+                            Object createdAt = commit.get("created_at");
+                            if (createdAt != null) {
+                                lastUpdated = createdAt.toString();
+                            } else {
+                                // Try committed_date as fallback
+                                Object committedDate = commit.get("committed_date");
+                                if (committedDate != null) {
+                                    lastUpdated = committedDate.toString();
+                                }
+                            }
+                            
+                            // Extract author from commit
+                            Map<String, Object> commitAuthorMap = (Map<String, Object>) commit.get("author");
+                            if (commitAuthorMap != null) {
+                                Object authorName = commitAuthorMap.get("name");
+                                if (authorName != null) {
+                                    lastAuthor = authorName.toString();
+                                }
+                            }
+                        }
+                        
+                        branchInfo.put("lastCommitHash", lastCommitHash);
+                        branchInfo.put("lastUpdated", lastUpdated);
+                        branchInfo.put("lastAuthor", lastAuthor);
+                        
+                        // Filter by author if specified
+                        if (author != null && !author.trim().isEmpty()) {
+                            String authorFilter = author.trim().toLowerCase();
+                            if (!lastAuthor.toLowerCase().contains(authorFilter)) {
+                                continue; // Skip this branch if author doesn't match
+                            }
                         }
                         
                         branches.add(branchInfo);
                     }
                 }
-                System.out.println("Filtered to " + branches.size() + " branches after search");
+                System.out.println("Filtered to " + branches.size() + " branches after search and author filter");
             } else {
                 System.err.println("Empty response from Gitee API");
             }
@@ -179,8 +215,9 @@ public class GiteeService {
 
     /**
      * Fetch changesets (commits) from Gitee repository
+     * @param author optional filter by commit author (null means no filter)
      */
-    public List<Map<String, Object>> getChangesets(String repoUrl, String authType, String accessToken, String privateKey, List<String> branches) {
+    public List<Map<String, Object>> getChangesets(String repoUrl, String authType, String accessToken, String privateKey, List<String> branches, String author) {
         List<Map<String, Object>> changesets = new ArrayList<>();
         try {
             if ("ssh".equals(authType)) {
@@ -189,7 +226,7 @@ public class GiteeService {
                 return changesets;
             } else if ("token".equals(authType)) {
                 // Use Gitee HTTP API
-                return getChangesetsHTTP(repoUrl, accessToken, branches);
+                return getChangesetsHTTP(repoUrl, accessToken, branches, author);
             } else {
                 System.err.println("Unknown auth type: " + authType);
                 return changesets;
@@ -203,8 +240,9 @@ public class GiteeService {
 
     /**
      * Fetch changesets using HTTP API
+     * @param author optional filter by commit author (null means no filter)
      */
-    private List<Map<String, Object>> getChangesetsHTTP(String repoUrl, String accessToken, List<String> branches) {
+    private List<Map<String, Object>> getChangesetsHTTP(String repoUrl, String accessToken, List<String> branches, String author) {
         List<Map<String, Object>> changesets = new ArrayList<>();
         try {
             String[] urlParts = extractRepoInfo(repoUrl);
@@ -215,7 +253,7 @@ public class GiteeService {
             
             String owner = urlParts[0];
             String repo = urlParts[1];
-            System.out.println("Fetching changesets for: " + owner + "/" + repo + ", branches: " + branches);
+            System.out.println("Fetching changesets for: " + owner + "/" + repo + ", branches: " + branches + ", author filter: " + (author != null ? author : "None"));
             
             if ("token".equals("token") && accessToken != null && !accessToken.trim().isEmpty()) {
                 for (String branch : branches) {
@@ -227,34 +265,57 @@ public class GiteeService {
                     if (commits != null && !commits.isEmpty()) {
                         System.out.println("Received " + commits.size() + " commits for branch: " + branch);
                         for (Map<String, Object> commit : commits) {
-                            Map<String, Object> changeset = new HashMap<>();
-                            changeset.put("branch", branch);
-                            changeset.put("commitHash", commit.get("sha"));
-                            
-                            // Extract author info
-                            Map<String, Object> author = (Map<String, Object>) commit.get("author");
-                            if (author != null) {
-                                changeset.put("author", author.getOrDefault("name", "Unknown"));
-                            } else {
-                                changeset.put("author", "Unknown");
-                            }
-                            
-                            // Extract commit details
-                            Map<String, Object> commitDetail = (Map<String, Object>) commit.get("commit");
-                            if (commitDetail != null) {
-                                changeset.put("message", commitDetail.getOrDefault("message", ""));
+                            try {
+                                Map<String, Object> changeset = new HashMap<>();
+                                changeset.put("branch", branch);
+                                String commitHash = (String) commit.get("sha");
+                                changeset.put("commitHash", commitHash);
                                 
-                                Map<String, Object> committer = (Map<String, Object>) commitDetail.get("committer");
-                                if (committer != null) {
-                                    changeset.put("date", committer.getOrDefault("date", ""));
+                                // Extract author info
+                                String commitAuthor = "Unknown";
+                                Map<String, Object> authorMap = (Map<String, Object>) commit.get("author");
+                                if (authorMap != null) {
+                                    commitAuthor = (String) authorMap.getOrDefault("name", "Unknown");
                                 }
-                            } else {
-                                changeset.put("message", "");
-                                changeset.put("date", "");
+                                changeset.put("author", commitAuthor);
+                                
+                                // Filter by author if specified
+                                if (author != null && !author.trim().isEmpty()) {
+                                    String authorFilter = author.trim().toLowerCase();
+                                    if (!commitAuthor.toLowerCase().contains(authorFilter)) {
+                                        continue; // Skip this commit if author doesn't match
+                                    }
+                                }
+                                
+                                // Extract commit details
+                                Map<String, Object> commitDetail = (Map<String, Object>) commit.get("commit");
+                                if (commitDetail != null) {
+                                    changeset.put("message", commitDetail.getOrDefault("message", ""));
+                                    
+                                    Map<String, Object> committer = (Map<String, Object>) commitDetail.get("committer");
+                                    if (committer != null) {
+                                        changeset.put("date", committer.getOrDefault("date", ""));
+                                    }
+                                } else {
+                                    changeset.put("message", "");
+                                    changeset.put("date", "");
+                                }
+                                
+                                // Fetch file list for this commit (with error handling)
+                                String filePath = "N/A";
+                                try {
+                                    filePath = getCommitFilesFromGiteeAPI(owner, repo, commitHash, accessToken);
+                                } catch (Exception fileEx) {
+                                    System.err.println("Failed to fetch files for commit " + commitHash + ": " + fileEx.getMessage());
+                                    // Continue with N/A instead of failing the entire commit
+                                }
+                                changeset.put("filePath", filePath);
+                                changesets.add(changeset);
+                            } catch (Exception commitEx) {
+                                System.err.println("Error processing commit: " + commitEx.getMessage());
+                                // Skip this commit and continue with next one
+                                continue;
                             }
-                            
-                            changeset.put("filePath", "N/A");
-                            changesets.add(changeset);
                         }
                     }
                 }
@@ -264,6 +325,53 @@ public class GiteeService {
             e.printStackTrace();
         }
         return changesets;
+    }
+
+    /**
+     * Get file list for a specific commit from Gitee API
+     * Performance optimized: limit file count and add caching consideration
+     * Returns file list with format: "file1.txt\nfile2.java\n..." (limit 20 files, newline separated)
+     */
+    private String getCommitFilesFromGiteeAPI(String owner, String repo, String commitHash, String accessToken) {
+        try {
+            String apiUrl = String.format("%s/repos/%s/%s/commits/%s", GITEE_API_BASE, owner, repo, commitHash);
+            Map<String, Object> commitInfo = callGiteeApi(apiUrl, accessToken);
+            
+            if (commitInfo != null && commitInfo.containsKey("files")) {
+                List<Map<String, Object>> files = (List<Map<String, Object>>) commitInfo.get("files");
+                if (files != null && !files.isEmpty()) {
+                    StringBuilder filePaths = new StringBuilder();
+                    int fileCount = 0;
+                    int totalFiles = files.size();
+                    
+                    for (Map<String, Object> file : files) {
+                        if (fileCount >= 20) break; // Limit to first 20 files for performance
+                        
+                        String filename = (String) file.get("filename");
+                        if (filename != null && !filename.trim().isEmpty()) {
+                            if (filePaths.length() > 0) {
+                                filePaths.append("\n"); // Use newline instead of comma
+                            }
+                            filePaths.append(filename);
+                            fileCount++;
+                        }
+                    }
+                    
+                    // Add indicator if more files exist
+                    if (totalFiles > 20) {
+                        filePaths.append("\n... (共 ").append(totalFiles).append(" 个文件)");
+                    }
+                    
+                    if (filePaths.length() > 0) {
+                        return filePaths.toString();
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Error fetching commit files from Gitee API: " + e.getMessage());
+        }
+        
+        return "N/A";
     }
 
     /**
@@ -395,4 +503,27 @@ public class GiteeService {
         
         return null;
     }
+
+    /**
+     * Get changed files for a branch compared to master
+     */
+    public List<String> getBranchChangedFiles(String repoUrl, String authType, String accessToken, String privateKey, String branchName) {
+        Set<String> changedFiles = new LinkedHashSet<>(); // Use LinkedHashSet to maintain order and remove duplicates
+        
+        try {
+            if ("ssh".equals(authType)) {
+                // Use git command to get diff
+                changedFiles.addAll(gitOperationService.getChangedFilesSSH(repoUrl, privateKey, branchName));
+            } else {
+                // Use HTTP/Token auth
+                changedFiles.addAll(gitOperationService.getChangedFilesHTTP(repoUrl, accessToken, branchName));
+            }
+        } catch (Exception e) {
+            System.err.println("Error fetching branch changed files: " + e.getMessage());
+            e.printStackTrace();
+        }
+        
+        return new ArrayList<>(changedFiles);
+    }
 }
+

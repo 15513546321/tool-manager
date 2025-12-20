@@ -2,11 +2,16 @@ package com.toolmanager.controller;
 
 import com.toolmanager.dto.SystemParameterDto;
 import com.toolmanager.service.SystemParameterService;
+import com.toolmanager.entity.ParameterCategory;
+import com.toolmanager.repository.ParameterCategoryRepository;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import lombok.RequiredArgsConstructor;
 
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/system-param")
@@ -16,6 +21,7 @@ import java.util.List;
 public class SystemParameterController {
 
     private final SystemParameterService systemParameterService;
+    private final ParameterCategoryRepository parameterCategoryRepository;
 
     /**
      * Get parameter by key
@@ -68,5 +74,45 @@ public class SystemParameterController {
     public ResponseEntity<Void> deleteParameter(@PathVariable String paramKey) {
         systemParameterService.deleteParameter(paramKey);
         return ResponseEntity.ok().build();
+    }
+
+    /**
+     * Get all parameter categories
+     * GET /api/system-param/categories/all
+     */
+    @GetMapping("/categories/all")
+    public ResponseEntity<Map<String, List<String>>> getAllCategories() {
+        List<ParameterCategory> categories = parameterCategoryRepository.findAll();
+        Map<String, List<String>> categoryMap = categories.stream()
+                .collect(Collectors.groupingBy(
+                        ParameterCategory::getBigClass,
+                        Collectors.mapping(ParameterCategory::getSmallClass, Collectors.toList())
+                ));
+        return ResponseEntity.ok(categoryMap);
+    }
+
+    /**
+     * Save parameter categories
+     * POST /api/system-param/categories
+     */
+    @PostMapping("/categories")
+    public ResponseEntity<Map<String, List<String>>> saveCategories(@RequestBody Map<String, List<String>> categoryMap) {
+        // Clear existing categories
+        parameterCategoryRepository.deleteAll();
+        
+        // Save new categories
+        categoryMap.forEach((bigClass, smallClasses) -> {
+            for (String smallClass : smallClasses) {
+                ParameterCategory category = new ParameterCategory();
+                category.setBigClass(bigClass);
+                category.setSmallClass(smallClass);
+                category.setUpdatedBy("admin");
+                category.setCreatedAt(LocalDateTime.now());
+                category.setUpdatedAt(LocalDateTime.now());
+                parameterCategoryRepository.save(category);
+            }
+        });
+        
+        return ResponseEntity.ok(categoryMap);
     }
 }

@@ -25,7 +25,9 @@ public class GiteeApiController {
         private String privateKey;
         private String publicKey;
         private String searchQuery;
+        private String branchName; // Filter by branch name
         private List<String> branches;
+        private String author; // Filter by commit author
         
         // Pagination
         private Integer pageNumber = 1;
@@ -99,7 +101,7 @@ public class GiteeApiController {
      * POST /api/gitee/test-connection
      */
     @PostMapping("/test-connection")
-    public ResponseEntity<ApiResponse<Map<String, String>>> testConnection(@RequestBody GiteeRequest request) {
+    public ResponseEntity<ApiResponse<Map<String, Object>>> testConnection(@RequestBody GiteeRequest request) {
         try {
             System.out.println("=== Testing Gitee Connection ===");
             System.out.println("URL: " + request.getRepoUrl());
@@ -126,22 +128,70 @@ public class GiteeApiController {
             System.out.println("Message: " + result.getOrDefault("message", ""));
             
             if (success) {
-                Map<String, String> response = new HashMap<>();
+                Map<String, Object> response = new HashMap<>();
                 response.put("status", "connected");
                 response.put("message", (String) result.getOrDefault("message", "Successfully connected to Gitee repository"));
                 response.put("repo", (String) result.getOrDefault("repository", ""));
                 response.put("authType", request.getAuthType());
+                // 包含分支列表
+                response.put("branches", result.getOrDefault("branches", new java.util.ArrayList<>()));
                 return ResponseEntity.ok(ApiResponse.success(response));
             } else {
-                return ResponseEntity.ok(
-                    ApiResponse.error((String) result.getOrDefault("message", "Connection test failed"))
-                );
+                // Return 400 status for failed connection
+                return ResponseEntity.status(400)
+                    .body(ApiResponse.error((String) result.getOrDefault("message", "Connection test failed")));
             }
         } catch (Exception e) {
             System.err.println("Exception in testConnection: " + e.getMessage());
             e.printStackTrace();
             return ResponseEntity.status(400)
                 .body(ApiResponse.error("❌ Connection test failed: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Validate current configuration (for post-save verification)
+     * POST /api/gitee/validate-config
+     */
+    @PostMapping("/validate-config")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> validateConfig(@RequestBody GiteeRequest request) {
+        try {
+            System.out.println("=== Validating Gitee Configuration ===");
+            System.out.println("URL: " + request.getRepoUrl());
+            System.out.println("Auth Type: " + request.getAuthType());
+            
+            Map<String, Object> result = new HashMap<>();
+            
+            // Validate URL format
+            if (request.getRepoUrl() == null || request.getRepoUrl().trim().isEmpty()) {
+                result.put("valid", false);
+                result.put("reason", "Repository URL is empty");
+                return ResponseEntity.ok(ApiResponse.success(result));
+            }
+            
+            // Validate auth credentials based on type
+            if ("token".equals(request.getAuthType())) {
+                if (request.getAccessToken() == null || request.getAccessToken().trim().isEmpty()) {
+                    result.put("valid", false);
+                    result.put("reason", "Access Token is empty");
+                    return ResponseEntity.ok(ApiResponse.success(result));
+                }
+            } else if ("ssh".equals(request.getAuthType())) {
+                if (request.getPrivateKey() == null || request.getPrivateKey().trim().isEmpty()) {
+                    result.put("valid", false);
+                    result.put("reason", "Private Key is empty");
+                    return ResponseEntity.ok(ApiResponse.success(result));
+                }
+            }
+            
+            result.put("valid", true);
+            result.put("reason", "Configuration is valid");
+            return ResponseEntity.ok(ApiResponse.success(result));
+        } catch (Exception e) {
+            System.err.println("Exception in validateConfig: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(400)
+                .body(ApiResponse.error("Failed to validate config: " + e.getMessage()));
         }
     }
 
@@ -175,8 +225,17 @@ public class GiteeApiController {
                 request.getAuthType(),
                 request.getAccessToken(),
                 request.getPrivateKey(),
-                request.getSearchQuery()
+                request.getSearchQuery(),
+                request.getAuthor() // Pass author filter for branches
             );
+
+            // Apply branchName filter if specified
+            if (request.getBranchName() != null && !request.getBranchName().trim().isEmpty()) {
+                String branchNameFilter = request.getBranchName().toLowerCase();
+                allBranches = allBranches.stream()
+                    .filter(branch -> ((String) branch.getOrDefault("name", "")).toLowerCase().contains(branchNameFilter))
+                    .collect(java.util.stream.Collectors.toList());
+            }
 
             System.out.println("Total branches found: " + allBranches.size());
 
@@ -240,7 +299,8 @@ public class GiteeApiController {
                 request.getAuthType(),
                 request.getAccessToken(),
                 request.getPrivateKey(),
-                request.getBranches()
+                request.getBranches(),
+                request.getAuthor() // Pass author filter
             );
 
             if (changesets.isEmpty()) {
@@ -257,4 +317,45 @@ public class GiteeApiController {
                 .body(ApiResponse.error("Failed to fetch changesets: " + e.getMessage()));
         }
     }
+
+    /**
+     * Get changed files list for a branch (compared to master)
+     * POST /api/gitee/branch-files
+     */
+    @PostMapping("/branch-files")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getBranchFiles(@RequestBody GiteeRequest request) {
+        try {
+            if (request.getRepoUrl() == null || request.getRepoUrl().trim().isEmpty()) {
+                return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("Repository URL is required"));
+            }
+
+            if (request.getBranches() == null || request.getBranches().isEmpty()) {
+                return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("At least one branch must be specified"));
+            }
+
+            String branchName = request.getBranches().get(0); // Get first branch
+            
+            // Get file list for this branch
+            List<String> files = giteeService.getBranchChangedFiles(
+                request.getRepoUrl(),
+                request.getAuthType(),
+                request.getAccessToken(),
+                request.getPrivateKey(),
+                branchName
+            );
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("branch", branchName);
+            result.put("totalFiles", files.size());
+            result.put("files", files);
+
+            return ResponseEntity.ok(ApiResponse.success(result));
+        } catch (Exception e) {
+            return ResponseEntity.status(400)
+                .body(ApiResponse.error("Failed to fetch branch files: " + e.getMessage()));
+        }
+    }
 }
+

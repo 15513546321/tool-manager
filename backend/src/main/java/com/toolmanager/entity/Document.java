@@ -8,7 +8,7 @@ import javax.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "DOCUMENTS")
+@Table(name = "documents")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -20,26 +20,14 @@ public class Document {
     @Column(nullable = false)
     private String title;
 
-    @Column(columnDefinition = "LONGTEXT")
-    private String content;
-
-    @Column(name = "doc_type")
-    private String type; // FILE, TEXT, LINK, etc.
-
-    @Column
+    @Column(name = "category", nullable = false)
     private String category;
 
-    @Column(length = 1000)
-    private String fileUrl;
-
-    @Column(length = 500)
-    private String linkUrl;
-
-    @Column(name = "doc_order")
-    private Integer docOrder;
+    @Column(name = "sub_category")
+    private String subCategory;
 
     @Column(columnDefinition = "TEXT")
-    private String tags;
+    private String description;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
@@ -49,4 +37,15 @@ public class Document {
 
     @Column(name = "updated_by")
     private String updatedBy;
+
+    @PrePersist
+    protected void onCreate() {
+        createdAt = LocalDateTime.now();
+        updatedAt = LocalDateTime.now();
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
 }

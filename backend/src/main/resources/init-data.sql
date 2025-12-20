@@ -1,3 +1,12 @@
+-- Clear all existing documents and versions  
+DELETE FROM document_versions;
+DELETE FROM documents;
+
+-- Initialize Announcements (after clearing old data)
+INSERT INTO announcements (title, description, content, version, status, created_at, updated_at, created_by, updated_by)
+SELECT '欢迎使用系统', '系统已成功部署，欢迎使用！', '这是一条欢迎公告，系统已正式上线。', '20251220', 'PUBLISHED', NOW(), NOW(), 'admin', 'admin'
+WHERE NOT EXISTS (SELECT 1 FROM announcements WHERE version = '20251220');
+
 -- Wait for tables to be created by Hibernate first
 -- Initialize Menu Items (only if not exists)
 INSERT INTO menu_items (menu_id, name, path, icon, visible, parent_id, sort_order, created_at, updated_at)
@@ -85,10 +94,55 @@ INSERT INTO system_parameters (param_key, param_value, param_type, description, 
 SELECT 'TRANSFER_FEE', '1.50', 'NUMBER', 'Default fee', 'Business', NOW(), NOW()
 WHERE NOT EXISTS (SELECT 1 FROM system_parameters WHERE param_key = 'TRANSFER_FEE');
 
--- Initialize Sample Announcement
-INSERT INTO announcements (title, description, content, version, status, created_at, updated_at, created_by, updated_by)
-SELECT '欢迎使用系统', '系统已成功部署，欢迎使用！', '这是一条欢迎公告，系统已正式上线。', '20251212', 'PUBLISHED', NOW(), NOW(), 'admin', 'admin'
-WHERE NOT EXISTS (SELECT 1 FROM announcements WHERE version = '20251212');
+-- Initialize Parameter Categories
+INSERT INTO parameter_categories (big_class, small_class, description, created_at, updated_at)
+SELECT 'System', 'Timeout', 'System timeout settings', NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM parameter_categories WHERE big_class = 'System' AND small_class = 'Timeout');
+
+INSERT INTO parameter_categories (big_class, small_class, description, created_at, updated_at)
+SELECT 'System', 'Security', 'System security settings', NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM parameter_categories WHERE big_class = 'System' AND small_class = 'Security');
+
+INSERT INTO parameter_categories (big_class, small_class, description, created_at, updated_at)
+SELECT 'Business', 'Fees', 'Business fee settings', NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM parameter_categories WHERE big_class = 'Business' AND small_class = 'Fees');
+
+-- Initialize Sample Documents
+-- Commented out for now - no default documents
+-- INSERT INTO documents (title, category, sub_category, description, created_at, updated_at, updated_by)
+-- SELECT 'Java 编码规范 v2.0', '技术规范', '后端开发', '公司统一 Java 后端开发风格指南', NOW(), NOW(), 'admin'
+-- WHERE NOT EXISTS (SELECT 1 FROM documents WHERE title = 'Java 编码规范 v2.0');
+
+-- INSERT INTO documents (title, category, sub_category, description, created_at, updated_at, updated_by)
+-- SELECT 'React 组件库使用手册', '技术规范', '前端开发', '内部 UI 组件库 API 文档', NOW(), NOW(), 'admin'
+-- WHERE NOT EXISTS (SELECT 1 FROM documents WHERE title = 'React 组件库使用手册');
+
+-- INSERT INTO documents (title, category, sub_category, description, created_at, updated_at, updated_by)
+-- SELECT '支付网关接入流程', '业务文档', '支付中心', '商户接入支付网关的标准流程', NOW(), NOW(), 'admin'
+-- WHERE NOT EXISTS (SELECT 1 FROM documents WHERE title = '支付网关接入流程');
+
+-- Initialize Document Versions using dynamic document_id lookup
+-- Commented out for now - no default documents
+-- INSERT INTO document_versions (document_id, version_number, file_name, file_content, file_size, created_at, updated_at, updated_by)
+-- SELECT d.id, '2.0', 'java_style_v2.md', '# Java Style Guide v2\n\n1. Naming\n2. Formatting...', '12KB', NOW(), NOW(), 'admin'
+-- FROM documents d WHERE d.title = 'Java 编码规范 v2.0' 
+-- AND NOT EXISTS (SELECT 1 FROM document_versions v WHERE v.document_id = d.id AND v.version_number = '2.0');
+
+-- INSERT INTO document_versions (document_id, version_number, file_name, file_content, file_size, created_at, updated_at, updated_by)
+-- SELECT d.id, '1.0', 'java_style_v1.md', '# Java Style Guide v1\n\nInitial release.', '10KB', NOW(), NOW(), 'admin'
+-- FROM documents d WHERE d.title = 'Java 编码规范 v2.0'
+-- AND NOT EXISTS (SELECT 1 FROM document_versions v WHERE v.document_id = d.id AND v.version_number = '1.0');
+
+-- INSERT INTO document_versions (document_id, version_number, file_name, file_content, file_size, created_at, updated_at, updated_by)
+-- SELECT d.id, '1.0', 'ui_lib.md', '# UI Lib\n\n## Button\n...', '5KB', NOW(), NOW(), 'admin'
+-- FROM documents d WHERE d.title = 'React 组件库使用手册'
+-- AND NOT EXISTS (SELECT 1 FROM document_versions v WHERE v.document_id = d.id AND v.version_number = '1.0');
+
+-- INSERT INTO document_versions (document_id, version_number, file_name, file_content, file_size, created_at, updated_at, updated_by)
+-- SELECT d.id, '1.0', 'pay_flow.txt', 'Flow:\n1. Sign contract\n2. Get keys...', '2KB', NOW(), NOW(), 'admin'
+-- FROM documents d WHERE d.title = '支付网关接入流程'
+-- AND NOT EXISTS (SELECT 1 FROM document_versions v WHERE v.document_id = d.id AND v.version_number = '1.0');
+
 -- Initialize Gitee Connections Table
 CREATE TABLE IF NOT EXISTS gitee_connections (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,

@@ -5,6 +5,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 @NoArgsConstructor
@@ -12,14 +13,12 @@ import java.time.LocalDateTime;
 public class DocumentDto {
     private Long id;
     private String title;
-    private String content;
-    private String type;
     private String category;
-    private String fileUrl;
-    private String linkUrl;
-    private Integer docOrder;
-    private String tags;
+    private String subCategory;
+    private String description;
+    private List<DocumentVersionDto> versions;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private String updatedBy;
 }
+

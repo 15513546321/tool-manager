@@ -9,5 +9,11 @@ import java.util.List;
 @Repository
 public interface DocumentRepository extends JpaRepository<Document, Long> {
     List<Document> findByCategory(String category);
-    List<Document> findByType(String type);
+    
+    List<Document> findByCategoryAndSubCategory(String category, String subCategory);
+    
+    List<Document> findByTitleContainingIgnoreCase(String title);
+    
+    List<Document> findByCategoryOrderByUpdatedAtDesc(String category);
 }
+

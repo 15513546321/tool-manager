@@ -745,76 +745,102 @@ export const NacosSync: React.FC = () => {
 
   // ============ Render ============
   return (
-    <div className="min-h-screen bg-slate-100 p-6">
-      <div className="max-w-7xl mx-auto">
+    <div className="p-6 h-full flex flex-col bg-slate-50">
+      <div className="flex-1 flex flex-col">
         {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-slate-800 flex items-center gap-3 mb-2">
-            <GitCompare size={32} className="text-blue-600" />
-            Nacos 配置同步
-          </h1>
-          <p className="text-slate-600">在不同环境之间比较和同步 Nacos 配置</p>
+        <div className="mb-6 flex justify-between items-start">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+              <GitCompare className="text-blue-600" size={28} />
+              Nacos 配置同步
+            </h2>
+            <p className="text-slate-500 text-sm mt-1">配置文件版本比对与增量同步</p>
+          </div>
+          <button
+            onClick={handleAddConfig}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 hover:text-blue-600 transition-colors text-sm font-medium shadow-sm"
+          >
+            <Plus size={16}/> 新增配置
+          </button>
         </div>
 
         {/* Configs Selection Area */}
-        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-xl font-bold text-slate-800">配置任务</h2>
-            <button
-              onClick={handleAddConfig}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold"
-            >
-              <Plus size={18} /> 新增配置
-            </button>
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 mb-6">
+          <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+            <h3 className="text-lg font-bold text-slate-700">同步任务</h3>
+            <span className="text-xs text-slate-500 font-mono">{configs.length} 个配置</span>
           </div>
 
           {configs.length === 0 ? (
-            <p className="text-slate-500 text-center py-8">暂无保存的配置。点击"新增配置"开始使用。</p>
+            <div className="p-12 text-center">
+              <p className="text-slate-500 text-sm">暂无保存的配置</p>
+              <p className="text-slate-400 text-xs mt-1">点击顶部"新增配置"按钮开始创建</p>
+            </div>
           ) : (
-            <div className="space-y-3">
+            <div className="divide-y divide-slate-100">
               {configs.map((config) => (
                 <div
                   key={config.id}
-                  className="group bg-slate-50 border border-slate-200 rounded-lg p-4 hover:border-blue-400 hover:shadow-md transition-all"
+                  className="p-6 hover:bg-slate-50 transition-colors group border-b last:border-b-0"
                 >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-bold text-slate-800 text-lg mb-2">{config.name}</h3>
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div>
-                          <p className="text-slate-600 font-semibold">源环境</p>
-                          <p className="text-slate-700 truncate">{config.sourceUrl}</p>
-                          <p className="text-xs text-slate-500">{config.sourceNamespace}</p>
-                          {config.sourceRemark && <p className="text-xs text-slate-500">{config.sourceRemark}</p>}
+                  <div className="flex flex-col gap-4">
+                    <h4 className="font-bold text-slate-800 text-lg">{config.name}</h4>
+                    <div className="flex gap-6 items-start">
+                      {/* Source Environment */}
+                      <div className="flex-1 bg-blue-50 p-4 rounded-lg border border-blue-100">
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="w-2.5 h-2.5 rounded-full bg-blue-500"/>
+                          <span className="text-base font-semibold text-slate-600">源环境</span>
                         </div>
-                        <div>
-                          <p className="text-slate-600 font-semibold">目标环境</p>
-                          <p className="text-slate-700 truncate">{config.targetUrl}</p>
-                          <p className="text-xs text-slate-500">{config.targetNamespace}</p>
-                          {config.targetRemark && <p className="text-xs text-slate-500">{config.targetRemark}</p>}
+                        <p className="text-base font-mono text-slate-800 truncate mb-1">{config.sourceUrl}</p>
+                        <p className="text-base text-slate-600 truncate mb-1">{config.sourceNamespace}</p>
+                        {config.sourceRemark && <p className="text-xs text-slate-500 italic">{config.sourceRemark}</p>}
+                      </div>
+
+                      {/* Arrow */}
+                      <div className="flex justify-center items-center px-2 pt-4">
+                        <ArrowRight size={20} className="text-slate-300"/>
+                      </div>
+
+                      {/* Target Environment with Buttons */}
+                      <div className="flex-1 flex gap-2 items-start opacity-100 group-hover:opacity-100 transition-opacity">
+                        {/* Target Environment Box */}
+                        <div className="flex-1 bg-purple-50 p-4 rounded-lg border border-purple-100">
+                          <div className="flex items-center gap-2 mb-2">
+                            <div className="w-2.5 h-2.5 rounded-full bg-purple-500"/>
+                            <span className="text-base font-semibold text-slate-600">目标环境</span>
+                          </div>
+                          <p className="text-base font-mono text-slate-800 truncate mb-1">{config.targetUrl}</p>
+                          <p className="text-base text-slate-600 truncate mb-1">{config.targetNamespace}</p>
+                          {config.targetRemark && <p className="text-xs text-slate-500 italic">{config.targetRemark}</p>}
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 flex-col justify-start">
+                          <button
+                            onClick={() => handleCompare(config)}
+                            disabled={comparing}
+                            title="比较配置"
+                            className="flex items-center gap-1.5 px-3 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded text-sm font-bold transition-colors whitespace-nowrap"
+                          >
+                            <Play size={16}/> 比较
+                          </button>
+                          <button
+                            onClick={() => handleEditConfig(config)}
+                            title="编辑配置"
+                            className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-bold transition-colors whitespace-nowrap"
+                          >
+                            <Edit2 size={16}/> 编辑
+                          </button>
+                          <button
+                            onClick={() => handleDeleteConfig(config.id)}
+                            title="删除配置"
+                            className="flex items-center gap-1.5 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm font-bold transition-colors whitespace-nowrap"
+                          >
+                            <Trash2 size={16}/> 删除
+                          </button>
                         </div>
                       </div>
-                    </div>
-                    <div className="flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
-                        onClick={() => handleEditConfig(config)}
-                        className="px-3 py-1 bg-blue-100 text-blue-600 rounded hover:bg-blue-200 flex items-center gap-1 whitespace-nowrap text-sm font-semibold"
-                      >
-                        <Edit2 size={14} /> 编辑
-                      </button>
-                      <button
-                        onClick={() => handleCompare(config)}
-                        disabled={comparing}
-                        className="px-3 py-1 bg-green-100 text-green-600 rounded hover:bg-green-200 flex items-center gap-1 disabled:opacity-50 whitespace-nowrap text-sm font-semibold"
-                      >
-                        <GitCompare size={14} /> 比较
-                      </button>
-                      <button
-                        onClick={() => handleDeleteConfig(config.id)}
-                        className="px-3 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200 flex items-center gap-1 whitespace-nowrap text-sm font-semibold"
-                      >
-                        <Trash2 size={14} /> 删除
-                      </button>
                     </div>
                   </div>
                 </div>

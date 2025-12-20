@@ -5,9 +5,11 @@ import com.toolmanager.service.ConfigSettingService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/config")
 @RequiredArgsConstructor
@@ -23,11 +25,16 @@ public class ConfigSettingController {
      */
     @GetMapping("/{configKey}")
     public ResponseEntity<ConfigSettingDto> getConfigByKey(@PathVariable String configKey) {
-        ConfigSettingDto config = configSettingService.getConfigByKey(configKey);
-        if (config == null) {
-            return ResponseEntity.notFound().build();
+        try {
+            ConfigSettingDto config = configSettingService.getConfigByKey(configKey);
+            if (config == null) {
+                return ResponseEntity.notFound().build();
+            }
+            return ResponseEntity.ok(config);
+        } catch (Exception e) {
+            log.error("Error getting config by key: {}", configKey, e);
+            return ResponseEntity.status(500).build();
         }
-        return ResponseEntity.ok(config);
     }
 
     /**
@@ -36,8 +43,13 @@ public class ConfigSettingController {
      */
     @GetMapping("/type/{configType}")
     public ResponseEntity<List<ConfigSettingDto>> getConfigsByType(@PathVariable String configType) {
-        List<ConfigSettingDto> configs = configSettingService.getConfigsByType(configType);
-        return ResponseEntity.ok(configs);
+        try {
+            List<ConfigSettingDto> configs = configSettingService.getConfigsByType(configType);
+            return ResponseEntity.ok(configs);
+        } catch (Exception e) {
+            log.error("Error getting configs by type: {}", configType, e);
+            return ResponseEntity.status(500).build();
+        }
     }
 
     /**
@@ -46,8 +58,13 @@ public class ConfigSettingController {
      */
     @GetMapping("/all")
     public ResponseEntity<List<ConfigSettingDto>> getAllConfigs() {
-        List<ConfigSettingDto> configs = configSettingService.getAllConfigs();
-        return ResponseEntity.ok(configs);
+        try {
+            List<ConfigSettingDto> configs = configSettingService.getAllConfigs();
+            return ResponseEntity.ok(configs);
+        } catch (Exception e) {
+            log.error("Error getting all configs", e);
+            return ResponseEntity.status(500).build();
+        }
     }
 
     /**
@@ -56,8 +73,18 @@ public class ConfigSettingController {
      */
     @PostMapping
     public ResponseEntity<ConfigSettingDto> saveConfig(@RequestBody ConfigSettingDto dto) {
-        ConfigSettingDto saved = configSettingService.saveConfig(dto);
-        return ResponseEntity.ok(saved);
+        try {
+            if (dto.getConfigKey() == null || dto.getConfigKey().trim().isEmpty()) {
+                log.warn("Config key is required");
+                return ResponseEntity.badRequest().build();
+            }
+            ConfigSettingDto saved = configSettingService.saveConfig(dto);
+            log.info("Config saved successfully: {}", dto.getConfigKey());
+            return ResponseEntity.ok(saved);
+        } catch (Exception e) {
+            log.error("Error saving config: {}", dto.getConfigKey(), e);
+            return ResponseEntity.status(400).body(null);
+        }
     }
 
     /**
@@ -66,7 +93,16 @@ public class ConfigSettingController {
      */
     @DeleteMapping("/{configKey}")
     public ResponseEntity<Void> deleteConfig(@PathVariable String configKey) {
-        configSettingService.deleteConfig(configKey);
-        return ResponseEntity.ok().build();
+        try {
+            configSettingService.deleteConfig(configKey);
+            log.info("Config deleted successfully: {}", configKey);
+            return ResponseEntity.ok().build();
+        } catch (IllegalArgumentException e) {
+            log.warn("Config not found for deletion: {}", configKey);
+            return ResponseEntity.notFound().build();
+        } catch (Exception e) {
+            log.error("Error deleting config: {}", configKey, e);
+            return ResponseEntity.status(400).build();
+        }
     }
 }
