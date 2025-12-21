@@ -4,6 +4,7 @@ import com.toolmanager.dto.DbConnectionDto;
 import com.toolmanager.entity.DbConnection;
 import com.toolmanager.repository.DbConnectionRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -11,6 +12,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class DbConnectionService {
@@ -47,7 +49,18 @@ public class DbConnectionService {
 
     @Transactional
     public void delete(Long id) {
-        dbConnectionRepository.deleteById(id);
+        try {
+            // 删除记录
+            dbConnectionRepository.deleteById(id);
+            
+            // 强制刷新，确保数据库操作立即执行
+            dbConnectionRepository.flush();
+            
+            log.info("✓ 成功删除数据库连接: ID={}", id);
+        } catch (Exception e) {
+            log.error("❌ 删除连接失败: ID={}, Error={}", id, e.getMessage());
+            throw new RuntimeException("Failed to delete connection: " + e.getMessage(), e);
+        }
     }
 
     private DbConnectionDto toDto(DbConnection entity) {

@@ -83,38 +83,13 @@ public class DataInitializer implements CommandLineRunner {
         }
     }
 
+    /**
+     * 禁用自动初始化Oracle连接配置 (2025-12-21)
+     * 用户需要手动在UI中配置并持久化连接信息到数据库
+     */
     private void initializeDbConnections() {
-        if (dbConnectionRepository.count() == 0) {
-            // Sample Oracle Source Connection
-            DbConnection oracleSource = new DbConnection();
-            oracleSource.setName("Oracle_Source");
-            oracleSource.setType("ORACLE_SOURCE");
-            oracleSource.setHost("localhost");
-            oracleSource.setPort(1521);
-            oracleSource.setDatabase("ORCL");
-            oracleSource.setUsername("scott");
-            oracleSource.setPassword("tiger");
-            oracleSource.setConnectionString("jdbc:oracle:thin:@localhost:1521:ORCL");
-            oracleSource.setCreatedAt(LocalDateTime.now());
-            oracleSource.setUpdatedAt(LocalDateTime.now());
-            oracleSource.setUpdatedBy("admin");
-            dbConnectionRepository.save(oracleSource);
-
-            // Sample Oracle Target Connection
-            DbConnection oracleTarget = new DbConnection();
-            oracleTarget.setName("Oracle_Target");
-            oracleTarget.setType("ORACLE_TARGET");
-            oracleTarget.setHost("192.168.1.100");
-            oracleTarget.setPort(1521);
-            oracleTarget.setDatabase("PROD");
-            oracleTarget.setUsername("system");
-            oracleTarget.setPassword("change_on_install");
-            oracleTarget.setConnectionString("jdbc:oracle:thin:@192.168.1.100:1521:PROD");
-            oracleTarget.setCreatedAt(LocalDateTime.now());
-            oracleTarget.setUpdatedAt(LocalDateTime.now());
-            oracleTarget.setUpdatedBy("admin");
-            dbConnectionRepository.save(oracleTarget);
-        }
+        // 不再自动创建mock Oracle连接
+        // 用户应通过UI添加实际的数据库连接信息
     }
 
     private void initializeCodeTemplates() {

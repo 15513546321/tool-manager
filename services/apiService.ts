@@ -3,9 +3,39 @@
  * Handles all HTTP requests to the Spring Boot backend
  */
 
-// Get API base URL - use relative path to support any deployment environment
-// This way it works whether deployed on localhost, Ubuntu server, or any other host
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+// Get API base URL - support multiple configurations:
+// 1. VITE_API_URL environment variable (for custom deployments)
+// 2. Detect if running on same host as backend (common scenario)
+// 3. Default to /api (for single-server deployments)
+
+let API_BASE_URL = import.meta.env.VITE_API_URL;
+
+if (!API_BASE_URL) {
+  // Auto-detect backend URL based on current location
+  // If frontend and backend are on same host with different ports:
+  // Frontend: http://host:3000
+  // Backend: http://host:8080
+  
+  const isDevelopment = window.location.hostname === 'localhost' || 
+                       window.location.hostname === '127.0.0.1' ||
+                       window.location.hostname.startsWith('192.168');
+  
+  if (isDevelopment && window.location.port === '3000') {
+    // Development mode: try to connect to backend on port 8080
+    API_BASE_URL = `http://${window.location.hostname}:8080/api`;
+    console.log('🔧 [API] Development mode detected, using backend URL:', API_BASE_URL);
+  } else if (isDevelopment && window.location.port === '5173') {
+    // Vite dev server on 5173
+    API_BASE_URL = `http://${window.location.hostname}:8080/api`;
+    console.log('🔧 [API] Vite dev server detected, using backend URL:', API_BASE_URL);
+  } else {
+    // Production mode: use relative path (assumes frontend and backend on same port)
+    API_BASE_URL = '/api';
+    console.log('🔧 [API] Production mode, using relative path: /api');
+  }
+}
+
+console.log('✓ [API] Base URL configured as:', API_BASE_URL);
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -309,6 +339,12 @@ export const dbConnectionApi = {
       method: 'DELETE',
     });
     if (!res.ok) throw new Error('Failed to delete database connection');
+    const data = await res.json();
+    // Backend returns {success: boolean, message?: string, error?: string}
+    if (data && typeof data === 'object') {
+      return data;
+    }
+    throw new Error('Invalid response format from server');
   },
 
   testConnection: async (connectionString: string, username: string, password: string) => {

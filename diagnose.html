@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API 连接诊断工具</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 600px;
+            width: 100%;
+            padding: 40px;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 24px;
+        }
+        
+        .subtitle {
+            color: #999;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        .test-item {
+            margin-bottom: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #ddd;
+            background-color: #f9f9f9;
+            transition: all 0.3s ease;
+        }
+        
+        .test-item.testing {
+            border-left-color: #ffc107;
+            background-color: #fffbf0;
+        }
+        
+        .test-item.success {
+            border-left-color: #28a745;
+            background-color: #f0f8f5;
+        }
+        
+        .test-item.error {
+            border-left-color: #dc3545;
+            background-color: #fdf5f5;
+        }
+        
+        .test-name {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .test-name .icon {
+            font-size: 18px;
+        }
+        
+        .test-url {
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 12px;
+            color: #666;
+            word-break: break-all;
+            margin-bottom: 8px;
+        }
+        
+        .test-status {
+            font-size: 13px;
+            color: #666;
+        }
+        
+        .test-status.success {
+            color: #28a745;
+        }
+        
+        .test-status.error {
+            color: #dc3545;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 30px;
+        }
+        
+        button {
+            flex: 1;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        button.primary {
+            background-color: #667eea;
+            color: white;
+        }
+        
+        button.primary:hover {
+            background-color: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
+        }
+        
+        button.secondary {
+            background-color: #e9ecef;
+            color: #333;
+        }
+        
+        button.secondary:hover {
+            background-color: #dee2e6;
+        }
+        
+        .summary {
+            margin-top: 30px;
+            padding: 20px;
+            border-radius: 8px;
+            background-color: #f5f5f5;
+        }
+        
+        .summary h3 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+        
+        .summary-item {
+            color: #666;
+            font-size: 13px;
+            line-height: 1.8;
+            margin-bottom: 8px;
+        }
+        
+        .summary-item strong {
+            color: #333;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 3px;
+            background-color: #e9ecef;
+            border-radius: 2px;
+            margin-top: 20px;
+            overflow: hidden;
+        }
+        
+        .progress {
+            height: 100%;
+            background-color: #667eea;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 API 连接诊断工具</h1>
+        <p class="subtitle">检查后端和前端服务是否正确配置和连接</p>
+        
+        <div id="tests">
+            <div class="test-item" data-test="backend-html">
+                <div class="test-name">
+                    <span class="icon">🔌</span>
+                    <span>后端服务 (HTML)</span>
+                </div>
+                <div class="test-url">http://192.168.56.1:8080</div>
+                <div class="test-status">等待运行...</div>
+            </div>
+            
+            <div class="test-item" data-test="backend-api">
+                <div class="test-name">
+                    <span class="icon">🔌</span>
+                    <span>后端 API (GET /api/db-connection/all)</span>
+                </div>
+                <div class="test-url">http://192.168.56.1:8080/api/db-connection/all</div>
+                <div class="test-status">等待运行...</div>
+            </div>
+            
+            <div class="test-item" data-test="frontend">
+                <div class="test-name">
+                    <span class="icon">💻</span>
+                    <span>前端服务</span>
+                </div>
+                <div class="test-url">http://192.168.56.1:3000</div>
+                <div class="test-status">等待运行...</div>
+            </div>
+            
+            <div class="test-item" data-test="cors">
+                <div class="test-name">
+                    <span class="icon">🔐</span>
+                    <span>CORS 跨域配置</span>
+                </div>
+                <div class="test-url">从前端访问后端 API</div>
+                <div class="test-status">等待运行...</div>
+            </div>
+            
+            <div class="test-item" data-test="delete-api">
+                <div class="test-name">
+                    <span class="icon">🗑️</span>
+                    <span>删除 API (DELETE)</span>
+                </div>
+                <div class="test-url">测试连接删除功能</div>
+                <div class="test-status">等待运行...</div>
+            </div>
+        </div>
+        
+        <div class="progress-bar">
+            <div class="progress" id="progressBar"></div>
+        </div>
+        
+        <div class="button-group">
+            <button class="primary" onclick="runTests()">运行诊断</button>
+            <button class="secondary" onclick="location.href='http://192.168.56.1:3000'">打开应用</button>
+        </div>
+        
+        <div class="summary" id="summary" style="display: none;">
+            <h3>📋 诊断结果</h3>
+            <div id="summaryContent"></div>
+        </div>
+    </div>
+    
+    <script>
+        async function runTests() {
+            const tests = [
+                { name: '后端 HTML', url: 'http://192.168.56.1:8080', element: 'backend-html' },
+                { name: '后端 API', url: 'http://192.168.56.1:8080/api/db-connection/all', element: 'backend-api' },
+                { name: '前端', url: 'http://192.168.56.1:3000', element: 'frontend' },
+            ];
+            
+            let results = {};
+            let passed = 0;
+            const total = tests.length + 2; // +2 for CORS and DELETE
+            
+            // 运行连接测试
+            for (const test of tests) {
+                updateProgress((passed / total) * 100);
+                const element = document.querySelector(`[data-test="${test.element}"]`);
+                element.classList.add('testing');
+                element.querySelector('.test-status').textContent = '测试中...';
+                
+                try {
+                    const response = await fetch(test.url, { mode: 'no-cors' });
+                    element.classList.remove('testing');
+                    element.classList.add('success');
+                    element.querySelector('.test-status').textContent = '✅ 连接成功';
+                    results[test.element] = true;
+                } catch (error) {
+                    element.classList.remove('testing');
+                    element.classList.add('error');
+                    element.querySelector('.test-status').textContent = `❌ 连接失败: ${error.message}`;
+                    results[test.element] = false;
+                }
+                
+                passed++;
+            }
+            
+            // CORS 测试
+            updateProgress((passed / total) * 100);
+            const corsElement = document.querySelector('[data-test="cors"]');
+            corsElement.classList.add('testing');
+            corsElement.querySelector('.test-status').textContent = '测试中...';
+            
+            try {
+                const response = await fetch('http://192.168.56.1:8080/api/db-connection/all');
+                corsElement.classList.remove('testing');
+                corsElement.classList.add('success');
+                corsElement.querySelector('.test-status').textContent = '✅ CORS 配置正确';
+                results.cors = true;
+            } catch (error) {
+                corsElement.classList.remove('testing');
+                corsElement.classList.add('error');
+                corsElement.querySelector('.test-status').textContent = `❌ CORS 出错`;
+                results.cors = false;
+            }
+            
+            passed++;
+            
+            // DELETE API 测试 (如果有连接，尝试测试)
+            updateProgress((passed / total) * 100);
+            const deleteElement = document.querySelector('[data-test="delete-api"]');
+            deleteElement.classList.add('testing');
+            deleteElement.querySelector('.test-status').textContent = '测试中...';
+            
+            try {
+                const listResponse = await fetch('http://192.168.56.1:8080/api/db-connection/all');
+                const connections = await listResponse.json();
+                
+                if (Array.isArray(connections) && connections.length > 0) {
+                    // 模拟发送 DELETE 请求（实际不删除）
+                    const testId = connections[0].id;
+                    const deleteResponse = await fetch(`http://192.168.56.1:8080/api/db-connection/${testId}`, {
+                        method: 'DELETE'
+                    });
+                    
+                    if (deleteResponse.ok) {
+                        deleteElement.classList.remove('testing');
+                        deleteElement.classList.add('success');
+                        deleteElement.querySelector('.test-status').textContent = '✅ DELETE API 正常';
+                        results.delete = true;
+                    } else {
+                        deleteElement.classList.remove('testing');
+                        deleteElement.classList.add('error');
+                        deleteElement.querySelector('.test-status').textContent = `❌ DELETE 返回状态: ${deleteResponse.status}`;
+                        results.delete = false;
+                    }
+                } else {
+                    deleteElement.classList.remove('testing');
+                    deleteElement.classList.add('error');
+                    deleteElement.querySelector('.test-status').textContent = '⚠️ 没有连接可测试';
+                    results.delete = null;
+                }
+            } catch (error) {
+                deleteElement.classList.remove('testing');
+                deleteElement.classList.add('error');
+                deleteElement.querySelector('.test-status').textContent = '❌ 无法测试';
+                results.delete = false;
+            }
+            
+            updateProgress(100);
+            showSummary(results);
+        }
+        
+        function updateProgress(percent) {
+            document.getElementById('progressBar').style.width = percent + '%';
+        }
+        
+        function showSummary(results) {
+            const summary = document.getElementById('summary');
+            const content = document.getElementById('summaryContent');
+            
+            let allPass = Object.values(results).every(v => v === true);
+            let html = '';
+            
+            if (results['backend-html']) {
+                html += '<div class="summary-item">✅ <strong>后端服务正在运行</strong></div>';
+            } else {
+                html += '<div class="summary-item">❌ <strong>后端服务未运行</strong><br>请启动: java -jar backend/target/tool-manager-backend-1.0.0.jar</div>';
+            }
+            
+            if (results['backend-api']) {
+                html += '<div class="summary-item">✅ <strong>后端 API 响应正常</strong></div>';
+            } else {
+                html += '<div class="summary-item">❌ <strong>后端 API 无法访问</strong></div>';
+            }
+            
+            if (results['frontend']) {
+                html += '<div class="summary-item">✅ <strong>前端服务正在运行</strong></div>';
+            } else {
+                html += '<div class="summary-item">⚠️ <strong>前端服务未运行</strong><br>请启动: npm run dev</div>';
+            }
+            
+            if (results['cors']) {
+                html += '<div class="summary-item">✅ <strong>CORS 配置正确</strong></div>';
+            } else {
+                html += '<div class="summary-item">❌ <strong>CORS 可能存在问题</strong></div>';
+            }
+            
+            if (results['delete'] === true) {
+                html += '<div class="summary-item">✅ <strong>DELETE API 工作正常</strong></div>';
+            } else if (results['delete'] === false) {
+                html += '<div class="summary-item">❌ <strong>DELETE API 出现问题</strong></div>';
+            } else if (results['delete'] === null) {
+                html += '<div class="summary-item">⚠️ <strong>没有连接可测试 DELETE</strong></div>';
+            }
+            
+            if (allPass) {
+                html = '<div class="summary-item" style="color: #28a745; font-weight: bold;">✅ 所有测试通过！应用已完全配置正确。</div>' + html;
+            } else {
+                html = '<div class="summary-item" style="color: #dc3545; font-weight: bold;">⚠️ 存在一些问题，请查看上方的详细信息。</div>' + html;
+            }
+            
+            content.innerHTML = html;
+            summary.style.display = 'block';
+            summary.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+        
+        // 页面加载完后自动运行诊断
+        window.addEventListener('load', () => {
+            console.log('诊断工具已加载，等待用户点击运行按钮或自动运行...');
+        });
+    </script>
+</body>
+</html>

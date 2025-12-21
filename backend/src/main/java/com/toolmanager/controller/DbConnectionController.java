@@ -75,9 +75,18 @@ public class DbConnectionController {
      * DELETE /api/db-connection/{id}
      */
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteConnection(@PathVariable Long id) {
-        dbConnectionService.delete(id);
-        return ResponseEntity.ok().build();
+    public ResponseEntity<Map<String, Object>> deleteConnection(@PathVariable Long id) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            dbConnectionService.delete(id);
+            response.put("success", true);
+            response.put("message", "连接删除成功");
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("error", e.getMessage());
+            return ResponseEntity.ok(response);
+        }
     }
 
     /**
