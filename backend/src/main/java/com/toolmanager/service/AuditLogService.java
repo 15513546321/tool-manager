@@ -5,6 +5,7 @@ import com.toolmanager.entity.AuditLog;
 import com.toolmanager.repository.AuditLogRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -20,6 +21,7 @@ public class AuditLogService {
     /**
      * Record an audit log entry with the client's real IP and mapped username
      */
+    @Transactional
     public AuditLogDto recordAction(String clientIp, String action, String details) {
         // Get the mapped name by IP
         String username = ipMappingService.getNameByIp(clientIp);
@@ -32,6 +34,7 @@ public class AuditLogService {
         log.setDetails(details);
 
         AuditLog saved = auditLogRepository.save(log);
+        auditLogRepository.flush();
         return convertToDto(saved);
     }
 

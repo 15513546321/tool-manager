@@ -87,6 +87,7 @@ public class DocumentService {
         entity.setUpdatedAt(LocalDateTime.now());
 
         Document saved = documentRepository.save(entity);
+        documentRepository.flush();
         return toDto(saved);
     }
 
@@ -100,6 +101,8 @@ public class DocumentService {
                 .forEach(v -> documentVersionRepository.delete(v));
         // Delete document
         documentRepository.deleteById(id);
+        documentRepository.flush();
+        documentVersionRepository.flush();
     }
 
     private DocumentDto toDto(Document entity) {

@@ -61,6 +61,7 @@ public class AnnouncementService {
         announcement.setUpdatedBy(dto.getUpdatedBy());
 
         Announcement saved = announcementRepository.save(announcement);
+        announcementRepository.flush();
         return convertToDto(saved);
     }
 
@@ -79,6 +80,7 @@ public class AnnouncementService {
         announcement.setUpdatedBy(dto.getUpdatedBy());
 
         Announcement updated = announcementRepository.save(announcement);
+        announcementRepository.flush();
         return convertToDto(updated);
     }
 
@@ -88,6 +90,7 @@ public class AnnouncementService {
     @Transactional
     public void deleteAnnouncement(Long id) {
         announcementRepository.deleteById(id);
+        announcementRepository.flush();
     }
 
     private AnnouncementDto convertToDto(Announcement announcement) {

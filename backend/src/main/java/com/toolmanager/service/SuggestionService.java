@@ -60,6 +60,7 @@ public class SuggestionService {
         suggestion.setIpAddress(ipAddress);
 
         Suggestion saved = suggestionRepository.save(suggestion);
+        suggestionRepository.flush();
         return convertToDto(saved);
     }
 
@@ -86,6 +87,7 @@ public class SuggestionService {
         suggestion.setStatus(dto.getStatus());
 
         Suggestion updated = suggestionRepository.save(suggestion);
+        suggestionRepository.flush();
         return convertToDto(updated);
     }
 
@@ -95,6 +97,7 @@ public class SuggestionService {
     @Transactional
     public void deleteSuggestion(Long id) {
         suggestionRepository.deleteById(id);
+        suggestionRepository.flush();
     }
 
     private SuggestionDto convertToDto(Suggestion suggestion) {

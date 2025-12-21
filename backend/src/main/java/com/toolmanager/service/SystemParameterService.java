@@ -60,6 +60,7 @@ public class SystemParameterService {
         param.setUpdatedBy(dto.getUpdatedBy());
 
         SystemParameter saved = systemParameterRepository.save(param);
+        systemParameterRepository.flush();
         return convertToDto(saved);
     }
 
@@ -71,6 +72,7 @@ public class SystemParameterService {
         SystemParameter param = systemParameterRepository.findByParamKey(paramKey)
                 .orElseThrow(() -> new IllegalArgumentException("Parameter not found: " + paramKey));
         systemParameterRepository.delete(param);
+        systemParameterRepository.flush();
     }
 
     private SystemParameterDto convertToDto(SystemParameter param) {

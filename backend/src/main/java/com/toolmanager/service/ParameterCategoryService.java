@@ -56,6 +56,7 @@ public class ParameterCategoryService {
         category.setUpdatedAt(LocalDateTime.now());
 
         ParameterCategory saved = parameterCategoryRepository.save(category);
+        parameterCategoryRepository.flush();
         return convertToDto(saved);
     }
 
@@ -76,6 +77,7 @@ public class ParameterCategoryService {
 
         List<ParameterCategory> categories = parameterCategoryRepository.findByBigClassAndSmallClass(bigClass, smallClass);
         parameterCategoryRepository.deleteAll(categories);
+        parameterCategoryRepository.flush();
     }
 
     /**
@@ -99,6 +101,8 @@ public class ParameterCategoryService {
                     param.setUpdatedAt(LocalDateTime.now());
                     systemParameterRepository.save(param);
                 });
+        parameterCategoryRepository.flush();
+        systemParameterRepository.flush();
     }
 
     /**
@@ -124,6 +128,8 @@ public class ParameterCategoryService {
                     param.setUpdatedAt(LocalDateTime.now());
                     systemParameterRepository.save(param);
                 });
+        parameterCategoryRepository.flush();
+        systemParameterRepository.flush();
     }
 
     private ParameterCategoryDto convertToDto(ParameterCategory entity) {

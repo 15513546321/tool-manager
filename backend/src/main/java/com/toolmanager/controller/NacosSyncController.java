@@ -295,6 +295,8 @@ public class NacosSyncController {
             
             // 保存到数据库
             NacosConfig savedConfig = nacosConfigRepository.save(config);
+            // ✅ 立即刷新到数据库，确保数据持久化
+            nacosConfigRepository.flush();
             
             result.put("success", true);
             result.put("message", "配置保存成功");
@@ -403,6 +405,8 @@ public class NacosSyncController {
             
             // 保存到数据库
             NacosConfig updatedConfig = nacosConfigRepository.save(config);
+            // ✅ 立即刷新到数据库，确保数据持久化
+            nacosConfigRepository.flush();
             
             result.put("success", true);
             result.put("message", "配置更新成功");

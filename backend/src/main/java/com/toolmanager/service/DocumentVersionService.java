@@ -51,6 +51,7 @@ public class DocumentVersionService {
         entity.setUpdatedAt(LocalDateTime.now());
 
         DocumentVersion saved = documentVersionRepository.save(entity);
+        documentVersionRepository.flush();
         return toDto(saved);
     }
 
@@ -60,6 +61,7 @@ public class DocumentVersionService {
     @Transactional
     public void deleteVersion(Long versionId) {
         documentVersionRepository.deleteById(versionId);
+        documentVersionRepository.flush();
     }
 
     /**

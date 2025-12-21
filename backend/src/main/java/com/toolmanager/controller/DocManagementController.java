@@ -337,6 +337,7 @@ public class DocManagementController {
             auditLog.setIp("127.0.0.1");
             auditLog.setTimestamp(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date()));
             auditLogRepository.save(auditLog);
+            auditLogRepository.flush();
         } catch (Exception e) {
             System.err.println("Failed to record audit: " + e.getMessage());
         }

@@ -58,6 +58,7 @@ public class DocumentCategoryService {
         entity.setUpdatedBy(userName);
 
         DocumentCategory saved = categoryRepository.save(entity);
+        categoryRepository.flush();
         return convertToDto(saved);
     }
 
@@ -66,7 +67,10 @@ public class DocumentCategoryService {
      */
     @Transactional
     public void deleteCategory(String categoryName) {
-        categoryRepository.findByCategoryName(categoryName).ifPresent(categoryRepository::delete);
+        categoryRepository.findByCategoryName(categoryName).ifPresent(cat -> {
+            categoryRepository.delete(cat);
+            categoryRepository.flush();
+        });
     }
 
     /**
@@ -87,6 +91,7 @@ public class DocumentCategoryService {
         entity.setUpdatedBy(userName);
 
         DocumentCategory saved = categoryRepository.save(entity);
+        categoryRepository.flush();
         return convertToDto(saved);
     }
 
@@ -107,6 +112,7 @@ public class DocumentCategoryService {
         }
 
         DocumentCategory saved = categoryRepository.save(entity);
+        categoryRepository.flush();
         return convertToDto(saved);
     }
 
@@ -125,6 +131,7 @@ public class DocumentCategoryService {
         entity.setUpdatedBy(userName);
 
         DocumentCategory saved = categoryRepository.save(entity);
+        categoryRepository.flush();
         return convertToDto(saved);
     }
 
@@ -146,6 +153,7 @@ public class DocumentCategoryService {
         }
 
         DocumentCategory saved = categoryRepository.save(entity);
+        categoryRepository.flush();
         return convertToDto(saved);
     }
 

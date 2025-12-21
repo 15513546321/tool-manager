@@ -48,12 +48,14 @@ public class CodeTemplateService {
         }
         entity.setUpdatedAt(LocalDateTime.now());
         CodeTemplate saved = codeTemplateRepository.save(entity);
+        codeTemplateRepository.flush();
         return toDto(saved);
     }
 
     @Transactional
     public void delete(Long id) {
         codeTemplateRepository.deleteById(id);
+        codeTemplateRepository.flush();
     }
 
     private CodeTemplateDto toDto(CodeTemplate entity) {

@@ -112,6 +112,7 @@ public class SystemParameterController {
                 parameterCategoryRepository.save(category);
             }
         });
+        parameterCategoryRepository.flush();
         
         return ResponseEntity.ok(categoryMap);
     }

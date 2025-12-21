@@ -33,6 +33,8 @@ public class GiteeConnectionService {
         }
         
         entity = repository.save(entity);
+        // ✅ 立即刷新到数据库，确保数据持久化
+        repository.flush();
         return toDto(entity);
     }
 

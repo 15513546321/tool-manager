@@ -60,6 +60,7 @@ public class MenuItemService {
         menuItem.setUpdatedBy(dto.getUpdatedBy());
 
         MenuItem saved = menuItemRepository.save(menuItem);
+        menuItemRepository.flush();
         return convertToDto(saved);
     }
 
@@ -90,6 +91,7 @@ public class MenuItemService {
         
         // 显式保存
         MenuItem updated = menuItemRepository.save(menuItem);
+        menuItemRepository.flush();
         
         System.out.println("After save: updated=" + updated);
         System.out.println("Menu item updated: " + menuId + ", name: " + updated.getName() + ", visible: " + updated.getVisible());
@@ -106,6 +108,7 @@ public class MenuItemService {
         MenuItem menuItem = menuItemRepository.findByMenuId(menuId)
                 .orElseThrow(() -> new IllegalArgumentException("Menu item not found: " + menuId));
         menuItemRepository.delete(menuItem);
+        menuItemRepository.flush();
     }
 
     private MenuItemDto convertToDto(MenuItem menuItem) {

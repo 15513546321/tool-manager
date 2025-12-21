@@ -28,7 +28,9 @@ public class IpMappingService {
                     newMapping.setIp(ip);
                     newMapping.setName("Unknown Device"); // Default name
                     newMapping.setLastAnnouncementVersionSeen(null); // Default to null
-                    return ipMappingRepository.save(newMapping);
+                    IpMapping saved = ipMappingRepository.save(newMapping);
+                    ipMappingRepository.flush();
+                    return saved;
                 });
     }
 
@@ -51,6 +53,7 @@ public class IpMappingService {
         IpMapping mapping = getOrCreateIpMapping(ip);
         mapping.setLastAnnouncementVersionSeen(announcementVersion);
         ipMappingRepository.save(mapping);
+        ipMappingRepository.flush();
     }
 
     /**
@@ -75,6 +78,7 @@ public class IpMappingService {
     /**
      * Create a new IP mapping
      */
+    @Transactional
     public IpMappingDto createMapping(String ip, String name) {
         // Check if IP already exists
         if (ipMappingRepository.findByIp(ip).isPresent()) {
@@ -86,28 +90,33 @@ public class IpMappingService {
         mapping.setName(name);
 
         IpMapping saved = ipMappingRepository.save(mapping);
+        ipMappingRepository.flush();
         return convertToDto(saved);
     }
 
     /**
      * Update an existing IP mapping
      */
+    @Transactional
     public IpMappingDto updateMapping(String ip, String newName) {
         IpMapping mapping = ipMappingRepository.findByIp(ip)
                 .orElseThrow(() -> new IllegalArgumentException("IP not found: " + ip));
 
         mapping.setName(newName);
         IpMapping saved = ipMappingRepository.save(mapping);
+        ipMappingRepository.flush();
         return convertToDto(saved);
     }
 
     /**
      * Delete an IP mapping
      */
+    @Transactional
     public void deleteMapping(String ip) {
         IpMapping mapping = ipMappingRepository.findByIp(ip)
                 .orElseThrow(() -> new IllegalArgumentException("IP not found: " + ip));
         ipMappingRepository.delete(mapping);
+        ipMappingRepository.flush();
     }
 
     private IpMappingDto convertToDto(IpMapping mapping) {
