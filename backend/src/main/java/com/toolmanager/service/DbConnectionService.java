@@ -44,6 +44,11 @@ public class DbConnectionService {
         }
         entity.setUpdatedAt(LocalDateTime.now());
         DbConnection saved = dbConnectionRepository.save(entity);
+        
+        // 立即刷新到数据库，确保数据持久化
+        dbConnectionRepository.flush();
+        
+        log.info("✓ 数据库连接已保存: ID={}, Name={}", saved.getId(), saved.getName());
         return toDto(saved);
     }
 
