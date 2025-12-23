@@ -1,5 +1,6 @@
 package com.toolmanager.controller;
 
+import lombok.extern.slf4j.Slf4j;
 import com.toolmanager.entity.AuditLog;
 import com.toolmanager.repository.AuditLogRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -10,6 +11,11 @@ import java.util.*;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
+/**
+ * 文档管理控制器
+ * 处理在线文档、本地文件上传解析、以及API文档管理等功能
+ */
+@Slf4j
 @RestController
 @RequestMapping("/api/doc-management")
 @CrossOrigin(origins = {"http://localhost:*", "http://127.0.0.1:*", "http://192.168.*:*", "http://10.*:*", "http://172.*:*"}, 
@@ -44,11 +50,11 @@ public class DocManagementController {
             }
             
             try {
-                System.out.println("Processing file: " + fileName);
+                log.info("Processing file: : {}", fileName);
                 
                 // 检查文件大小（防止内存溢出）
                 if (file.getSize() > 10 * 1024 * 1024) { // 10MB limit
-                    System.out.println("File too large: " + fileName);
+                    log.info("File too large: : {}", fileName);
                     failedFiles.add(fileName + " (文件过大，超过10MB限制)");
                     continue;
                 }
@@ -77,7 +83,7 @@ public class DocManagementController {
                     }
                 } else if (fileName.endsWith(".properties")) {
                     // Properties 文件一般只作为配置文件，不包含接口定义
-                    System.out.println("Skipping properties file: " + fileName);
+                    log.info("Skipping properties file: : {}", fileName);
                 } else {
                     failedFiles.add(fileName + " (不支持的文件类型)");
                 }
@@ -211,7 +217,7 @@ public class DocManagementController {
         // 简单的 XML 解析逻辑（生产环境应使用 DOM/SAX 解析器）
         try {
             if (content == null || content.isEmpty()) {
-                System.out.println("Empty XML content for file: " + filePath);
+                log.info("Empty XML content for file: : {}", filePath);
                 return interfaces;
             }
             
@@ -226,7 +232,7 @@ public class DocManagementController {
                     
                     // 跳过无效的接口定义
                     if (id.isEmpty() || name.isEmpty()) {
-                        System.out.println("Skipping transaction at index " + i + " due to missing id or name");
+                        log.info("Skipping transaction at index : {}", i + " due to missing id or name");
                         continue;
                     }
                     
@@ -261,7 +267,7 @@ public class DocManagementController {
         // 简单的 Java 解析逻辑
         try {
             if (content == null || content.isEmpty()) {
-                System.out.println("Empty Java content for file: " + filePath);
+                log.info("Empty Java content for file: : {}", filePath);
                 return interfaces;
             }
             
@@ -436,3 +442,6 @@ public class DocManagementController {
         public void setData(T data) { this.data = data; }
     }
 }
+
+
+

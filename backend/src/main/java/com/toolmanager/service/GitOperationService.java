@@ -1,16 +1,18 @@
 package com.toolmanager.service;
 
+import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import com.toolmanager.util.SSHKeyConverter;
-
 import java.io.*;
 import java.util.*;
 
 /**
- * Service for Git operations supporting both SSH and HTTP authentication
- * Uses git command line directly for maximum compatibility
+ * Git 操作服务类
+ * 支持 SSH 和 HTTP 两种认证方式的 Git 操作
+ * 使用命令行直接调用 git 命令以获得最大兼容性
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class GitOperationService {
@@ -21,9 +23,9 @@ public class GitOperationService {
     public Map<String, Object> testConnection(String repoUrl, String authType, String accessToken, String privateKey) {
         Map<String, Object> result = new HashMap<>();
         try {
-            System.out.println("=== Testing Git Connection ===");
-            System.out.println("URL: " + repoUrl);
-            System.out.println("Auth Type: " + authType);
+            log.info("{}",  "=== Testing Git Connection ===");
+            log.info("URL: : {}", repoUrl);
+            log.info("Auth Type: : {}", authType);
             System.out.println("Has Token: " + (accessToken != null && !accessToken.trim().isEmpty()));
             System.out.println("Has Private Key: " + (privateKey != null && !privateKey.trim().isEmpty()));
             
@@ -59,7 +61,7 @@ public class GitOperationService {
     private Map<String, Object> testSSHConnection(String repoUrl, String privateKey) {
         Map<String, Object> result = new HashMap<>();
         try {
-            System.out.println("Testing SSH connection to: " + repoUrl);
+            log.info("Testing SSH connection to: : {}", repoUrl);
             
             // Try to use system SSH key first (~/.ssh/id_ed25519 or ~/.ssh/id_rsa)
             File sshKeyFile = null;
@@ -72,22 +74,22 @@ public class GitOperationService {
                 userHome + File.separator + ".ssh" + File.separator + "id_ecdsa"
             };
             
-            System.out.println("🔍 Attempting to use system SSH keys from ~/.ssh/");
+            log.info("{}",  "🔍 Attempting to use system SSH keys from ~/.ssh/");
             for (String keyPath : keyLocations) {
                 File testFile = new File(keyPath);
                 if (testFile.exists() && testFile.isFile()) {
                     sshKeyFile = testFile;
-                    System.out.println("✅ Found system SSH key: " + keyPath);
+                    log.info("✅ Found system SSH key: : {}", keyPath);
                     break;
                 }
             }
             
             // If no system key found and privateKey provided, use uploaded key
             if (sshKeyFile == null && privateKey != null && !privateKey.trim().isEmpty()) {
-                System.out.println("⚠️ System SSH key not found, using uploaded private key");
+                log.info("{}",  "⚠️ System SSH key not found, using uploaded private key");
                 
                 // Validate SSH key format
-                System.out.println("🔍 Validating SSH key format...");
+                log.info("{}",  "🔍 Validating SSH key format...");
                 SSHKeyConverter.SSHKeyValidationResult keyValidation = SSHKeyConverter.validateKeyFormat(privateKey);
                 System.out.println(keyValidation.getMessage());
                 
@@ -99,14 +101,14 @@ public class GitOperationService {
                 }
                 
                 // Perform detailed diagnosis
-                System.out.println("\n🔎 Performing detailed SSH key diagnosis...");
+                log.info("{}",  "\n🔎 Performing detailed SSH key diagnosis...");
                 SSHKeyConverter.SSHKeyDiagnosticResult diagnostic = SSHKeyConverter.diagnoseKey(privateKey);
                 if (diagnostic.hasIssues()) {
                     System.out.println(diagnostic.getFullReport());
                 }
                 
                 // Clean SSH key - remove extra whitespace
-                System.out.println("🧹 Cleaning SSH key...");
+                log.info("{}",  "🧹 Cleaning SSH key...");
                 String cleanedKey = SSHKeyConverter.cleanSSHKey(privateKey);
                 
                 // Save private key to temp file
@@ -155,8 +157,8 @@ public class GitOperationService {
             env.put("SSH_ASKPASS", "false");
             env.put("DISPLAY", "");
             
-            System.out.println("SSH Command: " + sshCommand);
-            System.out.println("SSH Key: " + keyPath);
+            log.info("SSH Command: : {}", sshCommand);
+            log.info("SSH Key: : {}", keyPath);
             
             pb.redirectErrorStream(true);
             Process process = pb.start();
@@ -173,19 +175,19 @@ public class GitOperationService {
             reader.close();
             
             int exitCode = process.waitFor();
-            System.out.println("SSH test exit code: " + exitCode);
+            log.info("SSH test exit code: : {}", exitCode);
             System.out.println("SSH test output: " + output.toString());
             
             if (exitCode == 0 && lineCount > 0) {
                 result.put("success", true);
                 result.put("message", "✓ SSH connection successful!");
                 result.put("branchCount", lineCount);
-                System.out.println("SSH connection successful! Found " + lineCount + " refs");
+                log.info("SSH connection successful! Found : {}", lineCount + " refs");
                 return result;
             } else {
                 result.put("success", false);
                 result.put("message", "SSH connection failed. Exit code: " + exitCode + ". Make sure your SSH key is correct and repository is accessible.");
-                System.err.println("SSH command failed with exit code: " + exitCode);
+                log.error("SSH command failed with exit code: : {}", exitCode);
                 return result;
             }
         } catch (Exception e) {
@@ -208,7 +210,7 @@ public class GitOperationService {
                 return result;
             }
             
-            System.out.println("Testing HTTP connection to: " + repoUrl);
+            log.info("Testing HTTP connection to: : {}", repoUrl);
             
             // Prepare URL with token embedded
             String authUrl = repoUrl;
@@ -238,12 +240,12 @@ public class GitOperationService {
                 result.put("success", true);
                 result.put("message", "✓ HTTP connection successful!");
                 result.put("branchCount", lineCount);
-                System.out.println("HTTP connection successful! Found " + lineCount + " refs");
+                log.info("HTTP connection successful! Found : {}", lineCount + " refs");
                 return result;
             } else {
                 result.put("success", false);
                 result.put("message", "HTTP connection failed. Exit code: " + exitCode + ". Check your Token and repository URL.");
-                System.err.println("HTTP git command failed with exit code: " + exitCode);
+                log.error("HTTP git command failed with exit code: : {}", exitCode);
                 return result;
             }
         } catch (Exception e) {
@@ -260,7 +262,7 @@ public class GitOperationService {
     public List<Map<String, Object>> getBranchesSSH(String repoUrl, String privateKey, String searchQuery) {
         List<Map<String, Object>> branches = new ArrayList<>();
         try {
-            System.out.println("Fetching SSH branches from: " + repoUrl);
+            log.info("Fetching SSH branches from: : {}", repoUrl);
             
             // Try to use system SSH key first (~/.ssh/id_ed25519 or ~/.ssh/id_rsa)
             File sshKeyFile = null;
@@ -273,22 +275,22 @@ public class GitOperationService {
                 userHome + File.separator + ".ssh" + File.separator + "id_ecdsa"
             };
             
-            System.out.println("🔍 Attempting to use system SSH keys from ~/.ssh/");
+            log.info("{}",  "🔍 Attempting to use system SSH keys from ~/.ssh/");
             for (String keyPath : keyLocations) {
                 File testFile = new File(keyPath);
                 if (testFile.exists() && testFile.isFile()) {
                     sshKeyFile = testFile;
-                    System.out.println("✅ Found system SSH key: " + keyPath);
+                    log.info("✅ Found system SSH key: : {}", keyPath);
                     break;
                 }
             }
             
             // If no system key found and privateKey provided, use uploaded key
             if (sshKeyFile == null && privateKey != null && !privateKey.trim().isEmpty()) {
-                System.out.println("⚠️ System SSH key not found, using uploaded private key");
+                log.info("{}",  "⚠️ System SSH key not found, using uploaded private key");
                 
                 // Validate SSH key format
-                System.out.println("🔍 Validating SSH key format...");
+                log.info("{}",  "🔍 Validating SSH key format...");
                 SSHKeyConverter.SSHKeyValidationResult keyValidation = SSHKeyConverter.validateKeyFormat(privateKey);
                 System.out.println(keyValidation.getMessage());
                 
@@ -299,15 +301,15 @@ public class GitOperationService {
                 }
                 
                 // Clean SSH key - remove extra whitespace
-                System.out.println("🧹 Cleaning SSH key...");
+                log.info("{}",  "🧹 Cleaning SSH key...");
                 String cleanedKey = SSHKeyConverter.cleanSSHKey(privateKey);
                 
                 // Check key format
-                System.out.println("Validating SSH key format...");
+                log.info("{}",  "Validating SSH key format...");
                 if (!cleanedKey.contains("BEGIN") || !cleanedKey.contains("END")) {
-                    System.err.println("⚠️ SSH key format appears invalid. Must contain BEGIN and END markers.");
-                    System.err.println("   Valid formats: BEGIN RSA PRIVATE KEY, BEGIN OPENSSH PRIVATE KEY, BEGIN EC PRIVATE KEY");
-                    System.err.println("   If using PuTTY format (.ppk), please convert to OpenSSH format first.");
+                    log.error("Error: {}", "⚠️ SSH key format appears invalid. Must contain BEGIN and END markers.");
+                    log.error("Error: {}", "   Valid formats: BEGIN RSA PRIVATE KEY, BEGIN OPENSSH PRIVATE KEY, BEGIN EC PRIVATE KEY");
+                    log.error("   If using PuTTY format (.ppk), please convert to OpenSSH format first.");
                 }
                 
                 // Save private key to temp file with proper permissions
@@ -327,9 +329,9 @@ public class GitOperationService {
                 sshKeyFile = keyFile;
                 System.out.println("SSH key saved to: " + keyFile.getAbsolutePath());
             } else if (sshKeyFile == null) {
-                System.err.println("❌ No SSH key found!");
+                log.error("Error: {}", "❌ No SSH key found!");
                 System.err.println("   System keys checked: " + String.join(", ", keyLocations));
-                System.err.println("   Please provide a private key or place your SSH key in ~/.ssh/");
+                log.error("Error: {}", "   Please provide a private key or place your SSH key in ~/.ssh/");
                 return branches;
             }
             
@@ -359,8 +361,8 @@ public class GitOperationService {
             env.put("SSH_ASKPASS", "false");
             env.put("DISPLAY", "");
             
-            System.out.println("SSH Command: " + sshCommand);
-            System.out.println("Repository URL: " + repoUrl);
+            log.info("SSH Command: : {}", sshCommand);
+            log.info("Repository URL: : {}", repoUrl);
             
             pb.redirectErrorStream(true);
             Process process = pb.start();
@@ -370,10 +372,10 @@ public class GitOperationService {
             String query = searchQuery != null ? searchQuery.toLowerCase() : "";
             int lineCount = 0;
             
-            System.out.println("Reading git ls-remote output...");
+            log.info("{}",  "Reading git ls-remote output...");
             while ((line = reader.readLine()) != null) {
                 lineCount++;
-                System.out.println("  Line " + lineCount + ": " + line);
+                log.info("  Line : {}", lineCount + ": " + line);
                 // Format: <hash>\t<ref>
                 String[] parts = line.split("\t");
                 if (parts.length >= 2) {
@@ -386,7 +388,7 @@ public class GitOperationService {
                             branchInfo.put("lastCommitHash", parts[0]);
                             branchInfo.put("lastUpdated", "N/A");
                             branches.add(branchInfo);
-                            System.out.println("  ✓ Added branch: " + branchName);
+                            log.info("  ✓ Added branch: : {}", branchName);
                         }
                     }
                 }
@@ -394,9 +396,9 @@ public class GitOperationService {
             reader.close();
             
             int exitCode = process.waitFor();
-            System.out.println("Git process exit code: " + exitCode);
+            log.info("Git process exit code: : {}", exitCode);
             if (exitCode != 0) {
-                System.err.println("Git SSH command failed with exit code: " + exitCode);
+                log.error("Git SSH command failed with exit code: : {}", exitCode);
             }
             
             System.out.println("Found " + branches.size() + " branches via SSH");
@@ -414,10 +416,10 @@ public class GitOperationService {
     public List<Map<String, Object>> getBranchesHTTP(String repoUrl, String accessToken, String searchQuery) {
         List<Map<String, Object>> branches = new ArrayList<>();
         try {
-            System.out.println("Fetching HTTP branches from: " + repoUrl);
+            log.info("Fetching HTTP branches from: : {}", repoUrl);
             
             if (accessToken == null || accessToken.trim().isEmpty()) {
-                System.err.println("Access Token is required for HTTP authentication");
+                log.error("Error: {}", "Access Token is required for HTTP authentication");
                 return branches;
             }
             
@@ -459,7 +461,7 @@ public class GitOperationService {
             
             int exitCode = process.waitFor();
             if (exitCode != 0) {
-                System.err.println("Git HTTP command failed with exit code: " + exitCode);
+                log.error("Git HTTP command failed with exit code: : {}", exitCode);
             }
             
             System.out.println("Found " + branches.size() + " branches via HTTP");
@@ -477,15 +479,15 @@ public class GitOperationService {
     public List<Map<String, Object>> getCommitsSSH(String repoUrl, String privateKey, List<String> branches) {
         List<Map<String, Object>> commits = new ArrayList<>();
         try {
-            System.out.println("Fetching SSH commits from: " + repoUrl + ", branches: " + branches);
+            log.info("Fetching SSH commits from: : {}", repoUrl + ", branches: " + branches);
             
             if (privateKey == null || privateKey.trim().isEmpty()) {
-                System.err.println("Private key is required for SSH authentication");
+                log.error("Error: {}", "Private key is required for SSH authentication");
                 return commits;
             }
             
             if (branches == null || branches.isEmpty()) {
-                System.err.println("No branches specified");
+                log.error("Error: {}", "No branches specified");
                 return commits;
             }
             
@@ -523,13 +525,13 @@ public class GitOperationService {
                     BufferedReader cloneReader = new BufferedReader(new InputStreamReader(cloneProcess.getInputStream()));
                     String line;
                     while ((line = cloneReader.readLine()) != null) {
-                        System.out.println("[Clone] " + line);
+                        log.info("[Clone] : {}", line);
                     }
                     cloneReader.close();
                     
                     int cloneExitCode = cloneProcess.waitFor();
                     if (cloneExitCode != 0) {
-                        System.err.println("Failed to clone repository for branch " + branch);
+                        log.error("Failed to clone repository for branch : {}", branch);
                         continue;
                     }
                     
@@ -569,7 +571,7 @@ public class GitOperationService {
                     
                     int logExitCode = logProcess.waitFor();
                     if (logExitCode != 0) {
-                        System.err.println("Git log command failed for branch " + branch);
+                        log.error("Git log command failed for branch : {}", branch);
                     }
                     
                     // Clean up temp directory
@@ -681,13 +683,13 @@ public class GitOperationService {
                 File testFile = new File(keyPath);
                 if (testFile.exists() && testFile.isFile()) {
                     sshKeyFile = testFile;
-                    System.out.println("Using SSH key: " + keyPath);
+                    log.info("Using SSH key: : {}", keyPath);
                     break;
                 }
             }
             
             if (sshKeyFile == null) {
-                System.err.println("No SSH key found");
+                log.error("Error: {}", "No SSH key found");
                 return new ArrayList<>(changedFiles);
             }
             
@@ -705,19 +707,19 @@ public class GitOperationService {
             String line;
             while ((line = cloneReader.readLine()) != null) {
                 if (!line.trim().isEmpty()) {
-                    System.out.println("Clone: " + line);
+                    log.info("Clone: : {}", line);
                 }
             }
             cloneReader.close();
             int cloneExitCode = cloneProcess.waitFor();
             
             if (cloneExitCode != 0) {
-                System.err.println("Failed to clone repository: exit code " + cloneExitCode);
+                log.error("Failed to clone repository: exit code : {}", cloneExitCode);
                 deleteDir(tempDir);
                 return new ArrayList<>(changedFiles);
             }
             
-            System.out.println("Repository cloned successfully");
+            log.info("{}",  "Repository cloned successfully");
             
             // Get all files in this branch (from HEAD)
             ProcessBuilder logPb = new ProcessBuilder(
@@ -735,7 +737,7 @@ public class GitOperationService {
                     changedFiles.add(line.trim());
                     fileCount++;
                     if (fileCount % 100 == 0) {
-                        System.out.println("  Processed " + fileCount + " files...");
+                        log.info("  Processed : {}", fileCount + " files...");
                     }
                 }
             }
@@ -743,7 +745,7 @@ public class GitOperationService {
             
             int logExitCode = logProcess.waitFor();
             if (logExitCode != 0) {
-                System.err.println("Git ls-tree command failed with exit code: " + logExitCode);
+                log.error("Git ls-tree command failed with exit code: : {}", logExitCode);
             }
             
             // Clean up
@@ -790,19 +792,19 @@ public class GitOperationService {
             String line;
             while ((line = cloneReader.readLine()) != null) {
                 if (!line.trim().isEmpty()) {
-                    System.out.println("Clone: " + line);
+                    log.info("Clone: : {}", line);
                 }
             }
             cloneReader.close();
             int cloneExitCode = cloneProcess.waitFor();
             
             if (cloneExitCode != 0) {
-                System.err.println("Failed to clone repository: exit code " + cloneExitCode);
+                log.error("Failed to clone repository: exit code : {}", cloneExitCode);
                 deleteDir(tempDir);
                 return new ArrayList<>(changedFiles);
             }
             
-            System.out.println("Repository cloned successfully");
+            log.info("{}",  "Repository cloned successfully");
             
             // Get all files in this branch
             ProcessBuilder logPb = new ProcessBuilder(
@@ -820,7 +822,7 @@ public class GitOperationService {
                     changedFiles.add(line.trim());
                     fileCount++;
                     if (fileCount % 100 == 0) {
-                        System.out.println("  Processed " + fileCount + " files...");
+                        log.info("  Processed : {}", fileCount + " files...");
                     }
                 }
             }
@@ -828,7 +830,7 @@ public class GitOperationService {
             
             int logExitCode = logProcess.waitFor();
             if (logExitCode != 0) {
-                System.err.println("Git ls-tree command failed with exit code: " + logExitCode);
+                log.error("Git ls-tree command failed with exit code: : {}", logExitCode);
             }
             
             // Clean up
@@ -843,5 +845,8 @@ public class GitOperationService {
         return new ArrayList<>(changedFiles);
     }
 }
+
+
+
 
 

@@ -1,15 +1,20 @@
 package com.toolmanager.service;
 
+import lombok.extern.slf4j.Slf4j;
 import com.toolmanager.dto.MenuItemDto;
 import com.toolmanager.entity.MenuItem;
 import com.toolmanager.repository.MenuItemRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * 菜单项服务类
+ * 处理菜单项的增删改查、层级查询等业务逻辑
+ */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class MenuItemService {
@@ -69,7 +74,7 @@ public class MenuItemService {
      */
     @Transactional
     public MenuItemDto updateMenuItem(String menuId, MenuItemDto dto) {
-        System.out.println("=== updateMenuItem START: menuId=" + menuId + ", dto=" + dto);
+        log.info("=== updateMenuItem START: menuId=: {}", menuId + ", dto=" + dto);
         
         MenuItem menuItem = menuItemRepository.findByMenuId(menuId)
                 .orElseThrow(() -> new IllegalArgumentException("Menu item not found: " + menuId));
@@ -87,15 +92,15 @@ public class MenuItemService {
         }
         menuItem.setUpdatedBy(dto.getUpdatedBy());
 
-        System.out.println("Before save: menuItem=" + menuItem);
+        log.info("Before save: menuItem=: {}", menuItem);
         
         // 显式保存
         MenuItem updated = menuItemRepository.save(menuItem);
         menuItemRepository.flush();
         
-        System.out.println("After save: updated=" + updated);
+        log.info("After save: updated=: {}", updated);
         System.out.println("Menu item updated: " + menuId + ", name: " + updated.getName() + ", visible: " + updated.getVisible());
-        System.out.println("=== updateMenuItem END");
+        log.info("{}",  "=== updateMenuItem END");
         
         return convertToDto(updated);
     }
@@ -127,3 +132,6 @@ public class MenuItemService {
         );
     }
 }
+
+
+

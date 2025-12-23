@@ -1,13 +1,18 @@
 package com.toolmanager.controller;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import lombok.RequiredArgsConstructor;
 import lombok.Data;
 import com.toolmanager.service.GiteeService;
-
 import java.util.*;
 
+/**
+ * Gitee API 控制器
+ * 处理 Gitee 仓库操作、统计数据获取等功能
+ */
+@Slf4j
 @RestController
 @RequestMapping("/api/gitee")
 @RequiredArgsConstructor
@@ -103,7 +108,7 @@ public class GiteeApiController {
     @PostMapping("/test-connection")
     public ResponseEntity<ApiResponse<Map<String, Object>>> testConnection(@RequestBody GiteeRequest request) {
         try {
-            System.out.println("=== Testing Gitee Connection ===");
+            log.info("{}",  "=== Testing Gitee Connection ===");
             System.out.println("URL: " + request.getRepoUrl());
             System.out.println("Auth Type: " + request.getAuthType());
             System.out.println("Has Token: " + (request.getAccessToken() != null && !request.getAccessToken().isEmpty()));
@@ -156,7 +161,7 @@ public class GiteeApiController {
     @PostMapping("/validate-config")
     public ResponseEntity<ApiResponse<Map<String, Object>>> validateConfig(@RequestBody GiteeRequest request) {
         try {
-            System.out.println("=== Validating Gitee Configuration ===");
+            log.info("{}",  "=== Validating Gitee Configuration ===");
             System.out.println("URL: " + request.getRepoUrl());
             System.out.println("Auth Type: " + request.getAuthType());
             
@@ -214,10 +219,10 @@ public class GiteeApiController {
             if (pageNumber < 1) pageNumber = 1;
             if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
-            System.out.println("=== Fetching branches ===");
+            log.info("{}",  "=== Fetching branches ===");
             System.out.println("Repository URL: " + request.getRepoUrl());
             System.out.println("Auth Type: " + request.getAuthType());
-            System.out.println("Page: " + pageNumber + ", Size: " + pageSize);
+            log.info("Page: : {}", pageNumber + ", Size: " + pageSize);
 
             // Call Gitee API to fetch real branches (supports SSH and HTTP)
             List<Map<String, Object>> allBranches = giteeService.getBranches(
@@ -358,4 +363,7 @@ public class GiteeApiController {
         }
     }
 }
+
+
+
 

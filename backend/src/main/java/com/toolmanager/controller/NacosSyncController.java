@@ -1,5 +1,6 @@
 package com.toolmanager.controller;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.http.ResponseEntity;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,6 +19,12 @@ import java.util.Base64;
 import java.util.Comparator;
 import java.util.Optional;
 
+/**
+ * Nacos 配置同步控制器
+ * 处理 Nacos 配置的连接、验证、同步和差异比较等操作
+ * 支持 Nacos 1.4.0 和 2.x 多个版本
+ */
+@Slf4j
 @RestController
 @RequestMapping("/api/nacos-sync")
 @CrossOrigin(origins = {"http://localhost:*", "http://127.0.0.1:*", "http://192.168.*:*", "http://10.*:*", "http://172.*:*"}, 
@@ -56,8 +63,8 @@ public class NacosSyncController {
             String baseUrl = request.getUrl().replaceAll("/$", "");
             String nacosVersion = detectNacosVersion(baseUrl);
             
-            System.out.println("Detected Nacos version: " + nacosVersion);
-            System.out.println("Testing Nacos connection to: " + baseUrl);
+            log.info("Detected Nacos version: : {}", nacosVersion);
+            log.info("Testing Nacos connection to: : {}", baseUrl);
             
             // 尝试认证
             boolean authenticated = false;
@@ -66,7 +73,7 @@ public class NacosSyncController {
             
             // 优先尝试 Nacos 2.x 的认证方式
             if (nacosVersion == null || nacosVersion.contains("2.") || nacosVersion.isEmpty()) {
-                System.out.println("Attempting Nacos 2.x authentication...");
+                log.info("{}",  "Attempting Nacos 2.x authentication...");
                 Map<String, Object> auth2Result = tryNacos2Authentication(baseUrl, request.getUsername(), request.getPassword());
                 if ((boolean) auth2Result.getOrDefault("success", false)) {
                     authenticated = true;
@@ -78,7 +85,7 @@ public class NacosSyncController {
             
             // 如果 2.x 失败，尝试 Nacos 1.4.0 的认证方式
             if (!authenticated) {
-                System.out.println("Attempting Nacos 1.4.0 authentication...");
+                log.info("{}",  "Attempting Nacos 1.4.0 authentication...");
                 Map<String, Object> auth1Result = tryNacos1Authentication(baseUrl, request.getUsername(), request.getPassword());
                 if ((boolean) auth1Result.getOrDefault("success", false)) {
                     authenticated = true;
@@ -495,10 +502,10 @@ public class NacosSyncController {
         try {
             Map<String, Object> result = new HashMap<>();
             
-            System.out.println("=== 开始配置比对 ===");
+            log.info("{}",  "=== 开始配置比对 ===");
             
             // 获取源环境配置列表
-            System.out.println("\n获取源环境配置...");
+            log.info("{}",  "\n获取源环境配置...");
             List<Map<String, String>> sourceConfigs = fetchNacosConfigs(
                 request.getSourceUrl(),
                 request.getSourceNamespace(),
@@ -508,7 +515,7 @@ public class NacosSyncController {
             System.out.println("源环境配置数: " + sourceConfigs.size());
             
             // 获取目标环境配置列表
-            System.out.println("\n获取目标环境配置...");
+            log.info("{}",  "\n获取目标环境配置...");
             List<Map<String, String>> targetConfigs = fetchNacosConfigs(
                 request.getTargetUrl(),
                 request.getTargetNamespace(),
@@ -562,7 +569,7 @@ public class NacosSyncController {
                     comparison.put("sourceContent", sourceContent);
                     comparison.put("targetContent", "");
                     sourceOnlyCount++;
-                    System.out.println("源独有: " + dataId + " | " + group);
+                    log.info("源独有: : {}", dataId + " | " + group);
                 } else {
                     String sourceContent = sourceConfig.getOrDefault("content", "");
                     String targetContent = targetConfig.getOrDefault("content", "");
@@ -572,7 +579,7 @@ public class NacosSyncController {
                     targetContent = targetContent == null ? "" : targetContent;
                     
                     // 打印调试信息
-                    System.out.println("\n对比配置: " + dataId + " | " + group);
+                    log.info("\n对比配置: : {}", dataId + " | " + group);
                     System.out.println("  源内容长度: " + sourceContent.length());
                     System.out.println("  目标内容长度: " + targetContent.length());
                     
@@ -586,7 +593,7 @@ public class NacosSyncController {
                         comparison.put("sourceContent", sourceContent);
                         comparison.put("targetContent", targetContent);
                         sameCount++;
-                        System.out.println("  状态: 相同");
+                        log.info("{}",  "  状态: 相同");
                     } else {
                         // 不同
                         comparison.put("status", "different");
@@ -594,7 +601,7 @@ public class NacosSyncController {
                         comparison.put("sourceContent", sourceContent);
                         comparison.put("targetContent", targetContent);
                         differentCount++;
-                        System.out.println("  状态: 不同");
+                        log.info("{}",  "  状态: 不同");
                         System.out.println("  源内容预览: " + sourceContent.substring(0, Math.min(100, sourceContent.length())));
                         System.out.println("  目标内容预览: " + targetContent.substring(0, Math.min(100, targetContent.length())));
                     }
@@ -633,12 +640,12 @@ public class NacosSyncController {
             result.put("results", comparisonResults);
             result.put("comparisonTime", new Date().toString());
             
-            System.out.println("\n=== 比对完成 ===");
+            log.info("{}",  "\n=== 比对完成 ===");
             System.out.println("总文件数: " + comparisonResults.size());
-            System.out.println("相同: " + sameCount);
-            System.out.println("差异: " + differentCount);
-            System.out.println("源独有: " + sourceOnlyCount);
-            System.out.println("目标独有: " + targetOnlyCount);
+            log.info("相同: : {}", sameCount);
+            log.info("差异: : {}", differentCount);
+            log.info("源独有: : {}", sourceOnlyCount);
+            log.info("目标独有: : {}", targetOnlyCount);
             
             return ResponseEntity.ok(new ApiResponse<>(true, "比对成功", result));
         } catch (Exception e) {
@@ -661,7 +668,7 @@ public class NacosSyncController {
         
         try {
             baseUrl = baseUrl.replaceAll("/$", "");
-            System.out.println("尝试解析命名空间: " + namespace);
+            log.info("尝试解析命名空间: : {}", namespace);
             
             // 获取认证 token
             String token = "";
@@ -740,7 +747,7 @@ public class NacosSyncController {
                     }
                 }
                 
-                System.out.println("✗ 在命名空间列表中未找到名称为 '" + namespace + "' 的命名空间，将使用原值作为 namespaceId");
+                log.info("✗ 在命名空间列表中未找到名称为 ': {}", namespace + "' 的命名空间，将使用原值作为 namespaceId");
             } else {
                 System.out.println("获取命名空间列表失败 (HTTP " + response.statusCode() + ")");
             }
@@ -757,79 +764,79 @@ public class NacosSyncController {
     private List<Map<String, String>> fetchNacosConfigs(String baseUrl, String namespace, String username, String password) throws Exception {
         // 首先尝试根据命名空间名称获取其 ID
         String finalNamespace = namespace;
-        System.out.println("\n========== 开始解析命名空间 ==========");
-        System.out.println("输入的命名空间: " + namespace);
+        log.info("{}",  "\n========== 开始解析命名空间 ==========");
+        log.info("输入的命名空间: : {}", namespace);
         
         if (namespace != null && !namespace.isEmpty() && !"public".equals(namespace)) {
             // 检查是否已经是 UUID 格式，如果不是则尝试解析
             if (!namespace.matches("[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}")) {
-                System.out.println("→ 命名空间不是UUID格式，调用resolveNamespaceId进行转换...");
+                log.info("{}",  "→ 命名空间不是UUID格式，调用resolveNamespaceId进行转换...");
                 String namespaceId = resolveNamespaceId(baseUrl, namespace, username, password);
-                System.out.println("← resolveNamespaceId返回结果: " + namespaceId);
+                log.info("← resolveNamespaceId返回结果: : {}", namespaceId);
                 
                 if (namespaceId != null && !namespaceId.isEmpty() && !namespaceId.equals(namespace)) {
-                    System.out.println("✓ 命名空间名称 '" + namespace + "' 已解析为 ID: " + namespaceId);
+                    log.info("✓ 命名空间名称 ': {}", namespace + "' 已解析为 ID: " + namespaceId);
                     finalNamespace = namespaceId;
                 } else {
-                    System.out.println("✗ 命名空间名称 '" + namespace + "' 无法解析为ID（返回值为空或相同），继续使用原值");
+                    log.info("✗ 命名空间名称 ': {}", namespace + "' 无法解析为ID（返回值为空或相同），继续使用原值");
                     // 如果解析失败但不是空字符串，说明 namespace 本身可能就是 ID
                     if (namespaceId != null && !namespaceId.isEmpty()) {
                         finalNamespace = namespaceId;
                     }
                 }
             } else {
-                System.out.println("→ 命名空间已是 UUID 格式，无需解析");
+                log.info("{}",  "→ 命名空间已是 UUID 格式，无需解析");
             }
         } else {
-            System.out.println("→ 命名空间为public或为空，不需要解析");
+            log.info("{}",  "→ 命名空间为public或为空，不需要解析");
         }
         
-        System.out.println("最终使用的命名空间 ID: " + finalNamespace);
-        System.out.println("========== 命名空间解析完成 ==========\n");
+        log.info("最终使用的命名空间 ID: : {}", finalNamespace);
+        log.info("{}",  "========== 命名空间解析完成 ==========\n");
         
         List<Map<String, String>> configs = new ArrayList<>();
         baseUrl = baseUrl.replaceAll("/$", "");
         
-        System.out.println("=== 获取 Nacos 配置列表 ===");
-        System.out.println("URL: " + baseUrl);
+        log.info("{}",  "=== 获取 Nacos 配置列表 ===");
+        log.info("URL: : {}", baseUrl);
         System.out.println("Namespace: " + (finalNamespace != null && !finalNamespace.isEmpty() ? finalNamespace : "public"));
-        System.out.println("Username: " + username);
+        log.info("Username: : {}", username);
         
         // 获取认证 token
         String token = null;
-        System.out.println("尝试获取认证 token...");
+        log.info("{}",  "尝试获取认证 token...");
         System.out.println("提供的用户名: [" + (username != null && !username.isEmpty() ? username : "空") + "]");
         System.out.println("提供的密码: [" + (password != null && !password.isEmpty() ? "有" : "空") + "]");
         
         // 如果用户名和密码都为空，尝试无认证方式
         if ((username == null || username.isEmpty()) && (password == null || password.isEmpty())) {
-            System.out.println("未提供认证信息，将直接使用无认证方式");
+            log.info("{}",  "未提供认证信息，将直接使用无认证方式");
             token = "";
             // 确保这种情况下不会添加任何认证头
             username = null;
             password = null;
         } else {
             // 尝试使用提供的凭证进行认证
-            System.out.println("尝试使用提供的凭证进行认证...");
+            log.info("{}",  "尝试使用提供的凭证进行认证...");
             
             // 首先尝试 2.x 认证
-            System.out.println("Step 1: 尝试 Nacos 2.x 认证");
+            log.info("{}",  "Step 1: 尝试 Nacos 2.x 认证");
             Map<String, Object> auth2Result = tryNacos2Authentication(baseUrl, username, password);
             if ((boolean) auth2Result.getOrDefault("success", false)) {
                 token = (String) auth2Result.get("token");
-                System.out.println("✓ Nacos 2.x 认证成功");
+                log.info("{}",  "✓ Nacos 2.x 认证成功");
             } else {
                 System.out.println("✗ Nacos 2.x 认证失败: " + auth2Result.getOrDefault("error", "unknown error"));
                 
                 // 尝试 1.4.0 认证
-                System.out.println("Step 2: 尝试 Nacos 1.4.0 认证");
+                log.info("{}",  "Step 2: 尝试 Nacos 1.4.0 认证");
                 Map<String, Object> auth1Result = tryNacos1Authentication(baseUrl, username, password);
                 if ((boolean) auth1Result.getOrDefault("success", false)) {
                     token = (String) auth1Result.get("token");
-                    System.out.println("✓ Nacos 1.4.0 认证成功");
+                    log.info("{}",  "✓ Nacos 1.4.0 认证成功");
                 } else {
                     System.out.println("✗ Nacos 1.4.0 认证失败: " + auth1Result.getOrDefault("error", "unknown error"));
-                    System.out.println("Step 3: 认证完全失败，将改用完全无认证模式");
+                    log.info("{}",  "Step 3: 认证完全失败，将改用完全无认证模式");
                     // 认证失败 - 改用完全无认证方式
                     token = "";
                     username = null;  // 清除用户名以避免添加 Basic Auth
@@ -852,10 +859,10 @@ public class NacosSyncController {
             // 2. 针对指定的命名空间，尝试扫描其中的所有配置
             // 3. 通过逐个尝试获取配置内容来判断配置是否存在
             
-            System.out.println("═══ 新策略：先获取所有命名空间，再逐个扫描配置 ═══");
+            log.info("{}",  "═══ 新策略：先获取所有命名空间，再逐个扫描配置 ═══");
             
             // 步骤1：获取所有命名空间
-            System.out.println("步骤1：获取所有命名空间列表");
+            log.info("{}",  "步骤1：获取所有命名空间列表");
             String namespacesUrl = baseUrl + "/nacos/v1/console/namespaces";
             
             HttpRequest.Builder nsBuilder = HttpRequest.newBuilder()
@@ -874,7 +881,7 @@ public class NacosSyncController {
             
             // 解析命名空间（暂时跳过，我们先尝试直接扫描指定命名空间中的配置）
             // 方法1：使用 /nacos/v1/cs/configs 端点 + search=blur 参数（UI使用的接口）
-            System.out.println("\n尝试方法1：GET /nacos/v1/cs/configs?search=blur（UI使用的标准接口）");
+            log.info("{}",  "\n尝试方法1：GET /nacos/v1/cs/configs?search=blur（UI使用的标准接口）");
             
             // 构建 URL 参数
             StringBuilder queryParams = new StringBuilder();
@@ -887,9 +894,9 @@ public class NacosSyncController {
             // 使用 tenant 参数（这是 /nacos/v1/cs/configs 接口的参数名）
             if (finalNamespace != null && !finalNamespace.isEmpty()) {
                 queryParams.append("&tenant=").append(java.net.URLEncoder.encode(finalNamespace, "UTF-8"));
-                System.out.println("命名空间 (tenant): " + finalNamespace);
+                log.info("命名空间 (tenant): : {}", finalNamespace);
             } else {
-                System.out.println("使用默认命名空间(public)");
+                log.info("使用默认命名空间(public)");
             }
             
             if (token != null && !token.isEmpty()) {
@@ -979,7 +986,7 @@ public class NacosSyncController {
                 if (!namespace.matches("[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}")) {
                     String resolvedId = resolveNamespaceId(baseUrl, namespace, username, password);
                     if (resolvedId != null && !resolvedId.isEmpty() && !resolvedId.equals(namespace)) {
-                        System.out.println("在获取配置内容时，命名空间 '" + namespace + "' 已解析为 ID: " + resolvedId);
+                        log.info("在获取配置内容时，命名空间 ': {}", namespace + "' 已解析为 ID: " + resolvedId);
                         finalNamespace = resolvedId;
                     }
                 }
@@ -1024,17 +1031,17 @@ public class NacosSyncController {
                     // 不要截断内容，保留完整的配置内容
                     return content;
                 } else {
-                    System.out.println("  ✗ 获取到空内容或错误响应");
+                    log.info("{}",  "  ✗ 获取到空内容或错误响应");
                     return "";
                 }
             } else if (response.statusCode() == 404) {
-                System.out.println("  ✗ 配置不存在 (404)，该配置可能不在指定的命名空间 [" + finalNamespace + "] 中");
+                log.info("  ✗ 配置不存在 (404)，该配置可能不在指定的命名空间 [: {}", finalNamespace + "] 中");
                 return "";
             } else {
                 // 检查是否真的获取到了内容（而不是error页面）
                 String content = response.body();
                 if (content != null && !content.isEmpty() && !content.contains("\"error\"")) {
-                    System.out.println("  ✓ 通过非200状态码也获取到了内容");
+                    log.info("{}",  "  ✓ 通过非200状态码也获取到了内容");
                     return content;
                 } else {
                     System.out.println("  ✗ 获取失败，错误响应: " + response.body().substring(0, Math.min(100, response.body().length())));
@@ -1056,7 +1063,7 @@ public class NacosSyncController {
         try {
             // 打印响应体的前500个字符用于调试
             String preview = jsonResponse.substring(0, Math.min(500, jsonResponse.length()));
-            System.out.println("响应体预览: " + preview);
+            log.info("响应体预览: : {}", preview);
             
             // Nacos API 返回格式:
             // {
@@ -1082,7 +1089,7 @@ public class NacosSyncController {
                 
                 // 检查是否为空数组
                 if (pageItemsStr.trim().isEmpty()) {
-                    System.out.println("pageItems 为空数组");
+                    log.info("{}",  "pageItems 为空数组");
                     return configs;
                 }
                 
@@ -1106,7 +1113,7 @@ public class NacosSyncController {
                     }
                 }
             } else {
-                System.out.println("未找到 pageItems 数据，尝试备用解析方法");
+                log.info("{}",  "未找到 pageItems 数据，尝试备用解析方法");
                 
                 // 备用方法：直接查找所有 dataId 和 group
                 java.util.regex.Pattern dataIdPattern = java.util.regex.Pattern.compile("\"dataId\"\\s*:\\s*\"([^\"]+)\"");
@@ -1141,7 +1148,7 @@ public class NacosSyncController {
                     
                     if (!isDuplicate) {
                         configs.add(config);
-                        System.out.println("备用解析: " + dataId + " | " + group);
+                        log.info("备用解析: : {}", dataId + " | " + group);
                     }
                     
                     lastIndex = dataIdMatcher.end();
@@ -1200,13 +1207,13 @@ public class NacosSyncController {
                     .build();
                 HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
                 if (response.statusCode() == 200) {
-                    System.out.println("Detected Nacos 2.x or above");
+                    log.info("{}",  "Detected Nacos 2.x or above");
                     return "2.x";
                 }
             } catch (java.net.ConnectException e) {
-                System.out.println("Nacos 2.x endpoint not found (connection refused)");
+                log.info("Nacos 2.x endpoint not found (connection refused)");
             } catch (java.net.UnknownHostException e) {
-                System.out.println("Nacos 2.x endpoint not found (unknown host)");
+                log.info("Nacos 2.x endpoint not found (unknown host)");
             } catch (Exception e) {
                 System.out.println("Nacos 2.x endpoint not found: " + e.getMessage());
             }
@@ -1220,13 +1227,13 @@ public class NacosSyncController {
                     .build();
                 HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
                 if (response.statusCode() == 200) {
-                    System.out.println("Detected Nacos 1.4.0");
+                    log.info("{}",  "Detected Nacos 1.4.0");
                     return "1.4.0";
                 }
             } catch (java.net.ConnectException e) {
-                System.out.println("Nacos 1.4.0 endpoint not found (connection refused)");
+                log.info("Nacos 1.4.0 endpoint not found (connection refused)");
             } catch (java.net.UnknownHostException e) {
-                System.out.println("Nacos 1.4.0 endpoint not found (unknown host)");
+                log.info("Nacos 1.4.0 endpoint not found (unknown host)");
             } catch (Exception e) {
                 System.out.println("Nacos 1.4.0 endpoint not found: " + e.getMessage());
             }
@@ -1249,7 +1256,7 @@ public class NacosSyncController {
             String requestBody = String.format("username=%s&password=%s", 
                 urlEncode(username), urlEncode(password));
             
-            System.out.println("尝试 Nacos 2.x 认证: " + loginUrl);
+            log.info("尝试 Nacos 2.x 认证: : {}", loginUrl);
             
             HttpClient client = HttpClient.newHttpClient();
             HttpRequest httpRequest = HttpRequest.newBuilder()
@@ -1270,7 +1277,7 @@ public class NacosSyncController {
                 if (token != null && !token.isEmpty()) {
                     result.put("success", true);
                     result.put("token", token);
-                    System.out.println("✓ Nacos 2.x 认证成功");
+                    log.info("{}",  "✓ Nacos 2.x 认证成功");
                     return result;
                 }
             }
@@ -1462,7 +1469,7 @@ public class NacosSyncController {
                     result.put("connected", false);
                     result.put("message", "仓库不存在或无权限访问");
                     result.put("branches", Arrays.asList("master", "main", "develop"));
-                    System.err.println("Git command failed with exit code: " + exitCode);
+                    log.error("Git command failed with exit code: : {}", exitCode);
                     return ResponseEntity.ok(new ApiResponse<>(false, "Connection failed", result));
                 }
             } catch (Exception e) {
@@ -1776,3 +1783,6 @@ public class NacosSyncController {
         public void setTargetPassword(String targetPassword) { this.targetPassword = targetPassword; }
     }
 }
+
+
+

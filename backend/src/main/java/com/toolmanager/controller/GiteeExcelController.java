@@ -1,17 +1,22 @@
 package com.toolmanager.controller;
 
+import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.ss.util.CellRangeAddressList;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.web.bind.annotation.*;
 import lombok.Data;
-
 import javax.servlet.ServletOutputStream;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.util.*;
 
+/**
+ * Gitee Excel 导出控制器
+ * 处理 Gitee 数据的 Excel 导出和下载功能
+ */
+@Slf4j
 @RestController
 @RequestMapping("/api/gitee")
 @CrossOrigin
@@ -19,7 +24,7 @@ public class GiteeExcelController {
 
     @PostMapping("/export-excel")
     public void exportExcel(@RequestBody ExportRequest request, HttpServletResponse response) throws IOException {
-        System.out.println("=== Excel Export Request ===");
+        log.info("{}",  "=== Excel Export Request ===");
         System.out.println("Filename: " + request.getFilename());
         System.out.println("Headers: " + request.getHeaders());
         System.out.println("Data count: " + (request.getData() != null ? request.getData().size() : 0));
@@ -31,7 +36,7 @@ public class GiteeExcelController {
         if (request.getData() != null && !request.getData().isEmpty()) {
             System.out.println("First row: " + request.getData().get(0));
         }
-        System.out.println("===========================");
+        log.info("{}",  "===========================");
 
         String filename = URLEncoder.encode(request.getFilename(), "UTF-8") + ".xlsx";
         response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
@@ -50,18 +55,18 @@ public class GiteeExcelController {
             double headerRowHeight = excelStyle != null && excelStyle.getHeaderRowHeight() != null ? excelStyle.getHeaderRowHeight() : 22;
             int columnWidthChars = excelStyle != null && excelStyle.getColumnWidth() != null ? excelStyle.getColumnWidth() : 20;
             
-            System.out.println("=== Excel Style Config ===");
-            System.out.println("Raw rowHeight: " + rowHeight + " pt");
-            System.out.println("Raw headerRowHeight: " + headerRowHeight + " pt");
-            System.out.println("Raw columnWidth: " + columnWidthChars + " chars");
+            log.info("{}",  "=== Excel Style Config ===");
+            log.info("Raw rowHeight: : {}", rowHeight + " pt");
+            log.info("Raw headerRowHeight: : {}", headerRowHeight + " pt");
+            log.info("Raw columnWidth: : {}", columnWidthChars + " chars");
             
             // 行高最小值为 0.75 点（Excel 最小值），最大值为 400 点
             rowHeight = Math.max(0.75, Math.min(rowHeight, 400));
             headerRowHeight = Math.max(0.75, Math.min(headerRowHeight, 400));
             
-            System.out.println("Adjusted rowHeight: " + rowHeight + " pt");
-            System.out.println("Adjusted headerRowHeight: " + headerRowHeight + " pt");
-            System.out.println("==========================");
+            log.info("Adjusted rowHeight: : {}", rowHeight + " pt");
+            log.info("Adjusted headerRowHeight: : {}", headerRowHeight + " pt");
+            log.info("{}",  "==========================");
             
             // Create header row style
             CellStyle headerStyle = workbook.createCellStyle();
@@ -132,7 +137,7 @@ public class GiteeExcelController {
                             new CellRangeAddressList(1, lastRow - 1, colIndex, colIndex)
                         );
                         sheet.addValidationData(dataValidation);
-                        System.out.println("Added validation for column " + colIndex);
+                        log.info("Added validation for column : {}", colIndex);
                     }
                 }
             }
@@ -141,7 +146,7 @@ public class GiteeExcelController {
             workbook.write(outputStream);
             outputStream.flush();
             workbook.close();
-            System.out.println("Excel export completed successfully");
+            log.info("{}",  "Excel export completed successfully");
         } catch (Exception e) {
             e.printStackTrace();
             System.out.println("Excel export failed: " + e.getMessage());
@@ -172,3 +177,6 @@ public class GiteeExcelController {
         private List<String> options;
     }
 }
+
+
+

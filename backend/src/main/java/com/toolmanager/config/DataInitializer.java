@@ -1,5 +1,7 @@
 package com.toolmanager.config;
 
+import lombok.extern.slf4j.Slf4j;
+
 import com.toolmanager.entity.*;
 import com.toolmanager.repository.*;
 import lombok.RequiredArgsConstructor;
@@ -8,6 +10,11 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
 
+/**
+ * 数据初始化器 - 应用启动时初始化系统基础数据
+ * 包括菜单、系统参数、公告、数据库连接、代码模板等
+ */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class DataInitializer implements CommandLineRunner {
@@ -19,25 +26,37 @@ public class DataInitializer implements CommandLineRunner {
     private final DocumentRepository documentRepository;
     private final DocumentVersionRepository documentVersionRepository;
 
+    /**
+     * 运行初始化逻辑 - 初始化所有基础数据
+     */
     @Override
     public void run(String... args) throws Exception {
         try {
+            // 初始化菜单项
             initializeMenuItems();
+            // 初始化系统参数
             initializeSystemParameters();
+            // 初始化公告
             initializeAnnouncements();
+            // 初始化数据库连接
             initializeDbConnections();
+            // 初始化代码模板
             initializeCodeTemplates();
+            // 初始化文档
             initializeDocuments();
-            System.out.println("✓ All data initialization completed successfully!");
+            log.info("✓ All data initialization completed successfully!");
         } catch (Exception e) {
-            System.err.println("Error during data initialization: " + e.getMessage());
+            log.error("Error during data initialization: {}", e.getMessage(), e);
             e.printStackTrace();
         }
     }
 
+    /**
+     * 初始化菜单项 - 添加系统所有菜单和子菜单
+     */
     private void initializeMenuItems() {
         if (menuItemRepository.count() == 0) {
-            // Root menus
+            // 初始化根级菜单
             menuItemRepository.save(new MenuItem(null, "1", "首页", "/dashboard", "dashboard", true, null, 1, LocalDateTime.now(), LocalDateTime.now(), "admin"));
             menuItemRepository.save(new MenuItem(null, "6", "公告通知", "/announcement", "docs", true, null, 2, LocalDateTime.now(), LocalDateTime.now(), "admin"));
             menuItemRepository.save(new MenuItem(null, "10", "优化建议", "/suggestions", "suggestions", true, null, 3, LocalDateTime.now(), LocalDateTime.now(), "admin"));
@@ -61,6 +80,9 @@ public class DataInitializer implements CommandLineRunner {
         }
     }
 
+    /**
+     * 初始化系统参数 - 设置系统级别的配置参数
+     */
     private void initializeSystemParameters() {
         if (systemParameterRepository.count() == 0) {
             systemParameterRepository.save(new SystemParameter(null, "SESSION_TIMEOUT", "3000", "NUMBER", "Session timeout in seconds", "System", LocalDateTime.now(), LocalDateTime.now(), "admin"));
@@ -207,3 +229,4 @@ public class DataInitializer implements CommandLineRunner {
         documentVersionRepository.save(v4);
     }
 }
+

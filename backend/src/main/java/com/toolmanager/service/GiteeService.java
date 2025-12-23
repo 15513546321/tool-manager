@@ -1,5 +1,6 @@
 package com.toolmanager.service;
 
+import lombok.extern.slf4j.Slf4j;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -9,6 +10,11 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.*;
 
+/**
+ * Gitee 服务类
+ * 处理 Gitee API 调用、仓库信息获取、统计数据计算等业务逻辑
+ */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class GiteeService {
@@ -22,9 +28,9 @@ public class GiteeService {
      * Supports both SSH and Token (HTTP) authentication
      */
     public Map<String, Object> testConnection(String repoUrl, String authType, String accessToken, String privateKey) {
-        System.out.println("=== Testing Gitee Connection ===");
-        System.out.println("URL: " + repoUrl);
-        System.out.println("Auth Type: " + authType);
+        log.info("{}",  "=== Testing Gitee Connection ===");
+        log.info("URL: : {}", repoUrl);
+        log.info("Auth Type: : {}", authType);
         
         if ("ssh".equals(authType)) {
             // Use Git SSH operations
@@ -63,11 +69,11 @@ public class GiteeService {
             
             String owner = urlParts[0];
             String repo = urlParts[1];
-            System.out.println("Testing connection to: " + owner + "/" + repo);
+            log.info("Testing connection to: : {}", owner + "/" + repo);
             
             // Test API call with token
             String apiUrl = String.format("%s/repos/%s/%s", GITEE_API_BASE, owner, repo);
-            System.out.println("Calling API: " + apiUrl);
+            log.info("Calling API: : {}", apiUrl);
             Map<String, Object> response = callGiteeApi(apiUrl, accessToken);
             
             if (response != null && response.containsKey("id")) {
@@ -75,7 +81,7 @@ public class GiteeService {
                 result.put("message", "✓ Connection successful!");
                 result.put("repository", response.get("name"));
                 result.put("description", response.getOrDefault("description", ""));
-                System.out.println("Connection test SUCCESS for: " + owner + "/" + repo);
+                log.info("Connection test SUCCESS for: : {}", owner + "/" + repo);
                 return result;
             }
             
@@ -110,7 +116,7 @@ public class GiteeService {
                 // Fallback to Gitee API
                 return getBranchesHTTP(repoUrl, accessToken, searchQuery, author);
             } else {
-                System.err.println("Unknown auth type: " + authType);
+                log.error("Unknown auth type: : {}", authType);
                 return branches;
             }
         } catch (Exception e) {
@@ -127,13 +133,13 @@ public class GiteeService {
         List<Map<String, Object>> branches = new ArrayList<>();
         try {
             if (!"token".equals("token") || accessToken == null || accessToken.trim().isEmpty()) {
-                System.err.println("Access Token is empty!");
+                log.error("Error: {}", "Access Token is empty!");
                 return branches;
             }
             
             String[] urlParts = extractRepoInfo(repoUrl);
             if (urlParts == null) {
-                System.err.println("Failed to extract repo info from URL: " + repoUrl);
+                log.error("Failed to extract repo info from URL: : {}", repoUrl);
                 return branches;
             }
             
@@ -142,7 +148,7 @@ public class GiteeService {
             System.out.println("Fetching branches for: " + owner + "/" + repo + ", author filter: " + (author != null ? author : "None"));
             
             String apiUrl = String.format("%s/repos/%s/%s/branches?per_page=100", GITEE_API_BASE, owner, repo);
-            System.out.println("Calling Gitee API: " + apiUrl);
+            log.info("Calling Gitee API: : {}", apiUrl);
             List<Map<String, Object>> response = callGiteeApiList(apiUrl, accessToken);
             
             if (response != null && !response.isEmpty()) {
@@ -204,7 +210,7 @@ public class GiteeService {
                 }
                 System.out.println("Filtered to " + branches.size() + " branches after search and author filter");
             } else {
-                System.err.println("Empty response from Gitee API");
+                log.error("Error: {}", "Empty response from Gitee API");
             }
         } catch (Exception e) {
             System.err.println("Failed to fetch branches: " + e.getMessage());
@@ -228,7 +234,7 @@ public class GiteeService {
                 // Use Gitee HTTP API
                 return getChangesetsHTTP(repoUrl, accessToken, branches, author);
             } else {
-                System.err.println("Unknown auth type: " + authType);
+                log.error("Unknown auth type: : {}", authType);
                 return changesets;
             }
         } catch (Exception e) {
@@ -247,7 +253,7 @@ public class GiteeService {
         try {
             String[] urlParts = extractRepoInfo(repoUrl);
             if (urlParts == null) {
-                System.err.println("Failed to extract repo info from URL: " + repoUrl);
+                log.error("Failed to extract repo info from URL: : {}", repoUrl);
                 return changesets;
             }
             
@@ -259,7 +265,7 @@ public class GiteeService {
                 for (String branch : branches) {
                     String apiUrl = String.format("%s/repos/%s/%s/commits?sha=%s&per_page=100", 
                         GITEE_API_BASE, owner, repo, branch);
-                    System.out.println("Calling Gitee API for commits on branch: " + branch);
+                    log.info("Calling Gitee API for commits on branch: : {}", branch);
                     List<Map<String, Object>> commits = callGiteeApiList(apiUrl, accessToken);
                     
                     if (commits != null && !commits.isEmpty()) {
@@ -411,7 +417,7 @@ public class GiteeService {
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> callGiteeApiList(String urlString, String accessToken) throws Exception {
         URL url = new URL(urlString + "&access_token=" + accessToken);
-        System.out.println("Making HTTP request to: " + urlString + "&access_token=***");
+        log.info("Making HTTP request to: : {}", urlString + "&access_token=***");
         
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("GET");
@@ -420,7 +426,7 @@ public class GiteeService {
         conn.setReadTimeout(5000);
         
         int responseCode = conn.getResponseCode();
-        System.out.println("Gitee API response code: " + responseCode);
+        log.info("Gitee API response code: : {}", responseCode);
         
         if (responseCode == 200) {
             BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), "UTF-8"));
@@ -526,4 +532,7 @@ public class GiteeService {
         return new ArrayList<>(changedFiles);
     }
 }
+
+
+
 
