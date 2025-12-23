@@ -37,6 +37,14 @@ interface ChangesetItem {
   message: string;
 }
 
+// Analysis collection item - represents a selected branch for analysis
+interface AnalysisItem {
+  id: string; // UUID for unique identification
+  branchName: string;
+  addedTime: string; // When it was added to the collection
+  description?: string; // Optional description
+}
+
 // Default Export Fields Configuration
 const DEFAULT_EXPORT_FIELDS: ExportField[] = [
   { id: 'filePath', label: '文件路径', value: 'file_path', visible: true, type: 'text' },
@@ -78,6 +86,10 @@ export const GiteeManagement: React.FC = () => {
   const [branches, setBranches] = useState<GiteeBranch[]>([]);
   const [selectedBranches, setSelectedBranches] = useState<Set<string>>(new Set());
   const [commits, setCommits] = useState<GiteeCommit[]>([]);
+  
+  // Analysis Collection - stores selected branches for later analysis
+  const [analysisList, setAnalysisList] = useState<AnalysisItem[]>([]);
+  const [isAnalysisListOpen, setIsAnalysisListOpen] = useState(false);
   
   // Changeset Data - now structured with branch info
   const [changesetData, setChangesetData] = useState<Map<string, ChangesetItem[]>>(new Map());
@@ -246,6 +258,36 @@ export const GiteeManagement: React.FC = () => {
     };
     
     loadExcelStyle();
+  }, []);
+
+  // Load analysis list from backend or localStorage
+  useEffect(() => {
+    const loadAnalysisList = async () => {
+      try {
+        const result = await apiService.configApi.getByKey('gitee-analysis-list');
+        if (result && result.configValue) {
+          const parsed = JSON.parse(result.configValue);
+          if (Array.isArray(parsed)) {
+            setAnalysisList(parsed);
+          }
+        }
+      } catch (err) {
+        // Fallback to localStorage
+        const saved = localStorage.getItem('gitee-analysis-list');
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed)) {
+              setAnalysisList(parsed);
+            }
+          } catch (e) {
+            console.error('Failed to load analysis list:', e);
+          }
+        }
+      }
+    };
+    
+    loadAnalysisList();
   }, []);
 
   // Handle auth type switching - load config from database for the selected auth type
@@ -543,6 +585,177 @@ export const GiteeManagement: React.FC = () => {
     } catch (error) {
       console.error('Failed to fetch branches:', error);
       alert(`获取分支失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Add selected branches to analysis collection
+  const handleAddToAnalysis = async () => {
+    if (selectedBranches.size === 0) {
+      alert('请先选择至少一个分支');
+      return;
+    }
+
+    const newItems: AnalysisItem[] = Array.from(selectedBranches).map(branchName => ({
+      id: `${branchName}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      branchName,
+      addedTime: new Date().toLocaleString('zh-CN')
+    }));
+
+    const updatedList = [...analysisList, ...newItems];
+    setAnalysisList(updatedList);
+
+    // Save to backend
+    try {
+      await apiService.configApi.save({
+        configKey: 'gitee-analysis-list',
+        configValue: JSON.stringify(updatedList),
+        configType: 'GITEE',
+        description: 'Gitee analysis collection - selected branches for analysis'
+      });
+      console.log('✓ Analysis list saved to backend');
+    } catch (err) {
+      console.warn('Failed to save to backend, using localStorage:', err);
+      localStorage.setItem('gitee-analysis-list', JSON.stringify(updatedList));
+    }
+
+    recordAction('Gitee管理', `添加分支到分析集合 - 数量: ${newItems.length}`);
+    alert(`✓ 已添加 ${newItems.length} 个分支到分析集合`);
+    setSelectedBranches(new Set());
+  };
+
+  // Remove analysis item from collection
+  const handleRemoveFromAnalysis = async (itemId: string) => {
+    const updatedList = analysisList.filter(item => item.id !== itemId);
+    setAnalysisList(updatedList);
+
+    // Save to backend
+    try {
+      await apiService.configApi.save({
+        configKey: 'gitee-analysis-list',
+        configValue: JSON.stringify(updatedList),
+        configType: 'GITEE',
+        description: 'Gitee analysis collection - selected branches for analysis'
+      });
+      console.log('✓ Analysis list updated and saved to backend');
+    } catch (err) {
+      console.warn('Failed to save to backend, using localStorage:', err);
+      localStorage.setItem('gitee-analysis-list', JSON.stringify(updatedList));
+    }
+
+    recordAction('Gitee管理', `从分析集合中删除分支: ${analysisList.find(item => item.id === itemId)?.branchName}`);
+  };
+
+  // Clear all items from analysis collection
+  const handleClearAnalysis = async () => {
+    if (analysisList.length === 0) {
+      alert('分析集合为空');
+      return;
+    }
+
+    if (!window.confirm('确定要清空分析集合中的所有项目吗？')) {
+      return;
+    }
+
+    setAnalysisList([]);
+
+    // Save to backend
+    try {
+      await apiService.configApi.save({
+        configKey: 'gitee-analysis-list',
+        configValue: JSON.stringify([]),
+        configType: 'GITEE',
+        description: 'Gitee analysis collection - selected branches for analysis'
+      });
+      console.log('✓ Analysis list cleared and saved to backend');
+    } catch (err) {
+      console.warn('Failed to save to backend, using localStorage:', err);
+      localStorage.setItem('gitee-analysis-list', JSON.stringify([]));
+    }
+
+    recordAction('Gitee管理', '清空分析集合');
+    alert('✓ 分析集合已清空');
+  };
+
+  // Fetch changesets for all branches in analysis collection
+  const handleFetchAnalysisChangesets = async () => {
+    if (analysisList.length === 0) {
+      alert('分析集合为空，请先添加分支');
+      return;
+    }
+
+    if (!config.repoUrl || !config.repoUrl.trim()) {
+      alert('请先配置 Gitee 仓库地址');
+      setIsConfigOpen(true);
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // Extract branch names from analysis list
+      const branches = analysisList.map(item => item.branchName);
+
+      // Call backend API to fetch changesets
+      const response = await fetch('/api/gitee/changesets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repoUrl: config.repoUrl,
+          authType: config.authType,
+          accessToken: config.accessToken,
+          privateKey: config.privateKey,
+          branches,
+          author: authorFilter || undefined
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`API Error: ${response.status}`);
+      }
+
+      const result = await response.json();
+      const newChangesetData = new Map<string, ChangesetItem[]>();
+      const newPagination = new Map<string, { page: number; size: number }>();
+      
+      if (result.data && Array.isArray(result.data)) {
+        // Group items by branch
+        const branchMap = new Map<string, any[]>();
+        result.data.forEach((item: any) => {
+          const branchName = item.branch;
+          if (!branchMap.has(branchName)) {
+            branchMap.set(branchName, []);
+          }
+          branchMap.get(branchName)!.push(item);
+        });
+        
+        // Process each branch
+        branchMap.forEach((items, branchName) => {
+          const changesetItems: ChangesetItem[] = items.map((item: any) => ({
+            branch: item.branch,
+            commitHash: item.commitHash,
+            author: item.author,
+            date: item.date,
+            filePath: item.filePath,
+            message: item.message,
+            requirementGroup: item.requirementGroup
+          }));
+          
+          // Deduplicate within each branch
+          const deduplicatedItems = deduplicateChangesetItems(changesetItems);
+          
+          newChangesetData.set(branchName, deduplicatedItems);
+          newPagination.set(branchName, { page: 1, size: 10 });
+        });
+      }
+      
+      setChangesetData(newChangesetData);
+      setBranchPagination(newPagination);
+      recordAction('Gitee管理', `从分析集合导出变更集 - 分支数: ${analysisList.length}`);
+    } catch (error) {
+      console.error('Failed to fetch changesets:', error);
+      alert(`获取变更集失败: ${error instanceof Error ? error.message : '未知错误'}`);
     } finally {
       setLoading(false);
     }
@@ -992,6 +1205,13 @@ export const GiteeManagement: React.FC = () => {
         </div>
         <div className="flex gap-2">
           <button 
+              onClick={() => setIsAnalysisListOpen(!isAnalysisListOpen)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition-all shadow-sm relative ${isAnalysisListOpen ? 'bg-slate-200 text-slate-700' : 'bg-white text-red-600 border border-slate-200 hover:bg-slate-50'}`}
+          >
+              <CheckSquare size={18}/> {isAnalysisListOpen ? '收起集合' : '分析集合'}
+              {analysisList.length > 0 && <span className="absolute top-0 right-0 text-xs bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center">{analysisList.length}</span>}
+          </button>
+          <button 
               onClick={() => setIsExcelStyleOpen(!isExcelStyleOpen)}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition-all shadow-sm ${isExcelStyleOpen ? 'bg-slate-200 text-slate-700' : 'bg-white text-purple-600 border border-slate-200 hover:bg-slate-50'}`}
           >
@@ -1397,6 +1617,68 @@ export const GiteeManagement: React.FC = () => {
           </div>
       )}
 
+      {/* Analysis Collection Panel */}
+      {isAnalysisListOpen && (
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-6 animate-in fade-in slide-in-from-top-4">
+              <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2">
+                  <CheckSquare size={18} className="text-red-500"/> 分析集合 ({analysisList.length})
+              </h3>
+              <p className="text-sm text-slate-600 mb-4">在这里管理选择的分支，可以多次查询并持续添加分支到集合中，最后统一导出变更集。</p>
+
+              {analysisList.length > 0 ? (
+                  <div className="space-y-3 max-h-96 overflow-y-auto mb-4">
+                      {analysisList.map((item, idx) => (
+                          <div key={item.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200 hover:border-red-300 flex items-center justify-between gap-3 transition-all">
+                              <div className="flex-1 min-w-0">
+                                  <div className="font-bold text-slate-700 text-sm">{idx + 1}. {item.branchName}</div>
+                                  <div className="text-xs text-slate-400 mt-1">{item.addedTime}</div>
+                              </div>
+                              <button
+                                  onClick={() => handleRemoveFromAnalysis(item.id)}
+                                  className="p-1.5 hover:bg-red-100 text-red-600 rounded transition-colors shrink-0"
+                                  title="删除"
+                              >
+                                  <Trash2 size={16}/>
+                              </button>
+                          </div>
+                      ))}
+                  </div>
+              ) : (
+                  <div className="text-center py-8 text-slate-400 text-sm mb-4">
+                      暂无分支，查询后添加分支到集合
+                  </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-4 border-t border-slate-200">
+                  {analysisList.length > 0 && (
+                      <>
+                          <button 
+                              onClick={handleFetchAnalysisChangesets}
+                              disabled={loading || analysisList.length === 0}
+                              className="bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm transition-colors"
+                          >
+                              <Download size={16}/>
+                              {loading ? '导出中...' : '导出变更集'}
+                          </button>
+                          <button 
+                              onClick={handleClearAnalysis}
+                              className="bg-slate-300 hover:bg-slate-400 text-slate-700 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm transition-colors"
+                          >
+                              <X size={16}/>
+                              清空集合
+                          </button>
+                      </>
+                  )}
+                  <button 
+                      onClick={() => setIsAnalysisListOpen(false)}
+                      className="text-slate-600 hover:bg-slate-100 px-4 py-2 rounded-lg text-sm font-medium"
+                  >
+                      关闭
+                  </button>
+              </div>
+          </div>
+      )}
+
       {/* Main Content */}
       <div className="flex-1 flex flex-col md:flex-row gap-6 overflow-hidden">
           {/* Left: Branch Search & Multi-Select */}
@@ -1534,14 +1816,22 @@ export const GiteeManagement: React.FC = () => {
               </div>
               
               {selectedBranches.size > 0 && (
-                  <div className="p-4 border-t border-slate-100 bg-slate-50">
+                  <div className="p-4 border-t border-slate-100 bg-slate-50 space-y-2">
+                      <button
+                          onClick={handleAddToAnalysis}
+                          disabled={loading || selectedBranches.size === 0}
+                          className="w-full bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 shadow-sm transition-colors"
+                      >
+                          <CheckSquare size={16}/>
+                          {loading ? '处理中...' : `添加 ${selectedBranches.size} 个分支到集合`}
+                      </button>
                       <button
                           onClick={handleFetchMultiBranchChanges}
                           disabled={loading || selectedBranches.size === 0}
                           className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 shadow-sm transition-colors"
                       >
                           <GitBranch size={16}/>
-                          {loading ? '处理中...' : `导出 ${selectedBranches.size} 个分支变更`}
+                          {loading ? '处理中...' : `直接导出 ${selectedBranches.size} 个分支变更`}
                       </button>
                   </div>
               )}
