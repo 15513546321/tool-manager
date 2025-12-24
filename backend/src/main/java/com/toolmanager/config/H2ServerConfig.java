@@ -41,11 +41,14 @@ public class H2ServerConfig {
         log.info("════════════════════════════════════════════════════════════");
         log.info("✓ H2 TCP 服务器已启动");
         log.info("────────────────────────────────────────────────────────────");
-        log.info("监听地址: tcp://localhost:9092");
+        log.info("监听地址: tcp://0.0.0.0:9092 (所有网卡)");
         log.info("允许远程连接");
         log.info("");
-        log.info("远程工具连接示例（DBeaver/DataGrip）:");
+        log.info("本地连接示例:");
         log.info("  JDBC URL: jdbc:h2:tcp://localhost:9092/file:./data/toolmanager;MODE=MySQL");
+        log.info("");
+        log.info("远程工具连接示例（DBeaver/DataGrip）:");
+        log.info("  JDBC URL: jdbc:h2:tcp://192.168.56.1:9092/file:./data/toolmanager;MODE=MySQL");
         log.info("  用户名: sa");
         log.info("  密码: (空)");
         log.info("════════════════════════════════════════════════════════════");

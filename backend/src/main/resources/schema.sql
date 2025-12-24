@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS config_settings (
 -- Drop old table to ensure clean schema
 -- DROP TABLE IF EXISTS db_connections;
 
-CREATE TABLE db_connections (
+CREATE TABLE IF NOT EXISTS db_connections (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(255) NOT NULL UNIQUE,
     db_type VARCHAR(50) NOT NULL,
@@ -159,7 +159,7 @@ CREATE TABLE IF NOT EXISTS suggestions (
 -- Drop old table to ensure clean schema
 -- DROP TABLE IF EXISTS ip_mappings;
 
-CREATE TABLE ip_mappings (
+CREATE TABLE IF NOT EXISTS ip_mappings (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     ip VARCHAR(50) NOT NULL UNIQUE,
     name VARCHAR(255) NOT NULL,
