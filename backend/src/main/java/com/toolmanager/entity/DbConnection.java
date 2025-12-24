@@ -20,7 +20,7 @@ public class DbConnection {
     @Column(nullable = false)
     private String name;
 
-    @Column(nullable = false)
+    @Column(name = "db_type", nullable = false)
     private String type; // ORACLE_SOURCE, ORACLE_TARGET, etc.
 
     @Column(length = 500)

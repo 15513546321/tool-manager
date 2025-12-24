@@ -100,10 +100,19 @@ export const NacosSync: React.FC = () => {
   const loadConfigs = async () => {
     try {
       setLoading(true);
+      console.log('Loading Nacos configs...');
       const response = await apiService.nacosApi.queryConfigs();
-      if (response && response.data) {
+      console.log('Response from queryConfigs:', response);
+      // 后端返回 ApiResponse<List> 格式，需要获取 data 字段
+      if (response && response.success && Array.isArray(response.data)) {
+        console.log('Setting configs from response.data:', response.data);
+        setConfigs(response.data);
+      } else if (response && response.data && Array.isArray(response.data)) {
+        console.log('Setting configs (data without success check):', response.data);
         setConfigs(response.data);
       } else if (Array.isArray(response)) {
+        // 兼容直接返回数组的情况
+        console.log('Setting configs (direct array):', response);
         setConfigs(response);
       } else {
         console.warn('Invalid response format', response);
@@ -164,14 +173,17 @@ export const NacosSync: React.FC = () => {
     }
 
     try {
+      console.log('Saving config:', formData);
       if (editingConfig?.id) {
         await apiService.nacosApi.updateConfig(editingConfig.id, formData);
         alert('Updated successfully');
       } else {
-        await apiService.nacosApi.saveConfig(formData);
+        const saveResult = await apiService.nacosApi.saveConfig(formData);
+        console.log('Save result:', saveResult);
         alert('Saved successfully');
       }
       setIsModalVisible(false);
+      console.log('Reloading configs after save...');
       loadConfigs();
     } catch (error) {
       console.error('Failed to save config', error);

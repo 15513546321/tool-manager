@@ -69,9 +69,7 @@ export const GiteeManagement: React.FC = () => {
   const [config, setConfig] = useState<GiteeConfig>({ 
       repoUrl: '', 
       authType: 'token', 
-      accessToken: '', 
-      privateKey: '',
-      publicKey: ''
+      accessToken: ''
   });
   const [isConfigOpen, setIsConfigOpen] = useState(false);
 
@@ -118,8 +116,6 @@ export const GiteeManagement: React.FC = () => {
 
         let repoUrl = '';
         let accessToken = '';
-        let privateKey = '';
-        let publicKey = '';
 
         // Load ONLY the config that matches the current auth type
         // This prevents loading Token config when in SSH mode or vice versa
@@ -138,8 +134,6 @@ export const GiteeManagement: React.FC = () => {
             if (sshResult && sshResult.configValue) {
               const sshConfig = JSON.parse(sshResult.configValue);
               repoUrl = sshConfig.repoUrl || '';
-              privateKey = sshConfig.privateKey || '';
-              publicKey = sshConfig.publicKey || '';
               console.log('✓ Loaded SSH config from database');
             }
             // Explicitly do NOT load Token config to prevent mixing
@@ -151,9 +145,7 @@ export const GiteeManagement: React.FC = () => {
         setConfig({
           repoUrl,
           authType,
-          accessToken,
-          privateKey,
-          publicKey
+          accessToken
         });
       } catch (err) {
         console.warn('Failed to load config from backend, trying localStorage:', err);
@@ -162,8 +154,6 @@ export const GiteeManagement: React.FC = () => {
         
         let repoUrl = '';
         let accessToken = '';
-        let privateKey = '';
-        let publicKey = '';
 
         // Load ONLY from localStorage key that matches authType
         if (authType === 'token') {
@@ -178,17 +168,13 @@ export const GiteeManagement: React.FC = () => {
           if (sshConfig) {
             const parsed = JSON.parse(sshConfig);
             repoUrl = parsed.repoUrl || '';
-            privateKey = parsed.privateKey || '';
-            publicKey = parsed.publicKey || '';
           }
         }
 
         setConfig({
           repoUrl,
           authType,
-          accessToken,
-          privateKey,
-          publicKey
+          accessToken
         });
       }
     };
@@ -297,8 +283,6 @@ export const GiteeManagement: React.FC = () => {
     try {
       let repoUrl = '';
       let accessToken = '';
-      let privateKey = '';
-      let publicKey = '';
 
       // Load config for the new auth type from database
       if (newAuthType === 'token') {
@@ -327,9 +311,7 @@ export const GiteeManagement: React.FC = () => {
           if (sshResult && sshResult.configValue) {
             const sshConfig = JSON.parse(sshResult.configValue);
             repoUrl = sshConfig.repoUrl || '';
-            privateKey = sshConfig.privateKey || '';
-            publicKey = sshConfig.publicKey || '';
-            console.log('✓ Loaded SSH config from database:', { repoUrl: repoUrl.substring(0, 30) + '...', hasKeys: !!privateKey });
+            console.log('✓ Loaded SSH config from database:', { repoUrl: repoUrl.substring(0, 30) + '...' });
           }
         } catch (err) {
           console.warn('Failed to load SSH config from database:', err);
@@ -338,8 +320,6 @@ export const GiteeManagement: React.FC = () => {
           if (localSsh) {
             const sshConfig = JSON.parse(localSsh);
             repoUrl = sshConfig.repoUrl || '';
-            privateKey = sshConfig.privateKey || '';
-            publicKey = sshConfig.publicKey || '';
             console.log('✓ Loaded SSH config from localStorage');
           }
         }
@@ -349,9 +329,7 @@ export const GiteeManagement: React.FC = () => {
       setConfig({
         repoUrl,
         authType: newAuthType,
-        accessToken,
-        privateKey,
-        publicKey
+        accessToken
       });
     } catch (err) {
       console.error('Error switching auth type:', err);
@@ -370,11 +348,6 @@ export const GiteeManagement: React.FC = () => {
       return;
     }
 
-    if (config.authType === 'ssh' && !config.privateKey) {
-      alert('请输入私钥');
-      return;
-    }
-
     try {
       setLoading(true);
       
@@ -385,8 +358,7 @@ export const GiteeManagement: React.FC = () => {
         body: JSON.stringify({
           repoUrl: config.repoUrl,
           authType: config.authType,
-          accessToken: config.authType === 'token' ? config.accessToken : undefined,
-          privateKey: config.authType === 'ssh' ? config.privateKey : undefined
+          accessToken: config.authType === 'token' ? config.accessToken : undefined
         })
       });
 
@@ -433,9 +405,7 @@ export const GiteeManagement: React.FC = () => {
           const sshRes = await apiService.configApi.save({
             configKey: 'gitee-ssh-config',
             configValue: JSON.stringify({
-              repoUrl: config.repoUrl,
-              privateKey: config.privateKey,
-              publicKey: config.publicKey
+              repoUrl: config.repoUrl
             }),
             configType: 'GITEE',
             description: 'Gitee SSH authentication'
@@ -457,8 +427,6 @@ export const GiteeManagement: React.FC = () => {
             repoUrl: config.repoUrl,
             authType: config.authType,
             accessToken: config.authType === 'token' ? config.accessToken : undefined,
-            privateKey: config.authType === 'ssh' ? config.privateKey : undefined,
-            publicKey: config.authType === 'ssh' ? config.publicKey : undefined
           })
         });
         
@@ -547,7 +515,6 @@ export const GiteeManagement: React.FC = () => {
           repoUrl: config.repoUrl,
           authType: config.authType,
           accessToken: config.accessToken,
-          privateKey: config.privateKey,
           searchQuery: searchQuery,
           branchName: branchNameFilter || undefined, // Pass branch name filter if specified
           author: branchAuthorFilter || undefined // Pass branch author filter if specified
@@ -705,7 +672,6 @@ export const GiteeManagement: React.FC = () => {
           repoUrl: config.repoUrl,
           authType: config.authType,
           accessToken: config.accessToken,
-          privateKey: config.privateKey,
           branches,
           author: authorFilter || undefined
         })
@@ -823,7 +789,6 @@ export const GiteeManagement: React.FC = () => {
           repoUrl: config.repoUrl,
           authType: config.authType,
           accessToken: config.accessToken,
-          privateKey: config.privateKey,
           branches: Array.from(selectedBranches),
           author: authorFilter || undefined // Pass author filter if specified
         })
@@ -1555,28 +1520,6 @@ export const GiteeManagement: React.FC = () => {
                                     placeholder="git@gitee.com:username/repo.git" 
                                     value={config.repoUrl}
                                     onChange={e => setConfig({...config, repoUrl: e.target.value})}
-                                />
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Public Key (公钥)</label>
-                                <textarea 
-                                    className={TEXTAREA_STYLE} 
-                                    rows={4}
-                                    placeholder="ssh-rsa AAAA... (Optional for display/verification)" 
-                                    value={config.publicKey || ''}
-                                    onChange={e => setConfig({...config, publicKey: e.target.value})}
-                                />
-                            </div>
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Private Key (私钥)</label>
-                                <textarea 
-                                    className={TEXTAREA_STYLE} 
-                                    rows={4}
-                                    placeholder="-----BEGIN OPENSSH PRIVATE KEY-----..." 
-                                    value={config.privateKey || ''}
-                                    onChange={e => setConfig({...config, privateKey: e.target.value})}
                                 />
                             </div>
                         </div>

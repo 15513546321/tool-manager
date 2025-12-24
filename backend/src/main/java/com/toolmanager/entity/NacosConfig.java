@@ -8,7 +8,7 @@ import javax.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "NACOS_CONFIGS")
+@Table(name = "nacos_configs")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

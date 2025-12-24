@@ -55,22 +55,22 @@ export const IpConfig: React.FC = () => {
         message: `确定要删除 IP [${ip}] 的映射配置吗？`,
         onConfirm: async () => {
             try {
-              const updated = mappings.filter(m => m.ip !== ip);
-              setMappings(updated);
-              // Call backend to delete
+              // Call backend to delete FIRST (before updating UI)
               const resp = await fetch(`/api/ip-mappings/${encodeURIComponent(ip)}`, {
                 method: 'DELETE',
                 credentials: 'include'
               });
               if (!resp.ok) {
-                alert('删除失败');
-                setMappings(mappings); // Restore
-              } else {
-                recordAction('系统设置 - IP映射配置', `删除IP映射: ${ip}`);
+                alert('删除失败: ' + (resp.statusText || '未知错误'));
+                return;
               }
+              
+              // Only update UI after backend confirms successful deletion
+              const updated = mappings.filter(m => m.ip !== ip);
+              setMappings(updated);
+              recordAction('系统设置 - IP映射配置', `删除IP映射: ${ip}`);
             } catch (err) {
-              alert('删除失败');
-              setMappings(mappings); // Restore
+              alert('删除失败: ' + (err instanceof Error ? err.message : '网络错误'));
             }
         }
     });
@@ -163,12 +163,44 @@ export const IpConfig: React.FC = () => {
         newMappings = newMappings.filter(m => !existingIps.has(m.ip));
       }
 
-      // 批量保存
-      await saveIpMappings(newMappings);
-      setMappings([...mappings, ...newMappings]);
+      if (newMappings.length === 0) {
+        alert('没有新的有效数据可导入');
+        return;
+      }
+
+      // 批量保存 - 逐个保存以便捕获单个失败
+      let successCount = 0;
+      let failedMappings: string[] = [];
       
-      recordAction('系统设置 - IP映射配置', `批量导入IP映射: ${newMappings.length}条`);
-      alert(`✅ 成功导入 ${newMappings.length} 条 IP 映射`);
+      for (const mapping of newMappings) {
+        try {
+          const resp = await fetch(`/api/ip-mappings`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ ip: mapping.ip, name: mapping.name }),
+          });
+          if (resp.ok) {
+            successCount++;
+          } else {
+            failedMappings.push(`${mapping.ip} (${resp.statusText})`);
+          }
+        } catch (err) {
+          failedMappings.push(`${mapping.ip} (${err instanceof Error ? err.message : '网络错误'})`);
+        }
+      }
+
+      // 重新加载数据以保证UI同步
+      const updatedData = await getIpMappings();
+      setMappings(updatedData);
+      
+      recordAction('系统设置 - IP映射配置', `批量导入IP映射: ${successCount}条成功${failedMappings.length > 0 ? `, ${failedMappings.length}条失败` : ''}`);
+      
+      if (failedMappings.length > 0) {
+        alert(`✅ 导入完成: ${successCount} 条成功\\n❌ ${failedMappings.length} 条失败:\\n${failedMappings.slice(0, 5).join('\\n')}${failedMappings.length > 5 ? '\\n...' : ''}`);
+      } else {
+        alert(`✅ 成功导入 ${successCount} 条 IP 映射`);
+      }
 
       // 清空文件输入
       if (fileInputRef.current) {

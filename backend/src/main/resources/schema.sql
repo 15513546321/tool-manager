@@ -66,20 +66,23 @@ CREATE TABLE IF NOT EXISTS config_settings (
 );
 
 -- 6. DB Connections (数据库连接)
-CREATE TABLE IF NOT EXISTS db_connections (
+-- Drop old table to ensure clean schema
+DROP TABLE IF EXISTS db_connections;
+
+CREATE TABLE db_connections (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(255) NOT NULL UNIQUE,
     db_type VARCHAR(50) NOT NULL,
-    host VARCHAR(255) NOT NULL,
+    host VARCHAR(500),
     port INT,
-    db_name VARCHAR(255),
+    database VARCHAR(255),
     username VARCHAR(255),
-    password VARCHAR(500),
-    connection_pool_size INT DEFAULT 10,
-    test_query VARCHAR(500),
-    is_default BOOLEAN DEFAULT FALSE,
+    password VARCHAR(2000),
+    connection_string VARCHAR(5000),
+    notes VARCHAR(5000),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_by VARCHAR(255)
 );
 
 -- 7. Documents (文档)
@@ -153,14 +156,14 @@ CREATE TABLE IF NOT EXISTS suggestions (
 );
 
 -- 12. IP Mappings (IP映射)
-CREATE TABLE IF NOT EXISTS ip_mappings (
+-- Drop old table to ensure clean schema
+DROP TABLE IF EXISTS ip_mappings;
+
+CREATE TABLE ip_mappings (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    ip_address VARCHAR(50) NOT NULL UNIQUE,
-    mapped_name VARCHAR(255),
-    description TEXT,
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ip VARCHAR(50) NOT NULL UNIQUE,
+    name VARCHAR(255) NOT NULL,
+    last_announcement_version_seen VARCHAR(255)
 );
 
 -- 13. Code Templates (代码模板)
@@ -177,17 +180,27 @@ CREATE TABLE IF NOT EXISTS code_templates (
 );
 
 -- 14. Nacos Configs (Nacos配置)
+-- Drop the old nacos_configs table if it exists to ensure clean schema
+DROP TABLE IF EXISTS nacos_configs;
+
 CREATE TABLE IF NOT EXISTS nacos_configs (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    namespace VARCHAR(255),
-    group_name VARCHAR(255) NOT NULL,
-    data_id VARCHAR(500) NOT NULL,
-    config_value CLOB,
-    data_type VARCHAR(50),
+    name VARCHAR(255) NOT NULL UNIQUE,
+    source_url VARCHAR(500) NOT NULL,
+    source_namespace VARCHAR(255),
+    source_username VARCHAR(255),
+    source_password VARCHAR(500),
+    source_remark TEXT,
+    target_url VARCHAR(500) NOT NULL,
+    target_namespace VARCHAR(255),
+    target_username VARCHAR(255),
+    target_password VARCHAR(500),
+    target_remark TEXT,
+    sync_rules LONGTEXT,
     description TEXT,
+    status VARCHAR(50) DEFAULT 'ACTIVE',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (namespace, group_name, data_id)
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 15. Gitee Connections (Gitee连接)
@@ -237,7 +250,6 @@ CREATE INDEX IF NOT EXISTS idx_menu_items_visible ON menu_items(visible);
 CREATE INDEX IF NOT EXISTS idx_system_parameters_category ON system_parameters(category);
 
 CREATE INDEX IF NOT EXISTS idx_db_connections_db_type ON db_connections(db_type);
-CREATE INDEX IF NOT EXISTS idx_db_connections_is_default ON db_connections(is_default);
 
 CREATE INDEX IF NOT EXISTS idx_documents_title ON documents(title);
 CREATE INDEX IF NOT EXISTS idx_documents_category_id ON documents(category_id);

@@ -227,6 +227,7 @@ export const DocManagement: React.FC = () => {
               const tokenConfig = JSON.parse(tokenResult.configValue);
               repoUrl = tokenConfig.repoUrl || '';
               accessToken = tokenConfig.accessToken || '';
+              selectedBranch = tokenConfig.branch || '';
             }
           } catch (err) {
             console.warn('Failed to load token config:', err);
@@ -239,20 +240,11 @@ export const DocManagement: React.FC = () => {
               repoUrl = sshConfig.repoUrl || '';
               privateKey = sshConfig.privateKey || '';
               publicKey = sshConfig.publicKey || '';
+              selectedBranch = sshConfig.branch || '';
             }
           } catch (err) {
             console.warn('Failed to load SSH config:', err);
           }
-        }
-        
-        // 加载上次选择的分支
-        try {
-          const branchResult = await apiService.configApi.getByKey('doc-management-selected-branch');
-          if (branchResult && branchResult.configValue) {
-            selectedBranch = JSON.parse(branchResult.configValue);
-          }
-        } catch (err) {
-          console.warn('Failed to load selected branch:', err);
         }
         
         const finalAuthType = (authType === 'ssh' ? 'ssh' : 'token') as ('token' | 'ssh');
@@ -313,16 +305,41 @@ export const DocManagement: React.FC = () => {
     loadConfiguration();
   }, []);
 
-  // 当配置加载完成且有完整的配置信息时，自动加载接口
+  // 当页面加载时，如果有缓存的接口数据就直接加载（不重新获取）
   useEffect(() => {
-    if (onlineConfig.repoUrl && onlineConfig.branch && onlineConfig.authType) {
-      // 配置完整，自动加载接口（静默模式）
-      console.log('Auto-loading interfaces from saved configuration...');
-      handleFetchOnline(true).catch(err => {
-        console.warn('Auto-load encountered error (silently ignored):', err);
-      });
-    }
-  }, []); // 仅在组件挂载时执行一次
+    const loadCachedInterfaces = async () => {
+      try {
+        // 仅在页面初始化时加载缓存，不自动调用获取
+        if (onlineConfig.repoUrl && !transactions.length) {
+          const cachedResult = await apiService.configApi.getByKey('doc-management-interface-cache');
+          if (cachedResult && cachedResult.configValue) {
+            const cacheData = JSON.parse(cachedResult.configValue);
+            if (cacheData.interfaces && Array.isArray(cacheData.interfaces)) {
+              const cachedTransactions = cacheData.interfaces.map((iface: any) => ({
+                id: iface.id,
+                trsName: iface.name,
+                module: iface.module,
+                actionRef: '',
+                template: 'ExecuteLogTemplate',
+                inputs: iface.inputs || [],
+                outputs: iface.outputs || [],
+                filePath: iface.filePath || '',
+                actionClass: '',
+                downstreamCalls: iface.downstreamCalls || []
+              }));
+              setTransactions(cachedTransactions);
+              setSourceMode('online');
+              console.log(`✓ Loaded ${cachedTransactions.length} cached interfaces from database`);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to load cached interfaces:', err);
+      }
+    };
+
+    loadCachedInterfaces();
+  }, [onlineConfig.repoUrl]); // 仅当repoUrl加载完成时执行一次
 
   // 接口检索功能 - 根据选择的字段进行过滤
   const filteredTransactions = useMemo(() => {
@@ -560,25 +577,27 @@ export const DocManagement: React.FC = () => {
         // 保存配置到数据库 - 使用独立的doc-management-*配置key
         try {
           if (onlineConfig.authType === 'token') {
-            // Save token config - 不保存branches，分支只用于当前会话
+            // Save token config with branch
             await apiService.configApi.save({
               configKey: 'doc-management-token-config',
               configValue: JSON.stringify({
                 repoUrl: updated.repoUrl,
-                accessToken: updated.authToken
+                accessToken: updated.authToken,
+                branch: onlineConfig.branch
               }),
               configType: 'DOC_MANAGEMENT',
               description: 'Document Management HTTPS/Token authentication'
             });
             console.log('✓ Token config saved');
           } else if (onlineConfig.authType === 'ssh') {
-            // Save SSH config - 不保存branches，分支只用于当前会话
+            // Save SSH config with branch
             await apiService.configApi.save({
               configKey: 'doc-management-ssh-config',
               configValue: JSON.stringify({
                 repoUrl: updated.repoUrl,
                 privateKey: updated.sshKeyContent,
-                publicKey: updated.authUsername
+                publicKey: updated.authUsername,
+                branch: onlineConfig.branch
               }),
               configType: 'DOC_MANAGEMENT',
               description: 'Document Management SSH authentication'
@@ -589,7 +608,7 @@ export const DocManagement: React.FC = () => {
           // 同时保存认证类型
           await apiService.configApi.save({
             configKey: 'doc-management-auth-type',
-            configValue: onlineConfig.authType,
+            configValue: JSON.stringify(onlineConfig.authType),
             configType: 'DOC_MANAGEMENT',
             description: 'Document Management authentication type (token or ssh)'
           });
@@ -1555,28 +1574,6 @@ export const DocManagement: React.FC = () => {
                         />
                       </div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Public Key (公钥)</label>
-                        <textarea 
-                          className="w-full p-3 border border-slate-200 rounded-lg bg-[#f8fafc] focus:bg-white focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm text-slate-700 font-mono resize-none"
-                          rows={4}
-                          placeholder="ssh-rsa AAAA... (Optional for display/verification)" 
-                          value={onlineConfig.authUsername || ''}
-                          onChange={e => setOnlineConfig({...onlineConfig, authUsername: e.target.value})}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Private Key (私钥)</label>
-                        <textarea 
-                          className="w-full p-3 border border-slate-200 rounded-lg bg-[#f8fafc] focus:bg-white focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm text-slate-700 font-mono resize-none"
-                          rows={4}
-                          placeholder="-----BEGIN OPENSSH PRIVATE KEY-----..." 
-                          value={onlineConfig.sshKeyContent || ''}
-                          onChange={e => setOnlineConfig({...onlineConfig, sshKeyContent: e.target.value})}
-                        />
-                      </div>
-                    </div>
                     
                     {/* SSH Configuration Helper */}
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-slate-700">
@@ -1708,8 +1705,6 @@ export const DocManagement: React.FC = () => {
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm text-slate-700">
                 <p className="font-bold mb-2">📋 支持的认证方式:</p>
                 <ul className="list-disc list-inside space-y-1 text-xs">
-                  <li><strong>无认证</strong>: 适用于公开仓库</li>
-                  <li><strong>HTTP Basic</strong>: 用户名/密码，适合内网自建 Git 服务</li>
                   <li><strong>HTTP Token</strong>: Token 认证，推荐用于 Gitee/GitHub</li>
                   <li><strong>SSH Key</strong>: SSH 密钥认证，适合服务器部署</li>
                 </ul>
