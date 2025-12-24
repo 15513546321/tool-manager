@@ -66,10 +66,11 @@ const DEFAULT_EXCEL_STYLE: ExcelExportStyle = {
 
 export const GiteeManagement: React.FC = () => {
   // Config State
-  const [config, setConfig] = useState<GiteeConfig>({ 
+  const [config, setConfig] = useState<any>({ 
       repoUrl: '', 
       authType: 'token', 
-      accessToken: ''
+      accessToken: '',
+      privateKey: ''
   });
   const [isConfigOpen, setIsConfigOpen] = useState(false);
 
@@ -116,6 +117,7 @@ export const GiteeManagement: React.FC = () => {
 
         let repoUrl = '';
         let accessToken = '';
+        let privateKey = '';
 
         // Load ONLY the config that matches the current auth type
         // This prevents loading Token config when in SSH mode or vice versa
@@ -134,7 +136,8 @@ export const GiteeManagement: React.FC = () => {
             if (sshResult && sshResult.configValue) {
               const sshConfig = JSON.parse(sshResult.configValue);
               repoUrl = sshConfig.repoUrl || '';
-              console.log('✓ Loaded SSH config from database');
+              privateKey = sshConfig.privateKey || '';
+              console.log('✓ Loaded SSH config from database, privateKey present:', !!privateKey);
             }
             // Explicitly do NOT load Token config to prevent mixing
           }
@@ -145,7 +148,8 @@ export const GiteeManagement: React.FC = () => {
         setConfig({
           repoUrl,
           authType,
-          accessToken
+          accessToken,
+          privateKey
         });
       } catch (err) {
         console.warn('Failed to load config from backend, trying localStorage:', err);
@@ -174,7 +178,8 @@ export const GiteeManagement: React.FC = () => {
         setConfig({
           repoUrl,
           authType,
-          accessToken
+          accessToken,
+          privateKey: ''
         });
       }
     };
@@ -283,6 +288,7 @@ export const GiteeManagement: React.FC = () => {
     try {
       let repoUrl = '';
       let accessToken = '';
+      let privateKey = '';
 
       // Load config for the new auth type from database
       if (newAuthType === 'token') {
@@ -311,7 +317,8 @@ export const GiteeManagement: React.FC = () => {
           if (sshResult && sshResult.configValue) {
             const sshConfig = JSON.parse(sshResult.configValue);
             repoUrl = sshConfig.repoUrl || '';
-            console.log('✓ Loaded SSH config from database:', { repoUrl: repoUrl.substring(0, 30) + '...' });
+            privateKey = sshConfig.privateKey || '';
+            console.log('✓ Loaded SSH config from database:', { repoUrl: repoUrl.substring(0, 30) + '...', hasKey: !!privateKey });
           }
         } catch (err) {
           console.warn('Failed to load SSH config from database:', err);
@@ -320,6 +327,7 @@ export const GiteeManagement: React.FC = () => {
           if (localSsh) {
             const sshConfig = JSON.parse(localSsh);
             repoUrl = sshConfig.repoUrl || '';
+            privateKey = sshConfig.privateKey || '';
             console.log('✓ Loaded SSH config from localStorage');
           }
         }
@@ -329,7 +337,8 @@ export const GiteeManagement: React.FC = () => {
       setConfig({
         repoUrl,
         authType: newAuthType,
-        accessToken
+        accessToken,
+        privateKey
       });
     } catch (err) {
       console.error('Error switching auth type:', err);
@@ -672,6 +681,7 @@ export const GiteeManagement: React.FC = () => {
           repoUrl: config.repoUrl,
           authType: config.authType,
           accessToken: config.accessToken,
+          privateKey: config.privateKey || '',
           branches,
           author: authorFilter || undefined
         })

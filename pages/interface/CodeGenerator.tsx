@@ -540,30 +540,40 @@ export const CodeGenerator: React.FC = () => {
     // 页面加载时从后端读取模板配置
     const loadTemplates = async () => {
       try {
+        console.log('📥 Loading templates from backend...');
         const result = await apiService.configApi.getByKey('codeGenerator_templates');
+        console.log('📋 Backend response:', result);
         if (result && result.configValue) {
           const parsed = JSON.parse(result.configValue);
+          console.log('✅ Parsed templates:', parsed);
           if (Array.isArray(parsed) && parsed.length > 0) {
             setTemplates(parsed);
-            if (!parsed.some(t => t.name === formData.template)) {
+            // 确保当前选中的模板存在
+            if (!parsed.some((t: any) => t.name === formData.template)) {
               setFormData(prev => ({...prev, template: parsed[0].name}));
             }
           }
+        } else {
+          console.warn('⚠️ No templates found in backend, using default');
         }
       } catch (err) {
+        console.error('❌ Failed to load from backend:', err);
         // 回退到 localStorage
         const savedTemplates = localStorage.getItem('codeGenerator_templates');
+        console.log('📂 Checking localStorage:', savedTemplates ? 'Found' : 'Not found');
         if (savedTemplates) {
           try {
             const parsed = JSON.parse(savedTemplates);
+            console.log('✅ Loaded from localStorage:', parsed);
             if (Array.isArray(parsed) && parsed.length > 0) {
               setTemplates(parsed);
-              if (!parsed.some(t => t.name === formData.template)) {
+              // 确保当前选中的模板存在
+              if (!parsed.some((t: any) => t.name === formData.template)) {
                 setFormData(prev => ({...prev, template: parsed[0].name}));
               }
             }
           } catch (e) {
-            console.warn('Failed to load saved templates:', e);
+            console.warn('Failed to load saved templates from localStorage:', e);
           }
         }
       }
@@ -573,20 +583,29 @@ export const CodeGenerator: React.FC = () => {
 
   // 当模板改变时保存到后端
   useEffect(() => {
-    const saveTemplates = async () => {
-      try {
-        await apiService.configApi.save({
-          configKey: 'codeGenerator_templates',
-          configValue: JSON.stringify(templates),
-          configType: 'CODE_GENERATOR',
-          description: 'Code generator template configuration'
-        });
-      } catch (err) {
-        console.warn('Failed to save to backend, using localStorage:', err);
-        localStorage.setItem('codeGenerator_templates', JSON.stringify(templates));
-      }
-    };
-    saveTemplates();
+    // 延迟保存，避免初始化时频繁保存
+    const timer = setTimeout(() => {
+      const saveTemplates = async () => {
+        if (templates.length === 0) return;
+        try {
+          console.log('💾 Saving templates to backend:', templates);
+          await apiService.configApi.save({
+            configKey: 'codeGenerator_templates',
+            configValue: JSON.stringify(templates),
+            configType: 'CODE_GENERATOR',
+            description: 'Code generator template configuration'
+          });
+          console.log('✅ Templates saved to backend');
+        } catch (err) {
+          console.warn('⚠️ Failed to save to backend, using localStorage:', err);
+          localStorage.setItem('codeGenerator_templates', JSON.stringify(templates));
+          console.log('💾 Templates saved to localStorage');
+        }
+      };
+      saveTemplates();
+    }, 500); // 延迟500ms保存，避免频繁请求
+    
+    return () => clearTimeout(timer);
   }, [templates]);
 
   // ... (保留之前的 useEffect 加载逻辑, handleGenerate, handleGenerateAll 等) ...
@@ -616,19 +635,61 @@ export const CodeGenerator: React.FC = () => {
   const handleCopyToClipboard = (type: 'xml' | 'java') => {
     const textToCopy = type === 'xml' ? generatedXml : generatedJava;
     
-    if (!textToCopy) {
+    if (!textToCopy || textToCopy.trim() === '') {
+      console.error('❌ 复制失败: 没有生成代码');
       alert('请先生成代码');
       return;
     }
     
-    navigator.clipboard.writeText(textToCopy).then(() => {
-      setCopiedType(type);
-      recordAction('接口管理', `复制 ${type.toUpperCase()} 代码`);
-      // 2秒后重置复制状态
-      setTimeout(() => setCopiedType(null), 2000);
-    }).catch(() => {
-      alert('复制失败，请检查浏览器权限');
-    });
+    console.log(`📋 开始复制 ${type.toUpperCase()} 代码，长度: ${textToCopy.length}`);
+    
+    // 使用传统方法作为备选方案
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(textToCopy).then(() => {
+        console.log(`✅ ${type.toUpperCase()} 代码已复制到剪贴板`);
+        setCopiedType(type);
+        recordAction('接口管理', `复制 ${type.toUpperCase()} 代码`);
+        // 2秒后重置复制状态
+        setTimeout(() => setCopiedType(null), 2000);
+      }).catch((err) => {
+        console.error(`❌ Clipboard API 复制失败:`, err);
+        // 使用备选方法
+        copyUsingExecCommand(textToCopy, type);
+      });
+    } else {
+      // 降级方案：使用 execCommand
+      console.warn('⚠️ Clipboard API 不可用，使用 execCommand 方案');
+      copyUsingExecCommand(textToCopy, type);
+    }
+  };
+
+  // 备选复制方法：使用 execCommand
+  const copyUsingExecCommand = (text: string, type: 'xml' | 'java') => {
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.left = '-9999px';
+      textarea.style.top = '-9999px';
+      document.body.appendChild(textarea);
+      
+      textarea.select();
+      const success = document.execCommand('copy');
+      document.body.removeChild(textarea);
+      
+      if (success) {
+        console.log(`✅ 使用 execCommand 成功复制 ${type.toUpperCase()} 代码`);
+        setCopiedType(type);
+        recordAction('接口管理', `复制 ${type.toUpperCase()} 代码`);
+        setTimeout(() => setCopiedType(null), 2000);
+      } else {
+        console.error(`❌ execCommand 复制失败`);
+        alert('复制失败，请手动复制');
+      }
+    } catch (err) {
+      console.error(`❌ execCommand 异常:`, err);
+      alert('复制失败，请手动复制');
+    }
   };
 
   // 导入模板下载
@@ -946,14 +1007,17 @@ export const CodeGenerator: React.FC = () => {
             </pre>
             <button 
               onClick={() => handleCopyToClipboard(outputTab)}
-              disabled={!generatedXml && !generatedJava}
-              title={generatedXml || generatedJava ? '复制到剪贴板' : '请先生成代码'}
-              className={`absolute top-4 right-4 p-2 rounded text-white transition-all ${
+              disabled={outputTab === 'xml' ? !generatedXml : !generatedJava}
+              title={outputTab === 'xml' 
+                ? (generatedXml ? '✓ 复制XML配置到剪贴板' : '❌ 请先生成XML配置') 
+                : (generatedJava ? '✓ 复制Java代码到剪贴板' : '❌ 请先生成Java代码')
+              }
+              className={`absolute top-4 right-4 p-2.5 rounded-lg font-bold transition-all duration-300 flex items-center justify-center gap-1 ${
                 copiedType === outputTab 
-                  ? 'bg-green-500 opacity-100' 
-                  : (generatedXml || generatedJava)
-                    ? 'bg-white/10 hover:bg-white/20 opacity-0 group-hover:opacity-100'
-                    : 'bg-slate-500 opacity-50 cursor-not-allowed'
+                  ? 'bg-green-500/90 text-white opacity-100 shadow-lg' 
+                  : (outputTab === 'xml' ? !!generatedXml : !!generatedJava)
+                    ? 'bg-blue-500/70 hover:bg-blue-600 text-white opacity-0 group-hover:opacity-100 cursor-pointer shadow-md'
+                    : 'bg-gray-400/50 text-gray-200 opacity-40 cursor-not-allowed'
               }`}
             >
                {copiedType === outputTab ? '✓ 已复制' : <Copy size={16}/>}

@@ -264,74 +264,11 @@ public class GitOperationService {
         try {
             log.info("Fetching SSH branches from: : {}", repoUrl);
             
-            // Try to use system SSH key first (~/.ssh/id_ed25519 or ~/.ssh/id_rsa)
-            File sshKeyFile = null;
-            String userHome = System.getProperty("user.home");
-            
-            // Try common SSH key locations in order of preference
-            String[] keyLocations = {
-                userHome + File.separator + ".ssh" + File.separator + "id_ed25519",
-                userHome + File.separator + ".ssh" + File.separator + "id_rsa",
-                userHome + File.separator + ".ssh" + File.separator + "id_ecdsa"
-            };
-            
-            log.info("{}",  "🔍 Attempting to use system SSH keys from ~/.ssh/");
-            for (String keyPath : keyLocations) {
-                File testFile = new File(keyPath);
-                if (testFile.exists() && testFile.isFile()) {
-                    sshKeyFile = testFile;
-                    log.info("✅ Found system SSH key: : {}", keyPath);
-                    break;
-                }
-            }
-            
-            // If no system key found and privateKey provided, use uploaded key
-            if (sshKeyFile == null && privateKey != null && !privateKey.trim().isEmpty()) {
-                log.info("{}",  "⚠️ System SSH key not found, using uploaded private key");
-                
-                // Validate SSH key format
-                log.info("{}",  "🔍 Validating SSH key format...");
-                SSHKeyConverter.SSHKeyValidationResult keyValidation = SSHKeyConverter.validateKeyFormat(privateKey);
-                System.out.println(keyValidation.getMessage());
-                
-                if (!keyValidation.isValid()) {
-                    System.err.println("❌ SSH key validation failed: " + keyValidation.getKeyType());
-                    System.err.println(keyValidation.getMessage());
-                    return branches;
-                }
-                
-                // Clean SSH key - remove extra whitespace
-                log.info("{}",  "🧹 Cleaning SSH key...");
-                String cleanedKey = SSHKeyConverter.cleanSSHKey(privateKey);
-                
-                // Check key format
-                log.info("{}",  "Validating SSH key format...");
-                if (!cleanedKey.contains("BEGIN") || !cleanedKey.contains("END")) {
-                    log.error("Error: {}", "⚠️ SSH key format appears invalid. Must contain BEGIN and END markers.");
-                    log.error("Error: {}", "   Valid formats: BEGIN RSA PRIVATE KEY, BEGIN OPENSSH PRIVATE KEY, BEGIN EC PRIVATE KEY");
-                    log.error("   If using PuTTY format (.ppk), please convert to OpenSSH format first.");
-                }
-                
-                // Save private key to temp file with proper permissions
-                File keyFile = File.createTempFile("jgit_key_", ".pem");
-                keyFile.deleteOnExit();
-                
-                try (FileWriter fw = new FileWriter(keyFile)) {
-                    fw.write(cleanedKey);
-                    fw.flush();
-                }
-                
-                // Set file permissions for SSH key (Unix-like: 600)
-                keyFile.setReadable(true, true);
-                keyFile.setWritable(true, true);
-                keyFile.setExecutable(false, false);
-                
-                sshKeyFile = keyFile;
-                System.out.println("SSH key saved to: " + keyFile.getAbsolutePath());
-            } else if (sshKeyFile == null) {
-                log.error("Error: {}", "❌ No SSH key found!");
-                System.err.println("   System keys checked: " + String.join(", ", keyLocations));
-                log.error("Error: {}", "   Please provide a private key or place your SSH key in ~/.ssh/");
+            // Get SSH key file (tries system keys first, then uses provided key)
+            File sshKeyFile = getSSHKeyFile(privateKey);
+            if (sshKeyFile == null) {
+                log.error("❌ Error: No SSH key found! Please provide a private key or place your SSH key in ~/.ssh/");
+                System.err.println("❌ SSH key not found");
                 return branches;
             }
             
@@ -476,20 +413,37 @@ public class GitOperationService {
     /**
      * Get commits from SSH repository
      */
-    public List<Map<String, Object>> getCommitsSSH(String repoUrl, String privateKey, List<String> branches) {
-        List<Map<String, Object>> commits = new ArrayList<>();
-        try {
-            log.info("Fetching SSH commits from: : {}", repoUrl + ", branches: " + branches);
-            
-            if (privateKey == null || privateKey.trim().isEmpty()) {
-                log.error("Error: {}", "Private key is required for SSH authentication");
-                return commits;
+    /**
+     * Helper method to get SSH key file from system or provided key content
+     * First tries system SSH keys (~/.ssh/id_ed25519, id_rsa, id_ecdsa)
+     * If not found and privateKey content provided, uses that
+     * Returns null if no key found
+     */
+    private File getSSHKeyFile(String privateKey) throws Exception {
+        // Try to use system SSH key first (~/.ssh/id_ed25519 or ~/.ssh/id_rsa)
+        File sshKeyFile = null;
+        String userHome = System.getProperty("user.home");
+        
+        // Try common SSH key locations in order of preference
+        String[] keyLocations = {
+            userHome + File.separator + ".ssh" + File.separator + "id_ed25519",
+            userHome + File.separator + ".ssh" + File.separator + "id_rsa",
+            userHome + File.separator + ".ssh" + File.separator + "id_ecdsa"
+        };
+        
+        log.info("🔍 Attempting to use system SSH keys from ~/.ssh/");
+        for (String keyPath : keyLocations) {
+            File testFile = new File(keyPath);
+            if (testFile.exists() && testFile.isFile()) {
+                sshKeyFile = testFile;
+                log.info("✅ Found system SSH key: {}", keyPath);
+                break;
             }
-            
-            if (branches == null || branches.isEmpty()) {
-                log.error("Error: {}", "No branches specified");
-                return commits;
-            }
+        }
+        
+        // If no system key found and privateKey provided, use uploaded key
+        if (sshKeyFile == null && privateKey != null && !privateKey.trim().isEmpty()) {
+            log.info("⚠️ System SSH key not found, using provided private key");
             
             // Save private key to temp file
             File keyFile = File.createTempFile("jgit_key_", ".pem");
@@ -502,14 +456,46 @@ public class GitOperationService {
             
             keyFile.setReadable(true, true);
             keyFile.setWritable(true, true);
+            log.info("✓ Private key saved to: {}", keyFile.getAbsolutePath());
+            sshKeyFile = keyFile;
+        }
+        
+        if (sshKeyFile == null) {
+            log.warn("⚠️ No SSH key found! System keys checked: {}. Please provide a private key or place your SSH key in ~/.ssh/", 
+                String.join(", ", keyLocations));
+        }
+        
+        return sshKeyFile;
+    }
+
+    public List<Map<String, Object>> getCommitsSSH(String repoUrl, String privateKey, List<String> branches) {
+        List<Map<String, Object>> commits = new ArrayList<>();
+        try {
+            log.info("📥 Fetching SSH commits from: {}, branches: {}", repoUrl, branches);
+            System.out.println("📥 Starting SSH commit fetch: " + repoUrl);
+            
+            if (branches == null || branches.isEmpty()) {
+                log.error("❌ Error: No branches specified");
+                return commits;
+            }
+            
+            // Get SSH key file (tries system keys first, then uses provided key)
+            File keyFile = getSSHKeyFile(privateKey);
+            if (keyFile == null) {
+                log.error("❌ Error: No SSH key found! Please provide a private key or place your SSH key in ~/.ssh/");
+                System.err.println("❌ SSH key not found");
+                return commits;
+            }
             
             // For each branch, fetch commits
             for (String branch : branches) {
                 try {
+                    log.info("🔍 Processing branch: {}", branch);
                     // Create temp directory for bare clone
                     String tempDirName = "jgit_" + System.nanoTime();
                     File tempCloneDir = new File(System.getProperty("java.io.tmpdir"), tempDirName);
                     tempCloneDir.mkdirs();
+                    log.debug("Created temp directory: {}", tempCloneDir.getAbsolutePath());
                     
                     // Clone repository with SSH authentication
                     ProcessBuilder clonePb = new ProcessBuilder(
@@ -525,15 +511,25 @@ public class GitOperationService {
                     BufferedReader cloneReader = new BufferedReader(new InputStreamReader(cloneProcess.getInputStream()));
                     String line;
                     while ((line = cloneReader.readLine()) != null) {
-                        log.info("[Clone] : {}", line);
+                        log.debug("[Clone] {}", line);
                     }
                     cloneReader.close();
                     
-                    int cloneExitCode = cloneProcess.waitFor();
-                    if (cloneExitCode != 0) {
-                        log.error("Failed to clone repository for branch : {}", branch);
+                    // Wait for clone with timeout
+                    boolean cloneCompleted = cloneProcess.waitFor(30, java.util.concurrent.TimeUnit.SECONDS);
+                    if (!cloneCompleted) {
+                        cloneProcess.destroyForcibly();
+                        log.error("❌ Clone timeout for branch: {}", branch);
                         continue;
                     }
+                    
+                    int cloneExitCode = cloneProcess.exitValue();
+                    if (cloneExitCode != 0) {
+                        log.error("❌ Failed to clone repository for branch {}, exit code: {}", branch, cloneExitCode);
+                        continue;
+                    }
+                    
+                    log.info("✓ Clone successful for branch: {}", branch);
                     
                     // Get commit log from the cloned repo
                     ProcessBuilder logPb = new ProcessBuilder(
@@ -547,6 +543,7 @@ public class GitOperationService {
                     Process logProcess = logPb.start();
                     BufferedReader logReader = new BufferedReader(new InputStreamReader(logProcess.getInputStream()));
                     
+                    int commitCount = 0;
                     while ((line = logReader.readLine()) != null) {
                         if (line.trim().isEmpty()) continue;
                         
@@ -565,29 +562,40 @@ public class GitOperationService {
                             commit.put("branch", branch);
                             commit.put("filePath", filePaths);
                             commits.add(commit);
+                            commitCount++;
                         }
                     }
                     logReader.close();
                     
-                    int logExitCode = logProcess.waitFor();
-                    if (logExitCode != 0) {
-                        log.error("Git log command failed for branch : {}", branch);
+                    // Wait for log with timeout
+                    boolean logCompleted = logProcess.waitFor(10, java.util.concurrent.TimeUnit.SECONDS);
+                    if (!logCompleted) {
+                        logProcess.destroyForcibly();
+                        log.warn("⚠️ Git log timeout for branch: {}", branch);
+                    } else {
+                        int logExitCode = logProcess.exitValue();
+                        if (logExitCode != 0) {
+                            log.error("❌ Git log command failed for branch {}, exit code: {}", branch, logExitCode);
+                        } else {
+                            log.info("✓ Fetched {} commits from branch: {}", commitCount, branch);
+                        }
                     }
                     
                     // Clean up temp directory
                     deleteDir(tempCloneDir);
                     
                 } catch (Exception e) {
-                    System.err.println("Error fetching commits for branch " + branch + ": " + e.getMessage());
-                    e.printStackTrace();
+                    System.err.println("❌ Error fetching commits for branch " + branch + ": " + e.getMessage());
+                    log.error("Error fetching commits for branch: {}", branch, e);
                 }
             }
             
-            System.out.println("Found " + commits.size() + " total commits via SSH");
+            System.out.println("✓ Found " + commits.size() + " total commits via SSH");
+            log.info("✓ SSH commit fetch completed. Total commits: {}", commits.size());
             return commits;
         } catch (Exception e) {
-            System.err.println("Failed to fetch SSH commits: " + e.getMessage());
-            e.printStackTrace();
+            System.err.println("❌ Failed to fetch SSH commits: " + e.getMessage());
+            log.error("Failed to fetch SSH commits: ", e);
             return commits;
         }
     }
@@ -597,9 +605,10 @@ public class GitOperationService {
      */
     private String getCommitFilePaths(File repoDir, String commitHash) {
         try {
+            // Use 'git diff-tree' which is more efficient for getting file list
             ProcessBuilder pb = new ProcessBuilder(
                 "git", "--git-dir=" + repoDir.getAbsolutePath(),
-                "show", "--name-only", "--format=%b",
+                "diff-tree", "--no-commit-id", "-r", "--name-only",
                 commitHash
             );
             
@@ -609,34 +618,36 @@ public class GitOperationService {
             
             StringBuilder filePaths = new StringBuilder();
             String line;
-            boolean inFileSection = false;
             int fileCount = 0;
+            int totalFiles = 0;
             
             while ((line = reader.readLine()) != null) {
-                if (line.trim().isEmpty()) {
-                    if (inFileSection) break; // End of file list
-                    continue;
-                }
+                String trimmed = line.trim();
+                if (trimmed.isEmpty()) continue;
                 
-                // Skip the commit message part (format="%b" shows body, so files come after)
-                if (!inFileSection && !line.startsWith(".")) {
-                    inFileSection = true;
-                }
-                
-                // Collect file paths (after blank line following commit message)
-                if (inFileSection && !line.startsWith("diff --git")) {
-                    if (fileCount < 20) { // Limit to first 20 files
-                        if (filePaths.length() > 0) {
-                            filePaths.append(", ");
-                        }
-                        filePaths.append(line.trim());
-                        fileCount++;
+                totalFiles++;
+                if (fileCount < 20) { // Limit to first 20 files for display
+                    if (filePaths.length() > 0) {
+                        filePaths.append("\n"); // Use newline for better readability
                     }
+                    filePaths.append(trimmed);
+                    fileCount++;
                 }
             }
             reader.close();
             
-            int exitCode = process.waitFor();
+            // Wait with timeout
+            boolean completed = process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+            if (!completed) {
+                process.destroyForcibly();
+                log.warn("Git diff-tree command timeout for commit: {}", commitHash);
+                return filePaths.length() > 0 ? filePaths.toString() : "N/A";
+            }
+            
+            // Add indicator if more files exist
+            if (totalFiles > 20) {
+                filePaths.append("\n... (共 ").append(totalFiles).append(" 个文件)");
+            }
             
             String result = filePaths.toString().trim();
             if (result.isEmpty()) {
@@ -644,7 +655,8 @@ public class GitOperationService {
             }
             return result;
         } catch (Exception e) {
-            System.err.println("Error getting commit files: " + e.getMessage());
+            System.err.println("❌ Error getting commit files for " + commitHash + ": " + e.getMessage());
+            log.error("Error getting commit files: ", e);
             return "N/A";
         }
     }
