@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS config_settings (
 
 -- 6. DB Connections (数据库连接)
 -- Drop old table to ensure clean schema
-DROP TABLE IF EXISTS db_connections;
+-- DROP TABLE IF EXISTS db_connections;
 
 CREATE TABLE db_connections (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -157,7 +157,7 @@ CREATE TABLE IF NOT EXISTS suggestions (
 
 -- 12. IP Mappings (IP映射)
 -- Drop old table to ensure clean schema
-DROP TABLE IF EXISTS ip_mappings;
+-- DROP TABLE IF EXISTS ip_mappings;
 
 CREATE TABLE ip_mappings (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -181,7 +181,7 @@ CREATE TABLE IF NOT EXISTS code_templates (
 
 -- 14. Nacos Configs (Nacos配置)
 -- Drop the old nacos_configs table if it exists to ensure clean schema
-DROP TABLE IF EXISTS nacos_configs;
+-- DROP TABLE IF EXISTS nacos_configs;
 
 CREATE TABLE IF NOT EXISTS nacos_configs (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
