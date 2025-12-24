@@ -3,10 +3,6 @@ DELETE FROM document_versions;
 DELETE FROM documents;
 
 -- Initialize Announcements (after clearing old data)
-INSERT INTO announcements (title, description, content, version, status, created_at, updated_at, created_by, updated_by)
-SELECT '欢迎使用系统', '系统已成功部署，欢迎使用！', '这是一条欢迎公告，系统已正式上线。', '20251220', 'PUBLISHED', NOW(), NOW(), 'admin', 'admin'
-WHERE NOT EXISTS (SELECT 1 FROM announcements WHERE version = '20251220');
-
 -- Wait for tables to be created by Hibernate first
 -- Initialize Menu Items (only if not exists)
 INSERT INTO menu_items (menu_id, name, path, icon, visible, parent_id, sort_order, created_at, updated_at)
