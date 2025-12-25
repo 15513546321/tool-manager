@@ -13,7 +13,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class DiffRowDTO {
     /**
-     * 差异行标签: EQUAL(相等), INSERT(新增), DELETE(删除), CHANGE(修改)
+     * 差异行标签: EQUAL(相等), INSERT(新增), DELETE(删除), CHANGE(修改), MOVED(移动)
      */
     private String tag;
     

@@ -7,7 +7,7 @@ import ConfigDiffViewer from '../..//ConfigDiffViewer';
 
 // ============ Types ============
 interface DiffRow {
-  tag: 'EQUAL' | 'INSERT' | 'DELETE' | 'CHANGE';
+  tag: 'EQUAL' | 'INSERT' | 'DELETE' | 'CHANGE' | 'MOVED';
   oldLine: string;
   newLine: string;
   oldLineNumber: number;
@@ -22,6 +22,7 @@ interface DetailedDiffResult {
   changedLines: number;
   insertedLines: number;
   deletedLines: number;
+  movedLines: number; // Add this new field
   status: 'same' | 'different' | 'source-only' | 'target-only';
 }
 
@@ -1262,6 +1263,16 @@ export const NacosSync: React.FC = () => {
                                             </div>
                                         </React.Fragment>
                                     );
+                                } else if (row.tag === 'MOVED') {
+                                  // Display MOVED lines with a distinct style
+                                  return (
+                                    <div key={idx} className="flex bg-yellow-50 border-l-4 border-yellow-300">
+                                      <span className="w-12 text-right px-2 text-slate-400">{row.oldLineNumber}</span>
+                                      <span className="w-12 text-right px-2 text-slate-400">{row.newLineNumber}</span>
+                                      <span className="px-2 text-yellow-600">~</span> {/* Tilde for moved */}
+                                      <span className="text-yellow-800 whitespace-pre-wrap break-all">{row.newLine}</span>
+                                    </div>
+                                  );
                                 }
                                 return (
                                     <div key={idx} className={`flex ${row.tag === 'DELETE' ? 'bg-red-50' : 'bg-green-50'}`}>
@@ -1288,6 +1299,8 @@ export const NacosSync: React.FC = () => {
                 <span>新增：{detailedDiffData.insertedLines}</span>
                 <span className="mx-2">|</span>
                 <span>删除：{detailedDiffData.deletedLines}</span>
+                <span className="mx-2">|</span>
+                <span>移动：{detailedDiffData.movedLines}</span>
               </div>
               <button
                 onClick={() => setDetailedDiffVisible(false)}

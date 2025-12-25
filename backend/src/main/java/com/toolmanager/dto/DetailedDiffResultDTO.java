@@ -47,6 +47,11 @@ public class DetailedDiffResultDTO {
      * 删除行数
      */
     private int deletedLines;
+
+    /**
+     * 移动行数
+     */
+    private int movedLines;
     
     /**
      * 状态: 'same' | 'different' | 'source-only' | 'target-only'
