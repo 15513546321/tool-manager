@@ -3,6 +3,8 @@ import { Plus, Trash2, Edit2, Save, X, Download, ChevronDown, ChevronUp, GitComp
 import { apiService } from '../../services/apiService';
 import ExcelJS from 'exceljs';
 
+import ConfigDiffViewer from '../..//ConfigDiffViewer';
+
 // ============ Types ============
 interface DiffRow {
   tag: 'EQUAL' | 'INSERT' | 'DELETE' | 'CHANGE';
@@ -1183,7 +1185,7 @@ export const NacosSync: React.FC = () => {
       {/* Detailed Diff Modal */}
       {detailedDiffVisible && currentDetailedResult && detailedDiffData && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-lg shadow-2xl max-w-7xl w-full max-h-[90vh] overflow-y-auto flex flex-col">
+          <div className="bg-white rounded-lg shadow-2xl w-11/12 max-h-[90vh] overflow-y-auto flex flex-col">
             {/* Header */}
             <div className="sticky top-0 bg-slate-800 text-white px-6 py-4 border-b border-slate-700 flex justify-between items-center">
               <div>
@@ -1203,33 +1205,19 @@ export const NacosSync: React.FC = () => {
                 <p className="text-slate-600">加载详细差异中...</p>
               </div>
             ) : (
-              <div className="flex-1 overflow-auto">
-                <div className="grid grid-cols-2 gap-1 h-full">
-                  {/* Source Column */}
-                  <div className="flex flex-col bg-blue-50 border-r border-slate-200">
-                    <div className="sticky top-0 bg-blue-600 text-white px-4 py-2 font-bold text-sm">源内容</div>
-                    <div className="flex-1 p-4 font-mono text-xs overflow-auto">
-                      {detailedDiffData.diffRows.map((row, idx) => (
-                        <div key={idx} className={row.tag === 'DELETE' ? 'bg-red-100 text-red-800' : row.tag === 'CHANGE' ? 'bg-yellow-100 text-yellow-800' : ''}>
-                          <span className="text-slate-500">{row.oldLineNumber || '-'}</span> {row.oldLine}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Target Column */}
-                  <div className="flex flex-col bg-green-50 border-l border-slate-200">
-                    <div className="sticky top-0 bg-green-600 text-white px-4 py-2 font-bold text-sm">目标内容</div>
-                    <div className="flex-1 p-4 font-mono text-xs overflow-auto">
-                      {detailedDiffData.diffRows.map((row, idx) => (
-                        <div key={idx} className={row.tag === 'INSERT' ? 'bg-green-100 text-green-800' : row.tag === 'CHANGE' ? 'bg-yellow-100 text-yellow-800' : ''}>
-                          <span className="text-slate-500">{row.newLineNumber || '-'}</span> {row.newLine}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+              currentDetailedResult.sourceContent === currentDetailedResult.targetContent ? (
+                <div className="flex-1 flex items-center justify-center p-8">
+                  <p className="text-slate-600 text-lg">✅ Files are identical. No differences to show.</p>
                 </div>
-              </div>
+              ) : (
+                <div className="flex-1 overflow-auto">
+                  <ConfigDiffViewer
+                    original={currentDetailedResult.targetContent}
+                    modified={currentDetailedResult.sourceContent}
+                    language={currentDetailedResult.dataId.split('.').pop() || 'yaml'}
+                  />
+                </div>
+              )
             )}
 
             {/* Footer */}
