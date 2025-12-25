@@ -1244,7 +1244,7 @@ export const NacosSync: React.FC = () => {
                 ) : (
                     <div className="p-4 font-mono text-sm bg-white">
                         {detailedDiffData.diffRows
-                            .filter(row => row.tag !== 'EQUAL')
+                            .filter(row => row.tag !== 'EQUAL' && row.tag !== 'MOVED')
                             .map((row, idx) => {
                                 if (row.tag === 'CHANGE') {
                                     return (
