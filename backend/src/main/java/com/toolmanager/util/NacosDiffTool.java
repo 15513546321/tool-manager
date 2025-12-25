@@ -238,42 +238,39 @@ public class NacosDiffTool {
     private static List<DiffRowDTO> postProcessDiffRows(List<DiffRowDTO> initialDiffRows) {
         List<DiffRowDTO> resultRows = new ArrayList<>();
         
-        // 收集所有 DELETE 和 INSERT 行，并存储它们的原始索引
-        Map<String, List<DiffRowDTO>> deleteCandidates = new HashMap<>(); // content -> list of DELETE rows
-        Map<String, List<DiffRowDTO>> insertCandidates = new HashMap<>(); // content -> list of INSERT rows
+        // 收集所有 DELETE 和 INSERT 行，并存储它们的原始引用，使用 LinkedList 作为队列
+        Map<String, LinkedList<DiffRowDTO>> deleteCandidates = new HashMap<>(); // content -> queue of DELETE rows
+        Map<String, LinkedList<DiffRowDTO>> insertCandidates = new HashMap<>(); // content -> queue of INSERT rows
 
-        // 用于标记已经被 MOVED 逻辑处理过的原始行
-        Set<DiffRowDTO> processedByMovedLogic = new HashSet<>();
+        // 用于标记已经被 MOVED 逻辑处理过的原始行对象
+        Set<DiffRowDTO> handledOriginalDiffRowObjects = new HashSet<>();
 
         // 第一遍：分类原始差异行
+        // 同时将 EQUAL 和 CHANGE 行直接添加到结果列表
         for (DiffRowDTO row : initialDiffRows) {
             if ("DELETE".equals(row.getTag())) {
-                deleteCandidates.computeIfAbsent(row.getOldLine(), k -> new ArrayList<>()).add(row);
+                deleteCandidates.computeIfAbsent(row.getOldLine(), k -> new LinkedList<>()).add(row);
             } else if ("INSERT".equals(row.getTag())) {
-                insertCandidates.computeIfAbsent(row.getNewLine(), k -> new ArrayList<>()).add(row);
+                insertCandidates.computeIfAbsent(row.getNewLine(), k -> new LinkedList<>()).add(row);
             } else {
-                resultRows.add(row); // EQUAL and CHANGE rows are added directly
+                resultRows.add(row); // EQUAL and CHANGE rows are added directly and will be sorted later
             }
         }
-
-        // 第二遍：尝试匹配 DELETE 和 INSERT 为 MOVED
-        for (Map.Entry<String, List<DiffRowDTO>> entry : deleteCandidates.entrySet()) {
+        
+        // 尝试匹配 DELETE 和 INSERT 为 MOVED
+        // 遍历 deleteCandidates 的每个内容组
+        for (Map.Entry<String, LinkedList<DiffRowDTO>> entry : deleteCandidates.entrySet()) {
             String content = entry.getKey();
-            List<DiffRowDTO> deletes = entry.getValue();
-            List<DiffRowDTO> inserts = insertCandidates.get(content);
+            LinkedList<DiffRowDTO> deletes = entry.getValue(); // 某个内容的所有 DELETE 行队列
+            LinkedList<DiffRowDTO> inserts = insertCandidates.get(content); // 某个内容的所有 INSERT 行队列
 
             if (inserts != null) {
-                Iterator<DiffRowDTO> deleteIterator = deletes.iterator();
-                while (deleteIterator.hasNext()) {
-                    DiffRowDTO deleteRow = deleteIterator.next();
-                    Iterator<DiffRowDTO> insertIterator = inserts.iterator();
-                    while (insertIterator.hasNext()) {
-                        DiffRowDTO insertRow = insertIterator.next();
-                        
-                        // 找到匹配的 DELETE 和 INSERT
-                        // 逻辑：如果删除行和插入行的内容完全一致，则可以认为是移动
-                        // 更高级的算法会考虑距离，这里简化处理
-                        
+                // 尽可能多地匹配当前内容的 DELETE 和 INSERT
+                while (!deletes.isEmpty() && !inserts.isEmpty()) {
+                    DiffRowDTO deleteRow = deletes.poll(); // 从队列中取出并移除
+                    DiffRowDTO insertRow = inserts.poll(); // 从队列中取出并移除
+                    
+                    if (deleteRow != null && insertRow != null) {
                         DiffRowDTO movedRow = new DiffRowDTO();
                         movedRow.setTag("MOVED");
                         movedRow.setOldLine(deleteRow.getOldLine());
@@ -283,67 +280,66 @@ public class NacosDiffTool {
                         
                         resultRows.add(movedRow);
                         
-                        // 标记这两个原始行已被处理，不再作为 DELETE/INSERT 添加
-                        processedByMovedLogic.add(deleteRow);
-                        processedByMovedLogic.add(insertRow);
-                        
-                        deleteIterator.remove(); // 移除已匹配的 DELETE
-                        insertIterator.remove(); // 移除已匹配的 INSERT
-                        break; // 匹配成功，继续下一个 DELETE
+                        // 标记这些原始行已由 MOVED 逻辑处理
+                        handledOriginalDiffRowObjects.add(deleteRow);
+                        handledOriginalDiffRowObjects.add(insertRow);
                     }
                 }
             }
         }
         
-        // 将剩余的未匹配 DELETE 和 INSERT 添加到结果中
-        // 这些是真正的 DELETE 或 INSERT，而不是 MOVED
-        for (List<DiffRowDTO> deletes : deleteCandidates.values()) {
-            for (DiffRowDTO row : deletes) {
-                if (!processedByMovedLogic.contains(row)) {
-                    resultRows.add(row);
-                }
-            }
-        }
-        for (List<DiffRowDTO> inserts : insertCandidates.values()) {
-            for (DiffRowDTO row : inserts) {
-                if (!processedByMovedLogic.contains(row)) {
-                    resultRows.add(row);
-                }
+        // 将剩余未被 MOVED 逻辑处理的 DELETE 和 INSERT 行添加回结果列表
+        // 这些是真正的 DELETE 或 INSERT
+        for (DiffRowDTO row : initialDiffRows) {
+            if (!handledOriginalDiffRowObjects.contains(row) && ("DELETE".equals(row.getTag()) || "INSERT".equals(row.getTag()))) {
+                resultRows.add(row);
             }
         }
 
         // 最后一步：根据原始行号对结果进行排序，以保持逻辑顺序
-        // 需要注意，MOVED 行的 oldLineNumber 和 newLineNumber 都有效
-        // EQUAL/CHANGE 行也有对应的 oldLineNumber 和 newLineNumber
-        // DELETE 行只有 oldLineNumber, INSERT 行只有 newLineNumber
-        // 这里采用一个更复杂的排序，尝试保持 diff 的视觉连贯性
+        // 排序逻辑需要考虑：
+        // 1. 原始行号（oldLineNumber）和新行号（newLineNumber）
+        // 2. 对于那些只有一边有行号的行（DELETE只有oldLineNumber，INSERT只有newLineNumber），
+        //    需要有合理的默认值或特殊处理，确保它们不会被错误地排序到列表的开始或结束
         resultRows.sort((r1, r2) -> {
+            // 计算一个综合的“起始”位置，优先考虑 oldLineNumber，其次是 newLineNumber
+            // 负数行号表示该侧没有对应的行
+            int r1StartPos = r1.getOldLineNumber() != -1 ? r1.getOldLineNumber() : (r1.getNewLineNumber() != -1 ? r1.getNewLineNumber() : Integer.MAX_VALUE);
+            int r2StartPos = r2.getOldLineNumber() != -1 ? r2.getOldLineNumber() : (r2.getNewLineNumber() != -1 ? r2.getNewLineNumber() : Integer.MAX_VALUE);
+
+            if (r1StartPos != r2StartPos) {
+                return Integer.compare(r1StartPos, r2StartPos);
+            }
+            
+            // 如果起始位置相同，进一步按 oldLineNumber 排序
             int r1OldLine = r1.getOldLineNumber() != -1 ? r1.getOldLineNumber() : Integer.MAX_VALUE;
             int r2OldLine = r2.getOldLineNumber() != -1 ? r2.getOldLineNumber() : Integer.MAX_VALUE;
+            
+            if (r1OldLine != r2OldLine) {
+                 return Integer.compare(r1OldLine, r2OldLine);
+            }
+
+            // 如果 oldLineNumber 也相同，则按 newLineNumber 排序
             int r1NewLine = r1.getNewLineNumber() != -1 ? r1.getNewLineNumber() : Integer.MAX_VALUE;
             int r2NewLine = r2.getNewLineNumber() != -1 ? r2.getNewLineNumber() : Integer.MAX_VALUE;
-
-            // 优先按旧行号排序，如果旧行号相同，再按新行号排序
-            int oldLineCompare = Integer.compare(r1OldLine, r2OldLine);
-            if (oldLineCompare != 0) {
-                return oldLineCompare;
-            }
             return Integer.compare(r1NewLine, r2NewLine);
         });
 
         // 重新计算行号，因为排序和MOVED处理可能导致行号不连续
-        // 这一步是为了让前端的行号显示正确，而不是用于diff算法本身
         int currentOriginalLineNum = 1;
         int currentNewLineNum = 1;
         for (DiffRowDTO row : resultRows) {
             if ("EQUAL".equals(row.getTag()) || "CHANGE".equals(row.getTag()) || "MOVED".equals(row.getTag())) {
+                // 对于相等、修改、移动的行，同时消耗两个流的行号
                 row.setOldLineNumber(currentOriginalLineNum++);
                 row.setNewLineNumber(currentNewLineNum++);
             } else if ("DELETE".equals(row.getTag())) {
+                // 删除的行只消耗原始流的行号
                 row.setOldLineNumber(currentOriginalLineNum++);
-                row.setNewLineNumber(-1);
+                row.setNewLineNumber(-1); // 目标无对应行
             } else if ("INSERT".equals(row.getTag())) {
-                row.setOldLineNumber(-1);
+                // 插入的行只消耗新流的行号
+                row.setOldLineNumber(-1); // 源无对应行
                 row.setNewLineNumber(currentNewLineNum++);
             }
         }
