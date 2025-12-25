@@ -19,7 +19,7 @@ public class NacosDiffTool {
      * @param group 配置分组
      * @param original 源环境配置内容
      * @param revised 目标环境配置内容
-     * @return 详细的差异结果
+     * @return 详细的差异结果（包含所有行，前端根据 tag 判断显示）
      */
     public static DetailedDiffResultDTO compareConfigs(String dataId, String group, String original, String revised) {
         DetailedDiffResultDTO result = new DetailedDiffResultDTO();
@@ -56,12 +56,16 @@ public class NacosDiffTool {
             return result;
         }
 
-        // 两个都有内容，进行详细对比（仅显示差异）
-        List<DiffRowDTO> diffRows = computeDifferencesWithSmartMatching(original, revised);
+        // 两个都有内容，进行详细对比
+        List<DiffRowDTO> allDiffRows = computeLineByLineDiff(
+            original.split("\n", -1),
+            revised.split("\n", -1)
+        );
         
-        // 关键优化：如果经过全局匹配后没有差异行，说明两个配置内容完全相同（即使顺序不同）
-        if (diffRows.isEmpty()) {
+        boolean hasDifference = allDiffRows.stream().anyMatch(r -> !"EQUAL".equals(r.getTag()));
+        if (!hasDifference) {
             result.setStatus("same");
+            // Even if not perfectly equal (e.g. trailing newline), if no diff lines, it's same for user
             result.setDiffRows(new ArrayList<>());
             result.setTotalLines(0);
             result.setChangedLines(0);
@@ -71,168 +75,152 @@ public class NacosDiffTool {
         }
         
         result.setStatus("different");
-        result.setDiffRows(diffRows);
+        // 保留所有行（包括EQUAL），前端根据tag判断显示
+        result.setDiffRows(allDiffRows);
 
-        // 统计信息
-        int totalDiffLines = diffRows.size();
-        int changedLines = (int) diffRows.stream().filter(r -> "CHANGE".equals(r.getTag())).count();
-        int insertedLines = (int) diffRows.stream().filter(r -> "INSERT".equals(r.getTag())).count();
-        int deletedLines = (int) diffRows.stream().filter(r -> "DELETE".equals(r.getTag())).count();
+        // 统计信息 - 仅统计差异行，不统计EQUAL行
+        long changedLines = allDiffRows.stream().filter(r -> "CHANGE".equals(r.getTag())).count();
+        long insertedLines = allDiffRows.stream().filter(r -> "INSERT".equals(r.getTag())).count();
+        long deletedLines = allDiffRows.stream().filter(r -> "DELETE".equals(r.getTag())).count();
+        long totalDiffLines = changedLines + insertedLines + deletedLines;
 
-        result.setTotalLines(totalDiffLines);
-        result.setChangedLines(changedLines);
-        result.setInsertedLines(insertedLines);
-        result.setDeletedLines(deletedLines);
+        result.setTotalLines((int) totalDiffLines);
+        result.setChangedLines((int) changedLines);
+        result.setInsertedLines((int) insertedLines);
+        result.setDeletedLines((int) deletedLines);
 
         return result;
     }
 
     /**
-     * 计算详细的行级差异 - 使用改进的匹配算法处理交叉配置块
-     * 关键优化：先进行全局行匹配（不考虑顺序），再处理实际的插入/删除
+     * 使用 Myers 差异算法进行逐行对比
+     * 返回完整的差异序列，包括相同行和修改行
      */
-    private static List<DiffRowDTO> computeDifferencesWithSmartMatching(String original, String revised) {
-        String[] originalLines = original.split("\n", -1);
-        String[] revisedLines = revised.split("\n", -1);
-
-        // 第一步：构建所有可能的行匹配关系（不考虑顺序）
-        // 这样可以识别交叉配置块中的相同行
-        Set<Integer> matchedOriginalLines = new HashSet<>();
-        Set<Integer> matchedRevisedLines = new HashSet<>();
-        
-        // 贪心匹配：找出所有相同的行对（优先处理唯一性强的行）
-        performGlobalLineMatching(originalLines, revisedLines, matchedOriginalLines, matchedRevisedLines);
-
-        // 第二步：构建差异行列表 - 只包含不在匹配集合中的行
-        List<DiffRowDTO> diffRows = new ArrayList<>();
-        
-        // 添加源环境中未匹配的行（删除行）
-        for (int i = 0; i < originalLines.length; i++) {
-            if (!matchedOriginalLines.contains(i)) {
-                DiffRowDTO row = new DiffRowDTO();
-                row.setTag("DELETE");
-                row.setOldLine(originalLines[i]);
-                row.setNewLine("");
-                row.setOldLineNumber(i + 1);
-                row.setNewLineNumber(-1);
-                diffRows.add(row);
-            }
-        }
-        
-        // 添加目标环境中未匹配的行（插入行）
-        for (int i = 0; i < revisedLines.length; i++) {
-            if (!matchedRevisedLines.contains(i)) {
-                DiffRowDTO row = new DiffRowDTO();
-                row.setTag("INSERT");
-                row.setOldLine("");
-                row.setNewLine(revisedLines[i]);
-                row.setOldLineNumber(-1);
-                row.setNewLineNumber(i + 1);
-                diffRows.add(row);
-            }
-        }
-
-        return diffRows;
-    }
-
-    /**
-     * 全局行匹配 - 找出所有相同的行（不考虑顺序）
-     * 这个方法处理交叉配置块的关键在于：
-     * 1. 首先识别完全相同的行
-     * 2. 使用贪心算法进行一对一匹配
-     * 3. 避免重复匹配
-     */
-    private static void performGlobalLineMatching(String[] original, String[] revised,
-                                                   Set<Integer> matchedOriginal, 
-                                                   Set<Integer> matchedRevised) {
-        // 统计每行的出现频率
-        Map<String, Integer> originalFreq = new HashMap<>();
-        Map<String, Integer> revisedFreq = new HashMap<>();
-        
-        for (String line : original) {
-            originalFreq.put(line, originalFreq.getOrDefault(line, 0) + 1);
-        }
-        
-        for (String line : revised) {
-            revisedFreq.put(line, revisedFreq.getOrDefault(line, 0) + 1);
-        }
-
-        // 第一阶段：处理出现频率相同且都只出现一次或少数次的行
-        // 优先级：频率越低，优先级越高（唯一行最优先）
-        for (String line : originalFreq.keySet()) {
-            if (!revisedFreq.containsKey(line)) continue;
-            
-            int origCount = originalFreq.get(line);
-            int revCount = revisedFreq.get(line);
-            int matchCount = Math.min(origCount, revCount);
-            
-            // 找出这行在original中的所有位置
-            List<Integer> origIndices = new ArrayList<>();
-            for (int i = 0; i < original.length; i++) {
-                if (original[i].equals(line) && !matchedOriginal.contains(i)) {
-                    origIndices.add(i);
-                }
-            }
-            
-            // 找出这行在revised中的所有位置
-            List<Integer> revIndices = new ArrayList<>();
-            for (int i = 0; i < revised.length; i++) {
-                if (revised[i].equals(line) && !matchedRevised.contains(i)) {
-                    revIndices.add(i);
-                }
-            }
-            
-            // 进行一对一匹配（贪心策略：按顺序匹配）
-            int matches = Math.min(origIndices.size(), revIndices.size());
-            for (int k = 0; k < matches; k++) {
-                matchedOriginal.add(origIndices.get(k));
-                matchedRevised.add(revIndices.get(k));
-            }
-        }
-    }
-
-    /**
-     * 计算最长公共子序列 (LCS) - 使用动态规划算法
-     * 返回LCS中对应的原始数组下标对列表
-     * 这个算法可以正确识别配置文件中不同位置但内容相同的行
-     */
-    private static List<int[]> computeLCS(String[] original, String[] revised) {
+    private static List<DiffRowDTO> computeLineByLineDiff(String[] original, String[] revised) {
         int m = original.length;
         int n = revised.length;
         
-        // dp[i][j] 表示 original[0...i-1] 和 revised[0...j-1] 的LCS长度
+        // 构建edit distance矩阵和回溯路径
         int[][] dp = new int[m + 1][n + 1];
+        int[][] direction = new int[m + 1][n + 1]; // 0:match, 1:delete, 2:insert, 3:change
         
-        // 填充dp表
+        // 初始化第一行和第一列
+        for (int i = 0; i <= m; i++) {
+            dp[i][0] = i;
+            if (i > 0) direction[i][0] = 1; // delete
+        }
+        
+        for (int j = 0; j <= n; j++) {
+            dp[0][j] = j;
+            if (j > 0) direction[0][j] = 2; // insert
+        }
+        
+        // 填充dp矩阵
         for (int i = 1; i <= m; i++) {
             for (int j = 1; j <= n; j++) {
                 if (original[i - 1].equals(revised[j - 1])) {
-                    dp[i][j] = dp[i - 1][j - 1] + 1;
+                    // 行相同，不增加距离
+                    dp[i][j] = dp[i - 1][j - 1];
+                    direction[i][j] = 0; // match
                 } else {
-                    dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+                    // 选择最小代价的操作
+                    int delete = dp[i - 1][j] + 1;
+                    int insert = dp[i][j - 1] + 1;
+                    int change = dp[i - 1][j - 1] + 1;
+                    
+                    if (delete <= insert && delete <= change) {
+                        dp[i][j] = delete;
+                        direction[i][j] = 1; // delete
+                    } else if (insert <= change) {
+                        dp[i][j] = insert;
+                        direction[i][j] = 2; // insert
+                    } else {
+                        dp[i][j] = change;
+                        direction[i][j] = 3; // change
+                    }
                 }
             }
         }
-
-        // 回溯找出LCS的下标对
-        List<int[]> result = new ArrayList<>();
+        
+        // 回溯生成差异行列表
+        List<DiffRowDTO> diffRows = new ArrayList<>();
         int i = m;
         int j = n;
         
-        while (i > 0 && j > 0) {
-            if (original[i - 1].equals(revised[j - 1])) {
-                result.add(0, new int[]{i - 1, j - 1});
-                i--;
+        while (i > 0 || j > 0) {
+            if (i == 0) {
+                // 只剩下插入操作
+                DiffRowDTO row = new DiffRowDTO();
+                row.setTag("INSERT");
+                row.setOldLine("");
+                row.setNewLine(revised[j - 1]);
+                row.setOldLineNumber(-1);
+                row.setNewLineNumber(j);
+                diffRows.add(0, row);
                 j--;
-            } else if (dp[i - 1][j] > dp[i][j - 1]) {
+            } else if (j == 0) {
+                // 只剩下删除操作
+                DiffRowDTO row = new DiffRowDTO();
+                row.setTag("DELETE");
+                row.setOldLine(original[i - 1]);
+                row.setNewLine("");
+                row.setOldLineNumber(i);
+                row.setNewLineNumber(-1);
+                diffRows.add(0, row);
                 i--;
             } else {
-                j--;
+                int dir = direction[i][j];
+                
+                if (dir == 0) {
+                    // 行相同，添加EQUAL标签
+                    DiffRowDTO row = new DiffRowDTO();
+                    row.setTag("EQUAL");
+                    row.setOldLine(original[i - 1]);
+                    row.setNewLine(revised[j - 1]);
+                    row.setOldLineNumber(i);
+                    row.setNewLineNumber(j);
+                    diffRows.add(0, row);
+                    i--;
+                    j--;
+                } else if (dir == 1) {
+                    // 删除行
+                    DiffRowDTO row = new DiffRowDTO();
+                    row.setTag("DELETE");
+                    row.setOldLine(original[i - 1]);
+                    row.setNewLine("");
+                    row.setOldLineNumber(i);
+                    row.setNewLineNumber(-1);
+                    diffRows.add(0, row);
+                    i--;
+                } else if (dir == 2) {
+                    // 插入行
+                    DiffRowDTO row = new DiffRowDTO();
+                    row.setTag("INSERT");
+                    row.setOldLine("");
+                    row.setNewLine(revised[j - 1]);
+                    row.setOldLineNumber(-1);
+                    row.setNewLineNumber(j);
+                    diffRows.add(0, row);
+                    j--;
+                } else {
+                    // 修改行
+                    DiffRowDTO row = new DiffRowDTO();
+                    row.setTag("CHANGE");
+                    row.setOldLine(original[i - 1]);
+                    row.setNewLine(revised[j - 1]);
+                    row.setOldLineNumber(i);
+                    row.setNewLineNumber(j);
+                    diffRows.add(0, row);
+                    i--;
+                    j--;
+                }
             }
         }
-
-        return result;
+        
+        return diffRows;
     }
+
+
 
     /**
      * 生成源独有的行（未被匹配的删除行）

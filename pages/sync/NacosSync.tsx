@@ -92,6 +92,7 @@ export const NacosSync: React.FC = () => {
   const [currentDetailedResult, setCurrentDetailedResult] = useState<ComparisonResult | null>(null);
   const [detailedDiffData, setDetailedDiffData] = useState<DetailedDiffResult | null>(null);
   const [detailedDiffLoading, setDetailedDiffLoading] = useState(false);
+  const [diffContentMode, setDiffContentMode] = useState<'all' | 'diffsOnly'>('all');
 
   // ============ Lifecycle ============
   useEffect(() => {
@@ -269,6 +270,7 @@ export const NacosSync: React.FC = () => {
   const handleViewDetail = async (result: ComparisonResult) => {
     setCurrentDetailedResult(result);
     setDetailedDiffLoading(true);
+    setDiffContentMode('all'); // Reset to default view
     try {
       const response = await apiService.nacosApi.compareDetailed({
         dataId: result.dataId,
@@ -1194,9 +1196,29 @@ export const NacosSync: React.FC = () => {
                   {currentDetailedResult.dataId} - {currentDetailedResult.group}
                 </p>
               </div>
-              <button onClick={() => setDetailedDiffVisible(false)} className="text-slate-300 hover:text-white">
-                <X size={20} />
-              </button>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center rounded-lg bg-slate-700 p-1">
+                    <button
+                        onClick={() => setDiffContentMode('all')}
+                        className={`px-3 py-1 text-xs font-bold rounded-md transition-colors ${
+                            diffContentMode === 'all' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-600'
+                        }`}
+                    >
+                        查看全部
+                    </button>
+                    <button
+                        onClick={() => setDiffContentMode('diffsOnly')}
+                        className={`px-3 py-1 text-xs font-bold rounded-md transition-colors ${
+                            diffContentMode === 'diffsOnly' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-600'
+                        }`}
+                    >
+                        仅展示差异
+                    </button>
+                </div>
+                <button onClick={() => setDetailedDiffVisible(false)} className="text-slate-300 hover:text-white">
+                  <X size={20} />
+                </button>
+              </div>
             </div>
 
             {/* Content */}
@@ -1210,13 +1232,49 @@ export const NacosSync: React.FC = () => {
                   <p className="text-slate-600 text-lg">✅ Files are identical. No differences to show.</p>
                 </div>
               ) : (
-                <div className="flex-1 overflow-auto">
-                  <ConfigDiffViewer
-                    original={currentDetailedResult.targetContent}
-                    modified={currentDetailedResult.sourceContent}
-                    language={currentDetailedResult.dataId.split('.').pop() || 'yaml'}
-                  />
-                </div>
+                diffContentMode === 'all' ? (
+                    <div className="flex-1 overflow-auto">
+                      <ConfigDiffViewer
+                        original={currentDetailedResult.targetContent}
+                        modified={currentDetailedResult.sourceContent}
+                        language={currentDetailedResult.dataId.split('.').pop() || 'yaml'}
+                      />
+                    </div>
+                ) : (
+                    <div className="p-4 font-mono text-sm bg-white">
+                        {detailedDiffData.diffRows
+                            .filter(row => row.tag !== 'EQUAL')
+                            .map((row, idx) => {
+                                if (row.tag === 'CHANGE') {
+                                    return (
+                                        <React.Fragment key={idx}>
+                                            <div className="flex bg-red-50">
+                                                <span className="w-12 text-right px-2 text-slate-400">{row.oldLineNumber}</span>
+                                                <span className="w-12 text-right px-2 text-slate-400"></span>
+                                                <span className="px-2 text-red-500">-</span>
+                                                <span className="text-red-800 whitespace-pre-wrap break-all">{row.oldLine}</span>
+                                            </div>
+                                            <div className="flex bg-green-50">
+                                                <span className="w-12 text-right px-2 text-slate-400"></span>
+                                                <span className="w-12 text-right px-2 text-slate-400">{row.newLineNumber}</span>
+                                                <span className="px-2 text-green-500">+</span>
+                                                <span className="text-green-800 whitespace-pre-wrap break-all">{row.newLine}</span>
+                                            </div>
+                                        </React.Fragment>
+                                    );
+                                }
+                                return (
+                                    <div key={idx} className={`flex ${row.tag === 'DELETE' ? 'bg-red-50' : 'bg-green-50'}`}>
+                                        <span className="w-12 text-right px-2 text-slate-400">{row.oldLineNumber > 0 ? row.oldLineNumber : ''}</span>
+                                        <span className="w-12 text-right px-2 text-slate-400">{row.newLineNumber > 0 ? row.newLineNumber : ''}</span>
+                                        <span className={`px-2 ${row.tag === 'DELETE' ? 'text-red-500' : 'text-green-500'}`}>{row.tag === 'DELETE' ? '-' : '+'}</span>
+                                        <span className={`${row.tag === 'DELETE' ? 'text-red-800' : 'text-green-800'} whitespace-pre-wrap break-all`}>{row.tag === 'DELETE' ? row.oldLine : row.newLine}</span>
+                                    </div>
+                                );
+                            })
+                        }
+                    </div>
+                )
               )
             )}
 
