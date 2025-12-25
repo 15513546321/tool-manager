@@ -235,9 +235,9 @@ public class NacosDiffTool {
         if (line == null) {
             return "";
         }
-        // Remove carriage returns, then replace all Unicode whitespace characters with an empty string, then trim.
-        // This is a more aggressive normalization to ensure content equality for matching.
-        return line.replace("\r", "").replaceAll("\\s+", "").trim();
+        // Remove carriage returns, then replace non-breaking spaces, then trim
+        // This addresses common invisible whitespace issues.
+        return line.replace("\r", "").replace("\u00A0", " ").trim();
     }
 
     /**
