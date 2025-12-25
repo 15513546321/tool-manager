@@ -236,246 +236,121 @@ public class NacosDiffTool {
      * 将内容相同的 DELETE 和 INSERT 对标记为 MOVED。
      */
     private static List<DiffRowDTO> postProcessDiffRows(List<DiffRowDTO> initialDiffRows) {
-        List<DiffRowDTO> processedDiffRows = new ArrayList<>();
-        Map<String, List<Integer>> deletedLinesMap = new HashMap<>(); // content -> list of indices in initialDiffRows
-        Map<String, List<Integer>> insertedLinesMap = new HashMap<>(); // content -> list of indices in initialDiffRows
+        List<DiffRowDTO> resultRows = new ArrayList<>();
+        
+        // 收集所有 DELETE 和 INSERT 行，并存储它们的原始索引
+        Map<String, List<DiffRowDTO>> deleteCandidates = new HashMap<>(); // content -> list of DELETE rows
+        Map<String, List<DiffRowDTO>> insertCandidates = new HashMap<>(); // content -> list of INSERT rows
 
-        // 第一次遍历：收集所有 DELETE 和 INSERT 行
-        for (int i = 0; i < initialDiffRows.size(); i++) {
-            DiffRowDTO row = initialDiffRows.get(i);
+        // 用于标记已经被 MOVED 逻辑处理过的原始行
+        Set<DiffRowDTO> processedByMovedLogic = new HashSet<>();
+
+        // 第一遍：分类原始差异行
+        for (DiffRowDTO row : initialDiffRows) {
             if ("DELETE".equals(row.getTag())) {
-                deletedLinesMap.computeIfAbsent(row.getOldLine(), k -> new ArrayList<>()).add(i);
+                deleteCandidates.computeIfAbsent(row.getOldLine(), k -> new ArrayList<>()).add(row);
             } else if ("INSERT".equals(row.getTag())) {
-                insertedLinesMap.computeIfAbsent(row.getNewLine(), k -> new ArrayList<>()).add(i);
+                insertCandidates.computeIfAbsent(row.getNewLine(), k -> new ArrayList<>()).add(row);
+            } else {
+                resultRows.add(row); // EQUAL and CHANGE rows are added directly
             }
         }
 
-        // 第二次遍历：尝试匹配 DELETE 和 INSERT 为 MOVED
-        Set<Integer> handledIndices = new HashSet<>(); // 记录已被处理的行索引
+        // 第二遍：尝试匹配 DELETE 和 INSERT 为 MOVED
+        for (Map.Entry<String, List<DiffRowDTO>> entry : deleteCandidates.entrySet()) {
+            String content = entry.getKey();
+            List<DiffRowDTO> deletes = entry.getValue();
+            List<DiffRowDTO> inserts = insertCandidates.get(content);
 
-        for (int i = 0; i < initialDiffRows.size(); i++) {
-            if (handledIndices.contains(i)) {
-                continue;
-            }
-
-            DiffRowDTO currentRow = initialDiffRows.get(i);
-
-            if ("DELETE".equals(currentRow.getTag())) {
-                String content = currentRow.getOldLine();
-                List<Integer> matchingInserts = insertedLinesMap.get(content);
-
-                if (matchingInserts != null && !matchingInserts.isEmpty()) {
-                    // 找到一个匹配的 INSERT
-                    int insertIndex = matchingInserts.remove(0); // 取出第一个匹配项
-                    
-                    // 确保这个 INSERT 还没有被其他 DELETE 匹配
-                    if (!handledIndices.contains(insertIndex)) {
-                        DiffRowDTO insertRow = initialDiffRows.get(insertIndex);
-
-                        // 创建一个新的 MOVED 行
+            if (inserts != null) {
+                Iterator<DiffRowDTO> deleteIterator = deletes.iterator();
+                while (deleteIterator.hasNext()) {
+                    DiffRowDTO deleteRow = deleteIterator.next();
+                    Iterator<DiffRowDTO> insertIterator = inserts.iterator();
+                    while (insertIterator.hasNext()) {
+                        DiffRowDTO insertRow = insertIterator.next();
+                        
+                        // 找到匹配的 DELETE 和 INSERT
+                        // 逻辑：如果删除行和插入行的内容完全一致，则可以认为是移动
+                        // 更高级的算法会考虑距离，这里简化处理
+                        
                         DiffRowDTO movedRow = new DiffRowDTO();
                         movedRow.setTag("MOVED");
-                        movedRow.setOldLine(currentRow.getOldLine());
+                        movedRow.setOldLine(deleteRow.getOldLine());
                         movedRow.setNewLine(insertRow.getNewLine());
-                        movedRow.setOldLineNumber(currentRow.getOldLineNumber());
+                        movedRow.setOldLineNumber(deleteRow.getOldLineNumber());
                         movedRow.setNewLineNumber(insertRow.getNewLineNumber());
                         
-                        // 将 MOVED 行添加到最终列表
-                        // 这里可以根据需要决定 MOVED 行的插入位置，
-                        // 为了保持 diff 顺序，我们可能需要先收集所有 MOVED 行，然后重新排序
-                        // 或者更简单的，直接将原来的 DELETE/INSERT 替换为 MOVED
-                        // 对于BeyondCompare风格，通常是将MOVED行作为单独的类别，不直接替代原位置
-                        // 但为了简化前端展示和保持行号对应，这里将其替换原始DELETE/INSERT
-                        // 实际显示时，MOVED行在界面上可能需要特殊渲染
-                        processedDiffRows.add(movedRow);
+                        resultRows.add(movedRow);
                         
-                        // 标记这两个行已被处理
-                        handledIndices.add(i);
-                        handledIndices.add(insertIndex);
+                        // 标记这两个原始行已被处理，不再作为 DELETE/INSERT 添加
+                        processedByMovedLogic.add(deleteRow);
+                        processedByMovedLogic.add(insertRow);
                         
-                        continue; // 继续下一个未处理的行
+                        deleteIterator.remove(); // 移除已匹配的 DELETE
+                        insertIterator.remove(); // 移除已匹配的 INSERT
+                        break; // 匹配成功，继续下一个 DELETE
                     }
                 }
-            } else if ("INSERT".equals(currentRow.getTag())) {
-                 // 如果 INSERT 行在前面的 DELETE 匹配中已经被处理，则跳过
-                 if (handledIndices.contains(i)) {
-                     continue;
-                 }
-                 // 如果 INSERT 行没有被匹配为 MOVED，则它是一个真正的 INSERT
-                 // 此时将其添加到 processedDiffRows (或者在下面的循环中统一添加未处理的行)
             }
-            // 如果是 EQUAL, CHANGE, 或者未匹配的 DELETE/INSERT，暂时不处理
-            // 它们将在下面的循环中统一添加
         }
-
-        // 重新构建最终的差异行列表，将所有未处理的行以及识别出的 MOVED 行按原始顺序合并
-        List<DiffRowDTO> finalDiffRows = new ArrayList<>();
-        List<DiffRowDTO> movedRowsCollector = new ArrayList<>(); // 收集所有MOVED行
-
-        for (int i = 0; i < initialDiffRows.size(); i++) {
-            if (handledIndices.contains(i)) {
-                DiffRowDTO row = initialDiffRows.get(i);
-                if ("DELETE".equals(row.getTag())) { // 之前被标记为 DELETE 但实际上是 MOVED 的上半部分
-                    // 找到对应的 MOVED 行
-                    Optional<DiffRowDTO> movedMatch = processedDiffRows.stream()
-                        .filter(mr -> "MOVED".equals(mr.getTag()) && mr.getOldLineNumber() == row.getOldLineNumber())
-                        .findFirst();
-                    movedMatch.ifPresent(movedRowsCollector::add);
-                } else if ("INSERT".equals(row.getTag())) { // 之前被标记为 INSERT 但实际上是 MOVED 的下半部分
-                    // 确保不重复添加，因为 movedRowsCollector 已经在 DELETE 处添加了一次
-                } else {
-                     finalDiffRows.add(initialDiffRows.get(i)); // Add EQUAL or CHANGE rows directly
+        
+        // 将剩余的未匹配 DELETE 和 INSERT 添加到结果中
+        // 这些是真正的 DELETE 或 INSERT，而不是 MOVED
+        for (List<DiffRowDTO> deletes : deleteCandidates.values()) {
+            for (DiffRowDTO row : deletes) {
+                if (!processedByMovedLogic.contains(row)) {
+                    resultRows.add(row);
                 }
-            } else {
-                finalDiffRows.add(initialDiffRows.get(i)); // Add all unhandled rows
             }
         }
-        
-        // 合并 MOVED 行到最终列表，MOVED 行通常会显示在原 DELETE/INSERT 的位置
-        // 为了简单起见，这里将 MOVED 行插入到它最接近的 DELETE 或 INSERT 原始位置，并移除原DELETE/INSERT
-        // 实际上，更复杂的 diff 工具会智能地将 MOVED 放在中间或者作为特殊标记
-        // 这里我们选择将 DELETE/INSERT 替换为 MOVED，这样统计数据会更准确
-        
-        List<DiffRowDTO> resultRows = new ArrayList<>();
-        // 用来存储待处理的 DELETE/INSERT 行的索引，以便进行 MOVED 检测
-        List<Integer> deleteIndices = new ArrayList<>();
-        List<Integer> insertIndices = new ArrayList<>();
-
-        for (int idx = 0; idx < initialDiffRows.size(); idx++) {
-            DiffRowDTO row = initialDiffRows.get(idx);
-            if ("DELETE".equals(row.getTag())) {
-                deleteIndices.add(idx);
-            } else if ("INSERT".equals(row.getTag())) {
-                insertIndices.add(idx);
-            } else {
-                // 对于非 DELETE/INSERT 行，直接添加到结果
-                resultRows.add(row);
-            }
-        }
-
-        // 尝试将 DELETE 和 INSERT 匹配为 MOVED
-        for (int i = 0; i < deleteIndices.size(); i++) {
-            int deleteIdx = deleteIndices.get(i);
-            DiffRowDTO deleteRow = initialDiffRows.get(deleteIdx);
-            
-            for (int j = 0; j < insertIndices.size(); j++) {
-                int insertIdx = insertIndices.get(j);
-                DiffRowDTO insertRow = initialDiffRows.get(insertIdx);
-                
-                // 如果内容相同，则认为是 MOVED
-                if (deleteRow.getOldLine().equals(insertRow.getNewLine())) {
-                    DiffRowDTO movedRow = new DiffRowDTO();
-                    movedRow.setTag("MOVED");
-                    movedRow.setOldLine(deleteRow.getOldLine());
-                    movedRow.setNewLine(insertRow.getNewLine());
-                    movedRow.setOldLineNumber(deleteRow.getOldLineNumber());
-                    movedRow.setNewLineNumber(insertRow.getNewLineNumber());
-                    
-                    // 将 MOVED 行添加到结果，并移除已匹配的 DELETE 和 INSERT
-                    // 这里的插入位置需要考虑。为了保持接近原始位置，我们可以插入到原始 DELETE 的位置
-                    // 但是，直接替换原始 DELETE 和 INSERT 会导致行数变化，这不是我们想要的
-                    // 最好的方法是先收集所有差异，再统一处理
-                    // 暂时将 movedRow 标记，并将其添加到最终列表，但原 DELETE/INSERT 要被移除
-                    
-                    // 标记这些索引已经被处理
-                    initialDiffRows.set(deleteIdx, null); // 标记为已处理
-                    initialDiffRows.set(insertIdx, null); // 标记为已处理
-                    
-                    resultRows.add(movedRow);
-                    break; // 找到一个匹配，继续下一个 DELETE
+        for (List<DiffRowDTO> inserts : insertCandidates.values()) {
+            for (DiffRowDTO row : inserts) {
+                if (!processedByMovedLogic.contains(row)) {
+                    resultRows.add(row);
                 }
             }
         }
 
-        // 将所有非null的原始行添加回来（未被MOVED处理的DELETE/INSERT）
-        for (DiffRowDTO row : initialDiffRows) {
-            if (row != null && !"MOVED".equals(row.getTag())) { // 排除已经添加到resultRows的MOVED行
-                resultRows.add(row);
-            }
-        }
-        
-        // 最终的 diffRows 列表需要按行号排序，或者按原始 diff 的顺序
-        // 这里简单地将所有 MOVED 行添加到所有其他行的后面，这可能不是最佳视觉效果，但确保逻辑正确
-        // 更好的做法是，MOVED行替换掉对应的DELETE和INSERT位置
-        List<DiffRowDTO> finalResult = new ArrayList<>();
-        List<DiffRowDTO> unhandledDeletes = new ArrayList<>();
-        List<DiffRowDTO> unhandledInserts = new ArrayList<>();
-        
-        // 先收集所有 EQUAL, CHANGE
-        for(DiffRowDTO row : initialDiffRows) {
-            if(row != null && ("EQUAL".equals(row.getTag()) || "CHANGE".equals(row.getTag()))) {
-                finalResult.add(row);
-            } else if (row != null && "DELETE".equals(row.getTag())) {
-                unhandledDeletes.add(row);
-            } else if (row != null && "INSERT".equals(row.getTag())) {
-                unhandledInserts.add(row);
-            }
-        }
-        
-        // 尝试匹配 unhandledDeletes 和 unhandledInserts
-        List<DiffRowDTO> tempMoved = new ArrayList<>();
-        Set<DiffRowDTO> usedDeletes = new HashSet<>();
-        Set<DiffRowDTO> usedInserts = new HashSet<>();
+        // 最后一步：根据原始行号对结果进行排序，以保持逻辑顺序
+        // 需要注意，MOVED 行的 oldLineNumber 和 newLineNumber 都有效
+        // EQUAL/CHANGE 行也有对应的 oldLineNumber 和 newLineNumber
+        // DELETE 行只有 oldLineNumber, INSERT 行只有 newLineNumber
+        // 这里采用一个更复杂的排序，尝试保持 diff 的视觉连贯性
+        resultRows.sort((r1, r2) -> {
+            int r1OldLine = r1.getOldLineNumber() != -1 ? r1.getOldLineNumber() : Integer.MAX_VALUE;
+            int r2OldLine = r2.getOldLineNumber() != -1 ? r2.getOldLineNumber() : Integer.MAX_VALUE;
+            int r1NewLine = r1.getNewLineNumber() != -1 ? r1.getNewLineNumber() : Integer.MAX_VALUE;
+            int r2NewLine = r2.getNewLineNumber() != -1 ? r2.getNewLineNumber() : Integer.MAX_VALUE;
 
-        for (DiffRowDTO deleteRow : unhandledDeletes) {
-            for (DiffRowDTO insertRow : unhandledInserts) {
-                if (!usedInserts.contains(insertRow) && deleteRow.getOldLine().equals(insertRow.getNewLine())) {
-                    DiffRowDTO movedRow = new DiffRowDTO();
-                    movedRow.setTag("MOVED");
-                    movedRow.setOldLine(deleteRow.getOldLine());
-                    movedRow.setNewLine(insertRow.getNewLine());
-                    movedRow.setOldLineNumber(deleteRow.getOldLineNumber());
-                    movedRow.setNewLineNumber(insertRow.getNewLineNumber());
-                    tempMoved.add(movedRow);
-                    usedDeletes.add(deleteRow);
-                    usedInserts.add(insertRow);
-                    break;
-                }
+            // 优先按旧行号排序，如果旧行号相同，再按新行号排序
+            int oldLineCompare = Integer.compare(r1OldLine, r2OldLine);
+            if (oldLineCompare != 0) {
+                return oldLineCompare;
             }
-        }
-        
-        // 添加未匹配的 DELETE 和 INSERT
-        for (DiffRowDTO deleteRow : unhandledDeletes) {
-            if (!usedDeletes.contains(deleteRow)) {
-                finalResult.add(deleteRow);
-            }
-        }
-        for (DiffRowDTO insertRow : unhandledInserts) {
-            if (!usedInserts.contains(insertRow)) {
-                finalResult.add(insertRow);
-            }
-        }
-        
-        // 将 MOVED 行添加到结果列表
-        finalResult.addAll(tempMoved);
+            return Integer.compare(r1NewLine, r2NewLine);
+        });
 
-        // 重新排序（可选，但通常有助于显示）
-        // 这里的排序逻辑需要确保：
-        // 1. 原始行号小的在前
-        // 2. 对于 DELETE/INSERT/MOVED 混合的情况，保持它们的相对顺序
-        // 暂时不进行复杂排序，依赖原始 diff 的顺序
-        
-        // 重新计算行号，因为现在可能存在 MOVED 行
+        // 重新计算行号，因为排序和MOVED处理可能导致行号不连续
+        // 这一步是为了让前端的行号显示正确，而不是用于diff算法本身
         int currentOriginalLineNum = 1;
         int currentNewLineNum = 1;
-        for (DiffRowDTO row : finalResult) {
+        for (DiffRowDTO row : resultRows) {
             if ("EQUAL".equals(row.getTag()) || "CHANGE".equals(row.getTag()) || "MOVED".equals(row.getTag())) {
-                // 对于相等、修改、移动的行，同时消耗两个流的行号
                 row.setOldLineNumber(currentOriginalLineNum++);
                 row.setNewLineNumber(currentNewLineNum++);
             } else if ("DELETE".equals(row.getTag())) {
-                // 删除的行只消耗原始流的行号
                 row.setOldLineNumber(currentOriginalLineNum++);
-                row.setNewLineNumber(-1); // 目标无对应行
+                row.setNewLineNumber(-1);
             } else if ("INSERT".equals(row.getTag())) {
-                // 插入的行只消耗新流的行号
-                row.setOldLineNumber(-1); // 源无对应行
+                row.setOldLineNumber(-1);
                 row.setNewLineNumber(currentNewLineNum++);
             }
         }
         
-        return finalResult;
+        return resultRows;
     }
+
 
 
     /**
