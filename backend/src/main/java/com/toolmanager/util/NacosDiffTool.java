@@ -245,11 +245,12 @@ public class NacosDiffTool {
 
         for (DiffRowDTO row : initialDiffRows) {
             if ("DELETE".equals(row.getTag())) {
-                deleteQueues.computeIfAbsent(row.getOldLine(), k -> new LinkedList<>()).add(row);
+                deleteQueues.computeIfAbsent(row.getOldLine().trim(), k -> new LinkedList<>()).add(row);
             } else if ("INSERT".equals(row.getTag())) {
-                insertQueues.computeIfAbsent(row.getNewLine(), k -> new LinkedList<>()).add(row);
+                insertQueues.computeIfAbsent(row.getNewLine().trim(), k -> new LinkedList<>()).add(row);
             }
         }
+
 
         // Step 2: Match DELETEs and INSERTs to create MOVED rows and track original rows used
         // Maps to link original DELETE/INSERT DiffRowDTO objects to their new MOVED DiffRowDTO
@@ -261,7 +262,7 @@ public class NacosDiffTool {
             Iterator<DiffRowDTO> deleteIterator = deletesForContent.iterator();
             while (deleteIterator.hasNext()) {
                 DiffRowDTO deleteRow = deleteIterator.next();
-                LinkedList<DiffRowDTO> insertsForContent = insertQueues.get(deleteRow.getOldLine()); // Use oldLine for content
+                LinkedList<DiffRowDTO> insertsForContent = insertQueues.get(deleteRow.getOldLine().trim()); // Use oldLine for content
 
                 if (insertsForContent != null && !insertsForContent.isEmpty()) {
                     DiffRowDTO insertRow = insertsForContent.poll(); // Get and remove a matching INSERT
