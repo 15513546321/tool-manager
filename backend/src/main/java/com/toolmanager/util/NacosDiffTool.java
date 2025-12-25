@@ -231,6 +231,14 @@ public class NacosDiffTool {
         return diffRows;
     }
 
+    private static String normalizeLineContent(String line) {
+        if (line == null) {
+            return "";
+        }
+        // Remove carriage returns and then trim
+        return line.replace("\r", "").trim();
+    }
+
     /**
      * 后处理差异行，识别并标记移动的行。
      * 将内容相同的 DELETE 和 INSERT 对标记为 MOVED。
@@ -245,12 +253,11 @@ public class NacosDiffTool {
 
         for (DiffRowDTO row : initialDiffRows) {
             if ("DELETE".equals(row.getTag())) {
-                deleteQueues.computeIfAbsent(row.getOldLine().trim(), k -> new LinkedList<>()).add(row);
+                deleteQueues.computeIfAbsent(normalizeLineContent(row.getOldLine()), k -> new LinkedList<>()).add(row);
             } else if ("INSERT".equals(row.getTag())) {
-                insertQueues.computeIfAbsent(row.getNewLine().trim(), k -> new LinkedList<>()).add(row);
+                insertQueues.computeIfAbsent(normalizeLineContent(row.getNewLine()), k -> new LinkedList<>()).add(row);
             }
         }
-
 
         // Step 2: Match DELETEs and INSERTs to create MOVED rows and track original rows used
         // Maps to link original DELETE/INSERT DiffRowDTO objects to their new MOVED DiffRowDTO
@@ -262,7 +269,7 @@ public class NacosDiffTool {
             Iterator<DiffRowDTO> deleteIterator = deletesForContent.iterator();
             while (deleteIterator.hasNext()) {
                 DiffRowDTO deleteRow = deleteIterator.next();
-                LinkedList<DiffRowDTO> insertsForContent = insertQueues.get(deleteRow.getOldLine().trim()); // Use oldLine for content
+                LinkedList<DiffRowDTO> insertsForContent = insertQueues.get(normalizeLineContent(deleteRow.getOldLine())); // Use normalized oldLine for content
 
                 if (insertsForContent != null && !insertsForContent.isEmpty()) {
                     DiffRowDTO insertRow = insertsForContent.poll(); // Get and remove a matching INSERT
@@ -270,8 +277,8 @@ public class NacosDiffTool {
                     if (insertRow != null) {
                         DiffRowDTO movedRow = new DiffRowDTO();
                         movedRow.setTag("MOVED");
-                        movedRow.setOldLine(deleteRow.getOldLine());
-                        movedRow.setNewLine(insertRow.getNewLine());
+                        movedRow.setOldLine(deleteRow.getOldLine()); // Keep original content for display
+                        movedRow.setNewLine(insertRow.getNewLine()); // Keep original content for display
                         movedRow.setOldLineNumber(deleteRow.getOldLineNumber());
                         movedRow.setNewLineNumber(insertRow.getNewLineNumber());
                         
