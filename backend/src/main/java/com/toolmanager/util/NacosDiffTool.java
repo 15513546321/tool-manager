@@ -253,6 +253,18 @@ public class NacosDiffTool {
     }
 
     /**
+     * 激进的规范化：去除所有空白字符
+     * 用于在后处理中匹配内容相同但格式（空格）稍有不同的行
+     */
+    private static String aggressiveNormalize(String line) {
+        if (line == null) {
+            return "";
+        }
+        // 移除所有空白字符（空格、制表符、换行符等）
+        return line.replaceAll("\\s+", "");
+    }
+
+    /**
      * 后处理差异行，识别并标记移动的行。
      * 将内容相同的 DELETE 和 INSERT 对标记为 MOVED。
      *
@@ -260,15 +272,43 @@ public class NacosDiffTool {
      * 转换为更语义化的 MOVED 标记，并保持差异的原始相对顺序。
      */
     private static List<DiffRowDTO> postProcessDiffRows(List<DiffRowDTO> initialDiffRows) {
+        // Step 0: Expand CHANGE rows into DELETE and INSERT for better move detection
+        // This allows us to detect moves even if they were initially classified as CHANGEs
+        List<DiffRowDTO> expandedRows = new ArrayList<>();
+        for (DiffRowDTO row : initialDiffRows) {
+            if ("CHANGE".equals(row.getTag())) {
+                // Split CHANGE into DELETE and INSERT
+                DiffRowDTO deleteRow = new DiffRowDTO();
+                deleteRow.setTag("DELETE");
+                deleteRow.setOldLine(row.getOldLine());
+                deleteRow.setNewLine("");
+                deleteRow.setOldLineNumber(row.getOldLineNumber());
+                deleteRow.setNewLineNumber(-1);
+
+                DiffRowDTO insertRow = new DiffRowDTO();
+                insertRow.setTag("INSERT");
+                insertRow.setOldLine("");
+                insertRow.setNewLine(row.getNewLine());
+                insertRow.setOldLineNumber(-1);
+                insertRow.setNewLineNumber(row.getNewLineNumber());
+
+                expandedRows.add(deleteRow);
+                expandedRows.add(insertRow);
+            } else {
+                expandedRows.add(row);
+            }
+        }
+
         // Step 1: Collect all DELETE and INSERT rows into queues for content-based matching
         Map<String, LinkedList<DiffRowDTO>> deleteQueues = new HashMap<>(); // content -> queue of DELETE rows
         Map<String, LinkedList<DiffRowDTO>> insertQueues = new HashMap<>(); // content -> queue of INSERT rows
 
-        for (DiffRowDTO row : initialDiffRows) {
+        for (DiffRowDTO row : expandedRows) {
             if ("DELETE".equals(row.getTag())) {
-                deleteQueues.computeIfAbsent(normalizeLineContent(row.getOldLine()), k -> new LinkedList<>()).add(row);
+                // 使用激进规范化作为 Key，忽略空格差异
+                deleteQueues.computeIfAbsent(aggressiveNormalize(row.getOldLine()), k -> new LinkedList<>()).add(row);
             } else if ("INSERT".equals(row.getTag())) {
-                insertQueues.computeIfAbsent(normalizeLineContent(row.getNewLine()), k -> new LinkedList<>()).add(row);
+                insertQueues.computeIfAbsent(aggressiveNormalize(row.getNewLine()), k -> new LinkedList<>()).add(row);
             }
         }
 
@@ -278,11 +318,14 @@ public class NacosDiffTool {
         Map<DiffRowDTO, DiffRowDTO> originalInsertToMovedMap = new HashMap<>(); // Used to mark inserts as consumed
 
         // Iterate through all collected DELETE queues to find matches
-        for (LinkedList<DiffRowDTO> deletesForContent : deleteQueues.values()) {
+        for (Map.Entry<String, LinkedList<DiffRowDTO>> entry : deleteQueues.entrySet()) {
+            String contentKey = entry.getKey();
+            LinkedList<DiffRowDTO> deletesForContent = entry.getValue();
+            
             Iterator<DiffRowDTO> deleteIterator = deletesForContent.iterator();
             while (deleteIterator.hasNext()) {
                 DiffRowDTO deleteRow = deleteIterator.next();
-                LinkedList<DiffRowDTO> insertsForContent = insertQueues.get(normalizeLineContent(deleteRow.getOldLine())); // Use normalized oldLine for content
+                LinkedList<DiffRowDTO> insertsForContent = insertQueues.get(contentKey); // Use same key
 
                 if (insertsForContent != null && !insertsForContent.isEmpty()) {
                     DiffRowDTO insertRow = insertsForContent.poll(); // Get and remove a matching INSERT
@@ -305,16 +348,16 @@ public class NacosDiffTool {
         }
 
         // Step 3: Reconstruct the final list, substituting MOVED rows and maintaining original relative order
-        List<DiffRowDTO> finalProcessedRows = new ArrayList<>();
+        List<DiffRowDTO> processedRows = new ArrayList<>();
         // This set ensures that a MOVED row (which corresponds to both a DELETE and an INSERT) is added only once
         Set<DiffRowDTO> addedMovedRows = new HashSet<>(); 
 
-        for (DiffRowDTO row : initialDiffRows) {
+        for (DiffRowDTO row : expandedRows) {
             if (originalDeleteToMovedMap.containsKey(row)) {
                 // This 'row' is an original DELETE that was part of a MOVED operation
                 DiffRowDTO movedRow = originalDeleteToMovedMap.get(row);
                 if (!addedMovedRows.contains(movedRow)) {
-                    finalProcessedRows.add(movedRow);
+                    processedRows.add(movedRow);
                     addedMovedRows.add(movedRow);
                 }
             } else if (originalInsertToMovedMap.containsKey(row)) {
@@ -322,15 +365,19 @@ public class NacosDiffTool {
                 // Since the MOVED row was already added when its corresponding DELETE was processed, skip this INSERT.
                 continue;
             } else {
-                // This is an EQUAL, CHANGE, or an unmatched DELETE/INSERT
-                finalProcessedRows.add(row);
+                // This is an EQUAL, or an unmatched DELETE/INSERT
+                processedRows.add(row);
             }
         }
 
-        // Step 4: Re-calculate line numbers for the final list to ensure continuity and correctness
+        // Step 4: Merge remaining adjacent DELETE/INSERT pairs back to CHANGE if possible
+        // This restores the UI for actual changes that were not identified as moves
+        List<DiffRowDTO> mergedRows = mergeDeleteInsertToChange(processedRows);
+
+        // Step 5: Re-calculate line numbers for the final list to ensure continuity and correctness
         int currentOriginalLineNum = 1;
         int currentNewLineNum = 1;
-        for (DiffRowDTO row : finalProcessedRows) {
+        for (DiffRowDTO row : mergedRows) {
             if ("EQUAL".equals(row.getTag()) || "CHANGE".equals(row.getTag()) || "MOVED".equals(row.getTag())) {
                 row.setOldLineNumber(currentOriginalLineNum++);
                 row.setNewLineNumber(currentNewLineNum++);
@@ -343,7 +390,50 @@ public class NacosDiffTool {
             }
         }
         
-        return finalProcessedRows;
+        return mergedRows;
+    }
+
+    /**
+     * 将相邻的 DELETE 和 INSERT 合并回 CHANGE
+     */
+    private static List<DiffRowDTO> mergeDeleteInsertToChange(List<DiffRowDTO> rows) {
+        List<DiffRowDTO> result = new ArrayList<>();
+        DiffRowDTO pendingDelete = null;
+        
+        for (DiffRowDTO row : rows) {
+            if ("DELETE".equals(row.getTag())) {
+                if (pendingDelete != null) {
+                    result.add(pendingDelete);
+                }
+                pendingDelete = row;
+            } else if ("INSERT".equals(row.getTag())) {
+                if (pendingDelete != null) {
+                    // Found a DELETE followed by an INSERT -> Merge to CHANGE
+                    DiffRowDTO changeRow = new DiffRowDTO();
+                    changeRow.setTag("CHANGE");
+                    changeRow.setOldLine(pendingDelete.getOldLine());
+                    changeRow.setNewLine(row.getNewLine());
+                    // Use original line numbers if available, or calculate later
+                    changeRow.setOldLineNumber(pendingDelete.getOldLineNumber());
+                    changeRow.setNewLineNumber(row.getNewLineNumber());
+                    
+                    result.add(changeRow);
+                    pendingDelete = null;
+                } else {
+                    result.add(row);
+                }
+            } else {
+                if (pendingDelete != null) {
+                    result.add(pendingDelete);
+                    pendingDelete = null;
+                }
+                result.add(row);
+            }
+        }
+        if (pendingDelete != null) {
+            result.add(pendingDelete);
+        }
+        return result;
     }
 
 
@@ -401,7 +491,7 @@ public class NacosDiffTool {
                 sb.append(row.getNewLine()).append("\n");
                 hasChanges = true;
             } else if ("EQUAL".equals(row.getTag())) {
-                // 相同行也应该包含在同步后的内容中
+                // 相同行也应该包含在同步后的内容
                 sb.append(row.getNewLine()).append("\n");
             }
         }
