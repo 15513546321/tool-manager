@@ -1199,7 +1199,7 @@ export const NacosSync: React.FC = () => {
                 <p className="text-xs text-orange-300 mt-1 font-medium">
                   {diffContentMode === 'all' 
                     ? '目标数据-->>源文件，改动为目标文件中，操作删除左侧数据(-)，操作添加右侧数据(+)'
-                    : '在目标文件中逐条执行'
+                    : '在目标文件中逐条执行，单独在目标文件删除操作请谨慎操作！'
                   }
                 </p>
               </div>

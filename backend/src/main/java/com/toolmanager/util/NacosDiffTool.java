@@ -56,26 +56,31 @@ public class NacosDiffTool {
         // 检查只在源环境或只在目标环境
         if (original.isEmpty()) {
             result.setStatus("target-only");
-            result.setDiffRows(generateTargetOnlyRows(revised));
+            // 目标有内容，源为空 -> 需要从目标删除所有内容
+            result.setDiffRows(generateSourceOnlyRows(revised));
             result.setTotalLines(result.getDiffRows().size());
-            result.setInsertedLines(result.getDiffRows().size()); // all are inserts
+            result.setDeletedLines(result.getDiffRows().size()); // all are deletes
+            result.setInsertedLines(0);
             result.setMovedLines(0);
             return result;
         }
 
         if (revised.isEmpty()) {
             result.setStatus("source-only");
-            result.setDiffRows(generateSourceOnlyRows(original));
+            // 源有内容，目标为空 -> 需要向目标插入所有内容
+            result.setDiffRows(generateTargetOnlyRows(original));
             result.setTotalLines(result.getDiffRows().size());
-            result.setDeletedLines(result.getDiffRows().size()); // all are deletes
+            result.setInsertedLines(result.getDiffRows().size()); // all are inserts
+            result.setDeletedLines(0);
             result.setMovedLines(0);
             return result;
         }
 
         // 两个都有内容，进行详细对比
+        // 注意：为了生成“如何修改目标以匹配源”的差异，我们将 revised（目标）作为旧版本，original（源）作为新版本
         List<DiffRowDTO> allDiffRows = computeLineByLineDiff(
-            original.split("\n", -1),
-            revised.split("\n", -1)
+            revised.split("\n", -1),
+            original.split("\n", -1)
         );
         
         // --- 新增：后处理以识别移动的行 ---
