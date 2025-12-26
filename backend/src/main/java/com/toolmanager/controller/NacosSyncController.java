@@ -583,8 +583,8 @@ public class NacosSyncController {
                     System.out.println("  源内容长度: " + sourceContent.length());
                     System.out.println("  目标内容长度: " + targetContent.length());
                     
-                    // 比较内容（去掉首尾空白后比较，用于兼容不同的格式化）
-                    boolean contentEqual = sourceContent.trim().equals(targetContent.trim());
+                    // 比较内容（智能比较，处理换行符和编码差异）
+                    boolean contentEqual = compareNacosConfigs(sourceContent, targetContent);
                     
                     if (contentEqual) {
                         // 相同
@@ -847,7 +847,7 @@ public class NacosSyncController {
         
         // 获取配置列表（分页）
         int pageNo = 1;
-        int pageSize = 100;
+        int pageSize = 200; // 增加每页数量
         boolean hasMore = true;
         
         try {
@@ -883,75 +883,87 @@ public class NacosSyncController {
             // 方法1：使用 /nacos/v1/cs/configs 端点 + search=blur 参数（UI使用的接口）
             log.info("{}",  "\n尝试方法1：GET /nacos/v1/cs/configs?search=blur（UI使用的标准接口）");
             
-            // 构建 URL 参数
-            StringBuilder queryParams = new StringBuilder();
-            queryParams.append("pageNo=1");
-            queryParams.append("&pageSize=200");
-            queryParams.append("&search=blur"); // 关键参数：模糊搜索模式，告诉服务端这是列表查询
-            queryParams.append("&dataId=");     // 留空代表所有
-            queryParams.append("&group=");      // 留空代表所有
-            
-            // 使用 tenant 参数（这是 /nacos/v1/cs/configs 接口的参数名）
-            if (finalNamespace != null && !finalNamespace.isEmpty()) {
-                queryParams.append("&tenant=").append(java.net.URLEncoder.encode(finalNamespace, "UTF-8"));
-                log.info("命名空间 (tenant): : {}", finalNamespace);
-            } else {
-                log.info("使用默认命名空间(public)");
-            }
-            
-            if (token != null && !token.isEmpty()) {
-                queryParams.append("&accessToken=").append(java.net.URLEncoder.encode(token, "UTF-8"));
-            }
-            
-            String queryUrl = baseUrl + "/nacos/v1/cs/configs?" + queryParams.toString();
-            System.out.println("请求 URL: " + queryUrl.replaceAll("accessToken=[^&]+", "accessToken=***"));
-            
-            HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
-                .uri(new URI(queryUrl))
-                .GET()
-                .timeout(java.time.Duration.ofSeconds(10));
-            
-            if (username != null && !username.isEmpty() && password != null && !password.isEmpty()) {
-                String auth = username + ":" + password;
-                String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes(StandardCharsets.UTF_8));
-                requestBuilder.header("Authorization", "Basic " + encodedAuth);
-            }
-            
-            HttpResponse<String> response = client.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofString());
-            System.out.println("HTTP 状态码: " + response.statusCode());
-            
-            if (response.statusCode() == 200) {
-                String body = response.body();
-                System.out.println("响应体长度: " + body.length() + " 字符");
-                System.out.println("响应预览: " + body.substring(0, Math.min(500, body.length())));
+            while (hasMore) {
+                // 构建 URL 参数
+                StringBuilder queryParams = new StringBuilder();
+                queryParams.append("pageNo=").append(pageNo);
+                queryParams.append("&pageSize=").append(pageSize);
+                queryParams.append("&search=blur"); // 关键参数：模糊搜索模式，告诉服务端这是列表查询
+                queryParams.append("&dataId=");     // 留空代表所有
+                queryParams.append("&group=");      // 留空代表所有
                 
-                List<Map<String, String>> pageConfigs = parseNacosConfigResponse(body);
-                System.out.println("✓ 解析到 " + pageConfigs.size() + " 个配置");
-                
-                for (Map<String, String> config : pageConfigs) {
-                    String content = fetchNacosConfigContent(
-                        baseUrl, 
-                        config.get("dataId"), 
-                        config.get("group"), 
-                        finalNamespace,
-                        username, 
-                        password, 
-                        token
-                    );
-                    if (content != null && !content.isEmpty()) {
-                        config.put("content", content);
-                        configs.add(config);
-                        System.out.println("  ✓ " + config.get("dataId") + " | " + config.get("group"));
-                    }
+                // 使用 tenant 参数（这是 /nacos/v1/cs/configs 接口的参数名）
+                if (finalNamespace != null && !finalNamespace.isEmpty()) {
+                    queryParams.append("&tenant=").append(java.net.URLEncoder.encode(finalNamespace, "UTF-8"));
+                    log.info("命名空间 (tenant): : {}", finalNamespace);
+                } else {
+                    log.info("使用默认命名空间(public)");
                 }
-                hasMore = false;
-            } else {
-                String errorBody = response.body();
-                System.out.println("✗ 失败 (HTTP " + response.statusCode() + "): " + 
-                                 errorBody.substring(0, Math.min(300, errorBody.length())));
+                
+                if (token != null && !token.isEmpty()) {
+                    queryParams.append("&accessToken=").append(java.net.URLEncoder.encode(token, "UTF-8"));
+                }
+                
+                String queryUrl = baseUrl + "/nacos/v1/cs/configs?" + queryParams.toString();
+                System.out.println("请求 URL (Page " + pageNo + "): " + queryUrl.replaceAll("accessToken=[^&]+", "accessToken=***"));
+                
+                HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
+                    .uri(new URI(queryUrl))
+                    .GET()
+                    .timeout(java.time.Duration.ofSeconds(10));
+                
+                if (username != null && !username.isEmpty() && password != null && !password.isEmpty()) {
+                    String auth = username + ":" + password;
+                    String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes(StandardCharsets.UTF_8));
+                    requestBuilder.header("Authorization", "Basic " + encodedAuth);
+                }
+                
+                HttpResponse<String> response = client.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofString());
+                System.out.println("HTTP 状态码: " + response.statusCode());
+                
+                if (response.statusCode() == 200) {
+                    String body = response.body();
+                    System.out.println("响应体长度: " + body.length() + " 字符");
+                    // System.out.println("响应预览: " + body.substring(0, Math.min(500, body.length())));
+                    
+                    List<Map<String, String>> pageConfigs = parseNacosConfigResponse(body);
+                    System.out.println("✓ Page " + pageNo + " 解析到 " + pageConfigs.size() + " 个配置");
+                    
+                    if (pageConfigs.isEmpty()) {
+                        hasMore = false;
+                        break;
+                    }
+
+                    for (Map<String, String> config : pageConfigs) {
+                        String content = fetchNacosConfigContent(
+                            baseUrl, 
+                            config.get("dataId"), 
+                            config.get("group"), 
+                            finalNamespace,
+                            username, 
+                            password, 
+                            token
+                        );
+                        // 即使内容为空，也要添加配置（可能是真的空配置）
+                        config.put("content", content != null ? content : "");
+                        configs.add(config);
+                        System.out.println("  ✓ " + config.get("dataId") + " | " + config.get("group") + " (长度: " + (content != null ? content.length() : 0) + ")");
+                    }
+                    
+                    // 检查是否还有更多页
+                    if (pageConfigs.size() < pageSize) {
+                        hasMore = false;
+                    } else {
+                        pageNo++;
+                    }
+                } else {
+                    String errorBody = response.body();
+                    System.out.println("✗ 失败 (HTTP " + response.statusCode() + "): " + 
+                                     errorBody.substring(0, Math.min(300, errorBody.length())));
+                    hasMore = false;
+                }
             }
             
-            hasMore = false;
         } catch (Exception e) {
             System.err.println("获取配置列表异常: " + e.getMessage());
             e.printStackTrace();
@@ -1068,91 +1080,121 @@ public class NacosSyncController {
             // Nacos API 返回格式:
             // {
             //   "pageNumber": 1,
-            //   "pageItems": [
-            //     {
-            //       "dataId": "...",
-            //       "group": "...",
-            //       "content": "...",
-            //       ...
-            //     }
-            //   ],
+            //   "pageItems": [ ... ],
             //   ...
             // }
             
-            // 使用正则表达式提取 pageItems 数组内容
-            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("\"pageItems\"\\s*:\\s*\\[([\\s\\S]*?)\\]\\s*[,}]");
-            java.util.regex.Matcher matcher = pattern.matcher(jsonResponse);
+            // 改进：不使用正则表达式匹配整个数组（因为内容中可能包含特殊字符导致正则失效）
+            // 而是直接查找 "pageItems": [ 的位置，然后提取数组内容
             
-            if (matcher.find()) {
-                String pageItemsStr = matcher.group(1);
-                System.out.println("找到 pageItems 数据，长度: " + pageItemsStr.length());
-                
-                // 检查是否为空数组
-                if (pageItemsStr.trim().isEmpty()) {
-                    log.info("{}",  "pageItems 为空数组");
-                    return configs;
-                }
-                
-                // 使用更精确的分割方式，找到每个完整的 JSON 对象
-                java.util.regex.Pattern objectPattern = java.util.regex.Pattern.compile("\\{([^{}]+)\\}");
-                java.util.regex.Matcher objectMatcher = objectPattern.matcher(pageItemsStr);
-                
-                while (objectMatcher.find()) {
-                    String item = "{" + objectMatcher.group(1) + "}";
+            String searchKey = "\"pageItems\"";
+            int keyIndex = jsonResponse.indexOf(searchKey);
+            
+            if (keyIndex != -1) {
+                // 找到 [ 的位置
+                int arrayStart = jsonResponse.indexOf("[", keyIndex);
+                if (arrayStart != -1) {
+                    // 提取数组内容（处理嵌套括号）
+                    int braceCount = 0;
+                    int arrayEnd = -1;
+                    boolean inString = false;
+                    boolean escapeNext = false;
                     
-                    String dataId = extractValue(item, "dataId");
-                    String group = extractValue(item, "group");
-                    
-                    if (!dataId.isEmpty()) {
-                        Map<String, String> config = new HashMap<>();
-                        config.put("dataId", dataId);
-                        config.put("group", group.isEmpty() ? "DEFAULT_GROUP" : group);
-                        config.put("content", "");
-                        configs.add(config);
-                        System.out.println("解析配置: " + dataId + " | " + config.get("group"));
-                    }
-                }
-            } else {
-                log.info("{}",  "未找到 pageItems 数据，尝试备用解析方法");
-                
-                // 备用方法：直接查找所有 dataId 和 group
-                java.util.regex.Pattern dataIdPattern = java.util.regex.Pattern.compile("\"dataId\"\\s*:\\s*\"([^\"]+)\"");
-                java.util.regex.Pattern groupPattern = java.util.regex.Pattern.compile("\"group\"\\s*:\\s*\"([^\"]+)\"");
-                
-                java.util.regex.Matcher dataIdMatcher = dataIdPattern.matcher(jsonResponse);
-                java.util.regex.Matcher groupMatcher = groupPattern.matcher(jsonResponse);
-                
-                // 找到所有的 dataId
-                int lastIndex = 0;
-                while (dataIdMatcher.find(lastIndex)) {
-                    String dataId = dataIdMatcher.group(1);
-                    
-                    // 在当前位置之后查找对应的 group
-                    String group = "DEFAULT_GROUP";
-                    int endPos = Math.min(dataIdMatcher.end() + 200, jsonResponse.length());
-                    java.util.regex.Matcher gm = groupPattern.matcher(jsonResponse.substring(lastIndex, endPos));
-                    if (gm.find()) {
-                        group = gm.group(1);
+                    for (int i = arrayStart; i < jsonResponse.length(); i++) {
+                        char c = jsonResponse.charAt(i);
+                        
+                        if (escapeNext) {
+                            escapeNext = false;
+                            continue;
+                        }
+                        if (c == '\\') {
+                            escapeNext = true;
+                            continue;
+                        }
+                        if (c == '"') {
+                            inString = !inString;
+                            continue;
+                        }
+                        if (inString) continue;
+                        
+                        if (c == '[') {
+                            braceCount++;
+                        } else if (c == ']') {
+                            braceCount--;
+                            if (braceCount == 0) {
+                                arrayEnd = i;
+                                break;
+                            }
+                        }
                     }
                     
-                    Map<String, String> config = new HashMap<>();
-                    config.put("dataId", dataId);
-                    config.put("group", group);
-                    config.put("content", "");
-                    
-                    // 检查是否已经添加过（避免重复）
-                    final String finalDataId = dataId;
-                    final String finalGroup = group;
-                    boolean isDuplicate = configs.stream()
-                        .anyMatch(c -> finalDataId.equals(c.get("dataId")) && finalGroup.equals(c.get("group")));
-                    
-                    if (!isDuplicate) {
-                        configs.add(config);
-                        log.info("备用解析: : {}", dataId + " | " + group);
+                    if (arrayEnd != -1) {
+                        String pageItemsStr = jsonResponse.substring(arrayStart + 1, arrayEnd);
+                        System.out.println("找到 pageItems 数据，长度: " + pageItemsStr.length());
+                        
+                        if (!pageItemsStr.trim().isEmpty()) {
+                            // 使用 extractJsonObjects 解析数组中的对象
+                            java.util.List<String> jsonObjects = extractJsonObjects(pageItemsStr);
+                            System.out.println("提取到 " + jsonObjects.size() + " 个 JSON 对象");
+                            
+                            for (String item : jsonObjects) {
+                                String dataId = extractValue(item, "dataId");
+                                String group = extractValue(item, "group");
+                                
+                                if (!dataId.isEmpty()) {
+                                    Map<String, String> config = new HashMap<>();
+                                    config.put("dataId", dataId);
+                                    config.put("group", group.isEmpty() ? "DEFAULT_GROUP" : group);
+                                    config.put("content", "");
+                                    configs.add(config);
+                                    System.out.println("解析配置: " + dataId + " | " + config.get("group"));
+                                }
+                            }
+                            return configs; // 成功解析，直接返回
+                        }
                     }
-                    
-                    lastIndex = dataIdMatcher.end();
                 }
+            }
+            
+            log.info("{}",  "未找到 pageItems 数据或解析失败，尝试备用解析方法");
+                
+            // 备用方法：直接查找所有 dataId 和 group
+            // 注意：这种方法在内容中包含 "dataId": "..." 字符串时可能会误判，但在 JSON 解析失败时作为最后手段
+            java.util.regex.Pattern dataIdPattern = java.util.regex.Pattern.compile("\"dataId\"\\s*:\\s*\"([^\"]+)\"");
+            java.util.regex.Pattern groupPattern = java.util.regex.Pattern.compile("\"group\"\\s*:\\s*\"([^\"]+)\"");
+            
+            java.util.regex.Matcher dataIdMatcher = dataIdPattern.matcher(jsonResponse);
+            
+            // 找到所有的 dataId
+            int lastIndex = 0;
+            while (dataIdMatcher.find(lastIndex)) {
+                String dataId = dataIdMatcher.group(1);
+                
+                // 在当前位置之后查找对应的 group
+                String group = "DEFAULT_GROUP";
+                int endPos = Math.min(dataIdMatcher.end() + 200, jsonResponse.length());
+                java.util.regex.Matcher gm = groupPattern.matcher(jsonResponse.substring(lastIndex, endPos));
+                if (gm.find()) {
+                    group = gm.group(1);
+                }
+                
+                Map<String, String> config = new HashMap<>();
+                config.put("dataId", dataId);
+                config.put("group", group);
+                config.put("content", "");
+                
+                // 检查是否已经添加过（避免重复）
+                final String finalDataId = dataId;
+                final String finalGroup = group;
+                boolean isDuplicate = configs.stream()
+                    .anyMatch(c -> finalDataId.equals(c.get("dataId")) && finalGroup.equals(c.get("group")));
+                
+                if (!isDuplicate) {
+                    configs.add(config);
+                    log.info("备用解析: : {}", dataId + " | " + group);
+                }
+                
+                lastIndex = dataIdMatcher.end();
             }
         } catch (Exception e) {
             System.err.println("解析 Nacos 响应异常: " + e.getMessage());
@@ -1187,6 +1229,60 @@ public class NacosSyncController {
             System.err.println("提取值异常 (" + key + "): " + e.getMessage());
         }
         return "";
+    }
+
+    /**
+     * 从 JSON 数组字符串中提取单个 JSON 对象
+     * 这个方法能够正确处理嵌套的 JSON 结构
+     */
+    private java.util.List<String> extractJsonObjects(String jsonArrayContent) {
+        java.util.List<String> objects = new ArrayList<>();
+        int braceCount = 0;
+        int start = -1;
+        boolean inString = false;
+        boolean escapeNext = false;
+        
+        for (int i = 0; i < jsonArrayContent.length(); i++) {
+            char c = jsonArrayContent.charAt(i);
+            
+            // 处理转义字符
+            if (escapeNext) {
+                escapeNext = false;
+                continue;
+            }
+            
+            if (c == '\\') {
+                escapeNext = true;
+                continue;
+            }
+            
+            // 处理字符串边界
+            if (c == '"') {
+                inString = !inString;
+                continue;
+            }
+            
+            if (inString) {
+                continue;
+            }
+            
+            // 处理 JSON 对象边界
+            if (c == '{') {
+                if (braceCount == 0) {
+                    start = i;
+                }
+                braceCount++;
+            } else if (c == '}') {
+                braceCount--;
+                if (braceCount == 0 && start != -1) {
+                    String obj = jsonArrayContent.substring(start, i + 1);
+                    objects.add(obj);
+                    start = -1;
+                }
+            }
+        }
+        
+        return objects;
     }
 
     // ==================== Helper Methods ====================
@@ -1782,7 +1878,81 @@ public class NacosSyncController {
         public String getTargetPassword() { return targetPassword; }
         public void setTargetPassword(String targetPassword) { this.targetPassword = targetPassword; }
     }
+
+    /**
+     * 智能比较两个 Nacos 配置是否相同
+     * 处理常见的编码和空白字符差异：
+     * - 换行符差异 (CRLF vs LF)
+     * - BOM 标记
+     * - 不同行尾的空白字符
+     */
+    private boolean compareNacosConfigs(String original, String revised) {
+        // 第一步：直接比较（最快）
+        if (original.equals(revised)) {
+            return true;
+        }
+
+        // 第二步：规范化并比较
+        String normalizedOrig = normalizeNacosContent(original);
+        String normalizedRev = normalizeNacosContent(revised);
+        
+        if (normalizedOrig.equals(normalizedRev)) {
+            return true;
+        }
+
+        // 第三步：按行比较（更细致地处理行级差异）
+        String[] origLines = original.split("\n", -1);
+        String[] revLines = revised.split("\n", -1);
+
+        if (origLines.length != revLines.length) {
+            return false;
+        }
+
+        for (int i = 0; i < origLines.length; i++) {
+            String origLine = normalizeLineContent(origLines[i]);
+            String revLine = normalizeLineContent(revLines[i]);
+            if (!origLine.equals(revLine)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * 规范化 Nacos 配置内容：处理整个文本的空白和编码问题
+     */
+    private String normalizeNacosContent(String content) {
+        if (content == null) {
+            return "";
+        }
+        
+        // 移除 BOM 标记
+        if (content.startsWith("\uFEFF")) {
+            content = content.substring(1);
+        }
+        
+        // 统一换行符为 \n（处理 CRLF 和其他差异）
+        content = content.replace("\r\n", "\n").replace("\r", "\n");
+        
+        // 移除尾部空白（包括空格、制表符和换行）
+        content = content.replaceAll("\\s+$", "");
+        
+        return content;
+    }
+
+    /**
+     * 规范化单行内容
+     */
+    private String normalizeLineContent(String line) {
+        if (line == null) {
+            return "";
+        }
+        // 移除行尾 \r，然后替换特殊空白字符，最后 trim
+        return line.replace("\r", "").replace("\u00A0", " ").trim();
+    }
 }
+
 
 
 

@@ -30,15 +30,26 @@ public class NacosDiffTool {
         original = original == null ? "" : original;
         revised = revised == null ? "" : revised;
 
-        // 检查是否相同
-        if (original.equals(revised)) {
+        // 检查是否相同（需要处理换行符差异和空白字符）
+        if (areContentsSame(original, revised)) {
             result.setStatus("same");
-            result.setDiffRows(new ArrayList<>());
-            result.setTotalLines(0);
+            List<DiffRowDTO> equalRows = new ArrayList<>();
+            String[] lines = original.split("\n", -1);
+            for (int i = 0; i < lines.length; i++) {
+                DiffRowDTO row = new DiffRowDTO();
+                row.setTag("EQUAL");
+                row.setOldLine(lines[i]);
+                row.setNewLine(lines[i]);
+                row.setOldLineNumber(i + 1);
+                row.setNewLineNumber(i + 1);
+                equalRows.add(row);
+            }
+            result.setDiffRows(equalRows);
+            result.setTotalLines(lines.length); // Set total lines to actual number of lines
             result.setChangedLines(0);
             result.setInsertedLines(0);
             result.setDeletedLines(0);
-            result.setMovedLines(0); // Initialize new field
+            result.setMovedLines(0);
             return result;
         }
 
@@ -71,14 +82,15 @@ public class NacosDiffTool {
         allDiffRows = postProcessDiffRows(allDiffRows);
         // --- 结束新增 ---
 
-        boolean hasRealDifference = allDiffRows.stream().anyMatch(r -> 
+        boolean hasRealDifference = allDiffRows.stream().anyMatch(r ->
             !"EQUAL".equals(r.getTag()) && !"MOVED".equals(r.getTag()) // MOVED也不算作“实际差异” for 'same' status
         );
 
-        if (!hasRealDifference && allDiffRows.stream().noneMatch(r -> "CHANGE".equals(r.getTag()) || "INSERT".equals(r.getTag()) || "DELETE".equals(r.getTag()))) {
+        if (!hasRealDifference) {
             result.setStatus("same"); // If only MOVED or EQUAL, it's considered 'same' for overall status
-            result.setDiffRows(new ArrayList<>()); // Clear diffRows if status is 'same' and no real changes
-            result.setTotalLines(0);
+            result.setDiffRows(allDiffRows); // Keep allDiffRows to display the content
+            result.setTotalLines(allDiffRows.size()); // Set total lines to actual number of lines
+            // Counts for changed, inserted, deleted, moved are already 0 for 'same' status in this case
             result.setChangedLines(0);
             result.setInsertedLines(0);
             result.setDeletedLines(0);
@@ -421,5 +433,67 @@ public class NacosDiffTool {
         }
 
         return sb.toString().trim();
+    }
+
+    /**
+     * 智能比较两个内容是否相同
+     * 处理常见的编码和空白字符差异：
+     * - 换行符差异 (CRLF vs LF)
+     * - BOM 标记
+     * - 不同行尾的空白字符
+     */
+    private static boolean areContentsSame(String original, String revised) {
+        // 第一步：直接比较（最快）
+        if (original.equals(revised)) {
+            return true;
+        }
+
+        // 第二步：规范化并比较
+        String normalizedOrig = normalizeContent(original);
+        String normalizedRev = normalizeContent(revised);
+        
+        if (normalizedOrig.equals(normalizedRev)) {
+            return true;
+        }
+
+        // 第三步：按行比较（更细致地处理行级差异）
+        String[] origLines = original.split("\n", -1);
+        String[] revLines = revised.split("\n", -1);
+
+        if (origLines.length != revLines.length) {
+            return false;
+        }
+
+        for (int i = 0; i < origLines.length; i++) {
+            String origLine = normalizeLineContent(origLines[i]);
+            String revLine = normalizeLineContent(revLines[i]);
+            if (!origLine.equals(revLine)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * 规范化内容：处理整个文本的空白和编码问题
+     */
+    private static String normalizeContent(String content) {
+        if (content == null) {
+            return "";
+        }
+        
+        // 移除 BOM 标记
+        if (content.startsWith("\uFEFF")) {
+            content = content.substring(1);
+        }
+        
+        // 统一换行符为 \n（处理 CRLF 和其他差异）
+        content = content.replace("\r\n", "\n").replace("\r", "\n");
+        
+        // 移除尾部空白（包括空格、制表符和换行）
+        content = content.replaceAll("\\s+$", "");
+        
+        return content;
     }
 }
