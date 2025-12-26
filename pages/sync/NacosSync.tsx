@@ -1196,6 +1196,12 @@ export const NacosSync: React.FC = () => {
                 <p className="text-xs text-slate-300 mt-1">
                   {currentDetailedResult.dataId} - {currentDetailedResult.group}
                 </p>
+                <p className="text-xs text-orange-300 mt-1 font-medium">
+                  {diffContentMode === 'all' 
+                    ? '目标数据-->>源文件，改动为目标文件中，操作删除左侧数据(-)，操作添加右侧数据(+)'
+                    : '在目标文件中逐条执行'
+                  }
+                </p>
               </div>
               <div className="flex items-center gap-4">
                 <div className="flex items-center rounded-lg bg-slate-700 p-1">
