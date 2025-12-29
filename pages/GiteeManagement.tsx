@@ -1460,18 +1460,9 @@ export const GiteeManagement: React.FC = () => {
                   <Settings size={18} className="text-blue-500"/> 连接设置
               </h3>
               
-              {/* Auth Type Selector */}
+              {/* Auth Type Selector - Hidden HTTPS/Token option */}
               <div className="flex gap-6 mb-4">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                      <input 
-                        type="radio" 
-                        name="authType" 
-                        checked={config.authType === 'token'}
-                        onChange={() => handleAuthTypeChange('token')}
-                        className="text-blue-600 focus:ring-blue-500"
-                      />
-                      <span className="text-sm font-medium text-slate-700 flex items-center gap-1"><Lock size={14}/> HTTPS + Token (推荐)</span>
-                  </label>
+                  {/* HTTPS + Token option hidden */}
                   <label className="flex items-center gap-2 cursor-pointer">
                       <input 
                         type="radio" 

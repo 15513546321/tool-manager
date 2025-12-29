@@ -551,9 +551,23 @@ public class NacosSyncController {
                 String key = dataId + "|" + group;
                 processedKeys.add(key);
                 
-                // 查找对应的目标配置
+                // 查找对应的目标配置 - 支持智能命名空间匹配
                 Map<String, String> targetConfig = targetConfigs.stream()
-                    .filter(c -> dataId.equals(c.get("dataId")) && group.equals(c.get("group")))
+                    .filter(c -> {
+                        String targetDataId = c.get("dataId");
+                        String targetGroup = c.get("group");
+                        // group 必须完全匹配
+                        if (!group.equals(targetGroup)) {
+                            return false;
+                        }
+                        // dataId 支持智能命名空间匹配
+                        return matchConfigWithNamespace(
+                            dataId, 
+                            request.getSourceNamespace(),
+                            targetDataId,
+                            request.getTargetNamespace()
+                        );
+                    })
                     .findFirst()
                     .orElse(null);
                 
@@ -610,16 +624,33 @@ public class NacosSyncController {
                 comparisonResults.add(comparison);
             }
             
-            // 比对目标配置中的独有项目
+            // 比对目标配置中的独有项目 - 需要考虑智能匹配
             for (Map<String, String> targetConfig : targetConfigs) {
-                String dataId = targetConfig.get("dataId");
-                String group = targetConfig.get("group");
-                String key = dataId + "|" + group;
+                String targetDataId = targetConfig.get("dataId");
+                String targetGroup = targetConfig.get("group");
                 
-                if (!processedKeys.contains(key)) {
+                // 检查是否已经匹配过（通过智能匹配）
+                boolean alreadyMatched = false;
+                for (Map<String, String> sourceConfig : sourceConfigs) {
+                    String sourceDataId = sourceConfig.get("dataId");
+                    String sourceGroup = sourceConfig.get("group");
+                    
+                    if (targetGroup.equals(sourceGroup) && 
+                        matchConfigWithNamespace(
+                            sourceDataId,
+                            request.getSourceNamespace(),
+                            targetDataId,
+                            request.getTargetNamespace()
+                        )) {
+                        alreadyMatched = true;
+                        break;
+                    }
+                }
+                
+                if (!alreadyMatched) {
                     Map<String, Object> comparison = new HashMap<>();
-                    comparison.put("dataId", dataId);
-                    comparison.put("group", group);
+                    comparison.put("dataId", targetDataId);
+                    comparison.put("group", targetGroup);
                     comparison.put("status", "target-only");
                     comparison.put("suggestion", "源环境缺少此配置，可以从目标环境中删除或保留");
                     comparison.put("sourceContent", "");
@@ -1877,6 +1908,81 @@ public class NacosSyncController {
 
         public String getTargetPassword() { return targetPassword; }
         public void setTargetPassword(String targetPassword) { this.targetPassword = targetPassword; }
+    }
+
+    /**
+     * 智能匹配配置文件名
+     * 支持命名空间替换匹配，例如：
+     * - application-sit.yaml 匹配 application-local.yaml
+     * - application-sit.properties 匹配 application-local.properties
+     * 
+     * @param sourceDataId 源环境的 dataId
+     * @param sourceNamespace 源环境的命名空间
+     * @param targetDataId 目标环境的 dataId
+     * @param targetNamespace 目标环境的命名空间
+     * @return 是否匹配
+     */
+    private boolean matchConfigWithNamespace(String sourceDataId, String sourceNamespace, 
+                                             String targetDataId, String targetNamespace) {
+        // 完全匹配
+        if (sourceDataId.equals(targetDataId)) {
+            return true;
+        }
+        
+        // 如果命名空间相同，则不进行智能匹配
+        if (sourceNamespace != null && sourceNamespace.equals(targetNamespace)) {
+            return sourceDataId.equals(targetDataId);
+        }
+        
+        // 智能匹配：替换命名空间部分
+        // 提取文件扩展名
+        String sourceExt = "";
+        String targetExt = "";
+        int sourceDotIdx = sourceDataId.lastIndexOf('.');
+        int targetDotIdx = targetDataId.lastIndexOf('.');
+        
+        if (sourceDotIdx > 0) {
+            sourceExt = sourceDataId.substring(sourceDotIdx);
+        }
+        if (targetDotIdx > 0) {
+            targetExt = targetDataId.substring(targetDotIdx);
+        }
+        
+        // 扩展名必须相同
+        if (!sourceExt.equals(targetExt)) {
+            return false;
+        }
+        
+        // 提取不含扩展名的文件名
+        String sourceBase = sourceDotIdx > 0 ? sourceDataId.substring(0, sourceDotIdx) : sourceDataId;
+        String targetBase = targetDotIdx > 0 ? targetDataId.substring(0, targetDotIdx) : targetDataId;
+        
+        // 尝试替换源命名空间为目标命名空间
+        if (sourceNamespace != null && !sourceNamespace.isEmpty() && 
+            targetNamespace != null && !targetNamespace.isEmpty()) {
+            
+            // 模式1: 直接替换命名空间字符串
+            String expectedTarget1 = sourceBase.replace(sourceNamespace, targetNamespace);
+            if (expectedTarget1.equals(targetBase)) {
+                System.out.println("✓ 智能匹配成功 (模式1): " + sourceDataId + " -> " + targetDataId);
+                return true;
+            }
+            
+            // 模式2: 处理大小写差异
+            String expectedTarget2 = sourceBase.replace(sourceNamespace.toLowerCase(), targetNamespace.toLowerCase());
+            if (expectedTarget2.equals(targetBase)) {
+                System.out.println("✓ 智能匹配成功 (模式2): " + sourceDataId + " -> " + targetDataId);
+                return true;
+            }
+            
+            String expectedTarget3 = sourceBase.replace(sourceNamespace.toUpperCase(), targetNamespace.toUpperCase());
+            if (expectedTarget3.equals(targetBase)) {
+                System.out.println("✓ 智能匹配成功 (模式3): " + sourceDataId + " -> " + targetDataId);
+                return true;
+            }
+        }
+        
+        return false;
     }
 
     /**

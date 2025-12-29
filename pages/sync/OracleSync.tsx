@@ -867,12 +867,30 @@ export const OracleSync: React.FC = () => {
                         </div>
 
                         <div className="px-6 py-6 border-b border-slate-100 bg-white">
-                            {/* 说明文本 */}
-                            <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                                <div className="text-sm font-bold text-blue-900 mb-2">📝 Connection String 格式说明:</div>
-                                <div className="text-xs text-blue-800 font-mono space-y-1">
-                                    <div>• SID 方式: <span className="bg-white px-2 py-1 rounded inline-block">jdbc:oracle:thin:@10.20.72.168:1521:ECSS</span></div>
-                                    <div>• Service 方式: <span className="bg-white px-2 py-1 rounded inline-block">jdbc:oracle:thin:@10.20.72.168:1521/ECSS</span></div>
+                            {/* 说明文本 - 增强版 */}
+                            <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-lg shadow-sm">
+                                <div className="text-sm font-bold text-blue-900 mb-3 flex items-center gap-2">
+                                    <span className="text-lg">📝</span> Oracle Connection String 格式说明
+                                </div>
+                                <div className="space-y-3">
+                                    <div className="bg-white p-3 rounded border border-blue-100">
+                                        <div className="text-xs font-bold text-blue-700 mb-1">✅ SID 方式 (推荐用于传统实例)</div>
+                                        <div className="text-xs font-mono text-slate-700 bg-slate-50 px-3 py-2 rounded border border-slate-200">
+                                            jdbc:oracle:thin:@10.20.72.168:1521<span className="text-red-600 font-bold">:</span>ECSS
+                                        </div>
+                                        <div className="text-[10px] text-slate-500 mt-1">格式: @host:port<span className="text-red-600 font-bold">:SID</span></div>
+                                    </div>
+                                    <div className="bg-white p-3 rounded border border-blue-100">
+                                        <div className="text-xs font-bold text-blue-700 mb-1">✅ Service Name 方式 (推荐用于 RAC / PDB)</div>
+                                        <div className="text-xs font-mono text-slate-700 bg-slate-50 px-3 py-2 rounded border border-slate-200">
+                                            jdbc:oracle:thin:@10.20.72.168:1521<span className="text-green-600 font-bold">/</span>ECSS
+                                        </div>
+                                        <div className="text-[10px] text-slate-500 mt-1">格式: @host:port<span className="text-green-600 font-bold">/SERVICE_NAME</span></div>
+                                    </div>
+                                </div>
+                                <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded text-[11px] text-yellow-800">
+                                    <strong>⚠️ 重要提示：</strong> 请注意区分冒号(<span className="font-bold text-red-600">:</span>)和斜杠(<span className="font-bold text-green-600">/</span>)符号！
+                                    如果连接失败，请尝试切换SID和Service方式。
                                 </div>
                             </div>
 
