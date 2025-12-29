@@ -367,7 +367,8 @@ export const GiteeManagement: React.FC = () => {
         body: JSON.stringify({
           repoUrl: config.repoUrl,
           authType: config.authType,
-          accessToken: config.authType === 'token' ? config.accessToken : undefined
+          accessToken: config.authType === 'token' ? config.accessToken : undefined,
+          privateKey: config.authType === 'ssh' ? config.privateKey : undefined
         })
       });
 
@@ -410,11 +411,12 @@ export const GiteeManagement: React.FC = () => {
           });
           console.log('✓ Token config saved (SSH config preserved in database):', tokenRes);
         } else if (config.authType === 'ssh') {
-          // Save SSH config with repo URL
+          // Save SSH config with repo URL and privateKey
           const sshRes = await apiService.configApi.save({
             configKey: 'gitee-ssh-config',
             configValue: JSON.stringify({
-              repoUrl: config.repoUrl
+              repoUrl: config.repoUrl,
+              privateKey: config.privateKey
             }),
             configType: 'GITEE',
             description: 'Gitee SSH authentication'
@@ -436,6 +438,7 @@ export const GiteeManagement: React.FC = () => {
             repoUrl: config.repoUrl,
             authType: config.authType,
             accessToken: config.authType === 'token' ? config.accessToken : undefined,
+            privateKey: config.authType === 'ssh' ? config.privateKey : undefined
           })
         });
         
@@ -524,6 +527,7 @@ export const GiteeManagement: React.FC = () => {
           repoUrl: config.repoUrl,
           authType: config.authType,
           accessToken: config.accessToken,
+          privateKey: config.privateKey || '',
           searchQuery: searchQuery,
           branchName: branchNameFilter || undefined, // Pass branch name filter if specified
           author: branchAuthorFilter || undefined // Pass branch author filter if specified
@@ -799,6 +803,7 @@ export const GiteeManagement: React.FC = () => {
           repoUrl: config.repoUrl,
           authType: config.authType,
           accessToken: config.accessToken,
+          privateKey: config.privateKey || '',
           branches: Array.from(selectedBranches),
           author: authorFilter || undefined // Pass author filter if specified
         })

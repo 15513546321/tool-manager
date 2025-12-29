@@ -1624,7 +1624,7 @@ public class NacosSyncController {
                         String name = path.getFileName().toString();
                         return name.endsWith(".xml") || name.endsWith(".java") || name.endsWith(".properties");
                     })
-                    .limit(100) // 限制最多 100 个文件
+                    // 移除文件数量限制，读取整个分支的所有相关文件
                     .forEach(path -> {
                         try {
                             String content = new String(java.nio.file.Files.readAllBytes(path), StandardCharsets.UTF_8);
