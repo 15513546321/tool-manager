@@ -1744,9 +1744,9 @@ export const GiteeManagement: React.FC = () => {
       )}
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col md:flex-row gap-6 overflow-hidden min-h-0">
+      <div className="flex-1 flex flex-col md:flex-row gap-6 min-h-0">
           {/* Left: Branch Search & Multi-Select */}
-          <div className="w-full md:w-1/3 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden max-h-full">
+          <div className="w-full md:w-1/3 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col h-full">
               <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex-shrink-0">
                   <h3 className="font-bold text-slate-700 mb-2">需求分支查询</h3>
                   <div className="relative mb-3">
@@ -1897,7 +1897,7 @@ export const GiteeManagement: React.FC = () => {
           </div>
 
           {/* Right: Changeset Display */}
-          <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden max-h-full min-h-0">
+          <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col h-full">
               <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center flex-shrink-0">
                   <div className="flex items-center gap-2">
                       <h3 className="font-bold text-slate-700">变更集预览</h3>

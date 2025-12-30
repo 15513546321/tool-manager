@@ -609,11 +609,22 @@ public class GiteeService {
             
             log.info("Comparing commits for {}/{}: {} -> {}", owner, repo, fromCommit, toCommit);
             
-            // Use Gitee compare API
+            // Try compare API with both orders
             String compareUrl = String.format("%s/repos/%s/%s/compare/%s...%s", 
                 GITEE_API_BASE, owner, repo, fromCommit, toCommit);
             
             Map<String, Object> compareResult = callGiteeApi(compareUrl, accessToken);
+            
+            // If no commits found, try reversed order
+            if (compareResult != null && compareResult.containsKey("commits")) {
+                List<Map<String, Object>> commits = (List<Map<String, Object>>) compareResult.get("commits");
+                if (commits == null || commits.isEmpty()) {
+                    log.info("No commits found in forward direction, trying reverse: {} -> {}", toCommit, fromCommit);
+                    String reverseCompareUrl = String.format("%s/repos/%s/%s/compare/%s...%s", 
+                        GITEE_API_BASE, owner, repo, toCommit, fromCommit);
+                    compareResult = callGiteeApi(reverseCompareUrl, accessToken);
+                }
+            }
             
             if (compareResult != null && compareResult.containsKey("commits")) {
                 List<Map<String, Object>> commits = (List<Map<String, Object>>) compareResult.get("commits");
@@ -670,6 +681,35 @@ public class GiteeService {
                         } catch (Exception commitEx) {
                             log.error("Error processing commit: ", commitEx);
                             continue;
+                        }
+                    }
+                } else {
+                    log.info("No commits found via compare API, trying to get files from compare result directly");
+                    // Try to get files from the compare result's "files" field
+                    if (compareResult.containsKey("files")) {
+                        List<Map<String, Object>> files = (List<Map<String, Object>>) compareResult.get("files");
+                        if (files != null && !files.isEmpty()) {
+                            StringBuilder filePathsBuilder = new StringBuilder();
+                            for (Map<String, Object> file : files) {
+                                if (file.containsKey("filename")) {
+                                    if (filePathsBuilder.length() > 0) {
+                                        filePathsBuilder.append("\n");
+                                    }
+                                    filePathsBuilder.append(file.get("filename"));
+                                }
+                            }
+                            
+                            if (filePathsBuilder.length() > 0) {
+                                Map<String, Object> changeset = new HashMap<>();
+                                changeset.put("branch", branchName);
+                                changeset.put("commitHash", toCommit);
+                                changeset.put("author", "Direct Comparison");
+                                changeset.put("date", new java.util.Date().toString());
+                                changeset.put("message", "Direct diff between " + fromCommit + " and " + toCommit);
+                                changeset.put("filePath", filePathsBuilder.toString());
+                                changesets.add(changeset);
+                                log.info("✓ Found {} changed files via direct comparison", files.size());
+                            }
                         }
                     }
                 }

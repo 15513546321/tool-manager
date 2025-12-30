@@ -908,13 +908,31 @@ public class GitOperationService {
                 
                 log.info("✓ Clone successful");
                 
+                // First, try to get commits in both directions to handle order issues
+                String logRange = fromCommit + ".." + toCommit;
+                
+                // Test if we need to reverse the order by checking which one is ancestor
+                ProcessBuilder testPb = new ProcessBuilder(
+                    "git", "--git-dir=" + tempCloneDir.getAbsolutePath(),
+                    "merge-base", "--is-ancestor", fromCommit, toCommit
+                );
+                testPb.redirectErrorStream(true);
+                Process testProcess = testPb.start();
+                boolean testCompleted = testProcess.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+                
+                // If fromCommit is NOT an ancestor of toCommit, reverse the order
+                if (!testCompleted || testProcess.exitValue() != 0) {
+                    log.info("Reversing commit order: {} is not ancestor of {}", fromCommit, toCommit);
+                    logRange = toCommit + ".." + fromCommit;
+                }
+                
                 // Get commits between fromCommit and toCommit
                 ProcessBuilder logPb = new ProcessBuilder(
                     "git", "--git-dir=" + tempCloneDir.getAbsolutePath(),
                     "log", "--format=%H|%an|%ai|%s",
                     "--first-parent",
                     "--max-count=200",
-                    fromCommit + ".." + toCommit
+                    logRange
                 );
                 
                 logPb.redirectErrorStream(true);
@@ -949,7 +967,45 @@ public class GitOperationService {
                 if (logCompleted && logProcess.exitValue() == 0) {
                     log.info("✓ Found {} commits between {} and {}", commitCount, fromCommit, toCommit);
                 } else {
-                    log.error("❌ Git log command failed");
+                    log.warn("Git log command exit code: {}", logProcess.exitValue());
+                    
+                    // If still no commits found, try to get diff directly between the two commits
+                    if (commitCount == 0) {
+                        log.info("No commits found via log, trying direct diff comparison");
+                        
+                        ProcessBuilder diffPb = new ProcessBuilder(
+                            "git", "--git-dir=" + tempCloneDir.getAbsolutePath(),
+                            "diff", "--name-only", fromCommit, toCommit
+                        );
+                        diffPb.redirectErrorStream(true);
+                        Process diffProcess = diffPb.start();
+                        BufferedReader diffReader = new BufferedReader(new InputStreamReader(diffProcess.getInputStream()));
+                        
+                        StringBuilder filePathsBuilder = new StringBuilder();
+                        while ((line = diffReader.readLine()) != null) {
+                            if (!line.trim().isEmpty()) {
+                                if (filePathsBuilder.length() > 0) {
+                                    filePathsBuilder.append("\n");
+                                }
+                                filePathsBuilder.append(line.trim());
+                            }
+                        }
+                        diffReader.close();
+                        
+                        boolean diffCompleted = diffProcess.waitFor(10, java.util.concurrent.TimeUnit.SECONDS);
+                        if (diffCompleted && diffProcess.exitValue() == 0 && filePathsBuilder.length() > 0) {
+                            // Create a synthetic commit entry for the diff
+                            Map<String, Object> commit = new HashMap<>();
+                            commit.put("commitHash", toCommit);
+                            commit.put("author", "Diff Comparison");
+                            commit.put("date", new java.util.Date().toString());
+                            commit.put("message", "Direct diff between " + fromCommit + " and " + toCommit);
+                            commit.put("branch", branchName);
+                            commit.put("filePath", filePathsBuilder.toString());
+                            commits.add(commit);
+                            log.info("✓ Found {} changed files via direct diff", filePathsBuilder.toString().split("\n").length);
+                        }
+                    }
                 }
                 
             } finally {
