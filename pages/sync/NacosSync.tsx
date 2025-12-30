@@ -49,6 +49,8 @@ interface ComparisonResult {
   group: string;
   sourceContent: string;
   targetContent: string;
+  sourceFileName?: string;  // 源文件名
+  targetFileName?: string;  // 目标文件名
   status: 'same' | 'different' | 'source-only' | 'target-only';
   suggestion?: string;
   expanded?: boolean;
@@ -1126,6 +1128,20 @@ export const NacosSync: React.FC = () => {
                       <div className="flex-1">
                         <p className="font-semibold text-slate-800">{result.dataId}</p>
                         <p className="text-xs text-slate-500">{result.group}</p>
+                        {(result.sourceFileName || result.targetFileName) && (
+                          <div className="mt-2 space-y-1">
+                            {result.sourceFileName && (
+                              <p className="text-xs text-blue-600 font-mono">
+                                <span className="font-bold">源:</span> {result.sourceFileName}
+                              </p>
+                            )}
+                            {result.targetFileName && (
+                              <p className="text-xs text-purple-600 font-mono">
+                                <span className="font-bold">目标:</span> {result.targetFileName}
+                              </p>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <span
                         className={`text-xs font-bold px-2 py-1 rounded ${
@@ -1196,6 +1212,20 @@ export const NacosSync: React.FC = () => {
                 <p className="text-xs text-slate-300 mt-1">
                   {currentDetailedResult.dataId} - {currentDetailedResult.group}
                 </p>
+                {(currentDetailedResult.sourceFileName || currentDetailedResult.targetFileName) && (
+                  <div className="mt-2 space-y-1">
+                    {currentDetailedResult.sourceFileName && (
+                      <p className="text-xs text-blue-300 font-mono">
+                        <span className="font-bold">源文件:</span> {currentDetailedResult.sourceFileName}
+                      </p>
+                    )}
+                    {currentDetailedResult.targetFileName && (
+                      <p className="text-xs text-purple-300 font-mono">
+                        <span className="font-bold">目标文件:</span> {currentDetailedResult.targetFileName}
+                      </p>
+                    )}
+                  </div>
+                )}
                 <p className="text-xs text-orange-300 mt-1 font-medium">
                   {diffContentMode === 'all' 
                     ? '目标数据-->>源文件，改动为目标文件中，操作删除左侧数据(-)，操作添加右侧数据(+)'

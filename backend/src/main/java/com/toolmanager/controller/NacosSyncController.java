@@ -574,6 +574,7 @@ public class NacosSyncController {
                 Map<String, Object> comparison = new HashMap<>();
                 comparison.put("dataId", dataId);
                 comparison.put("group", group);
+                comparison.put("sourceFileName", dataId);  // 添加源文件名
                 
                 if (targetConfig == null) {
                     // 源独有
@@ -582,15 +583,21 @@ public class NacosSyncController {
                     String sourceContent = sourceConfig.getOrDefault("content", "");
                     comparison.put("sourceContent", sourceContent);
                     comparison.put("targetContent", "");
+                    comparison.put("targetFileName", "");  // 目标文件名为空
                     sourceOnlyCount++;
                     log.info("源独有: : {}", dataId + " | " + group);
                 } else {
                     String sourceContent = sourceConfig.getOrDefault("content", "");
                     String targetContent = targetConfig.getOrDefault("content", "");
+                    String matchedTargetDataId = targetConfig.get("dataId");  // 获取匹配到的目标文件名
                     
                     // 处理 null 值
                     sourceContent = sourceContent == null ? "" : sourceContent;
                     targetContent = targetContent == null ? "" : targetContent;
+                    
+                    // 添加源文件名和目标文件名
+                    comparison.put("sourceFileName", dataId);
+                    comparison.put("targetFileName", matchedTargetDataId);
                     
                     // 打印调试信息
                     log.info("\n对比配置: : {}", dataId + " | " + group);
@@ -656,6 +663,8 @@ public class NacosSyncController {
                     comparison.put("sourceContent", "");
                     String targetContent = targetConfig.getOrDefault("content", "");
                     comparison.put("targetContent", targetContent);
+                    comparison.put("sourceFileName", "");  // 源文件名为空
+                    comparison.put("targetFileName", targetDataId);  // 添加目标文件名
                     comparisonResults.add(comparison);
                     targetOnlyCount++;
                 }

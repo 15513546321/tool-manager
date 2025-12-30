@@ -1859,7 +1859,7 @@ export const GiteeManagement: React.FC = () => {
               
               {/* Branch List Pagination */}
               {branches.length > 0 && (
-                  <div className="px-4 py-3 border-t border-slate-200 bg-white flex-shrink-0">
+                  <div className="border-t border-slate-200 bg-slate-50/50 flex-shrink-0">
                       <Pagination
                           currentPage={branchListPage}
                           totalPages={totalBranchPages}
