@@ -263,17 +263,45 @@ public class GiteeService {
             
             if ("token".equals("token") && accessToken != null && !accessToken.trim().isEmpty()) {
                 for (String branch : branches) {
-                    // Fetch commits - filter by first-parent to exclude merged commits from other branches
-                    String apiUrl = String.format("%s/repos/%s/%s/commits?sha=%s&per_page=200", 
-                        GITEE_API_BASE, owner, repo, branch);
+                    // Fetch commits with pagination - Gitee API max per_page is 100
+                    // We need to paginate to get all commits if there are more than 100
                     log.info("Calling Gitee API for commits on branch: : {}", branch);
-                    List<Map<String, Object>> commits = callGiteeApiList(apiUrl, accessToken);
                     
-                    if (commits != null && !commits.isEmpty()) {
-                        System.out.println("Received " + commits.size() + " commits for branch: " + branch);
+                    List<Map<String, Object>> allCommits = new ArrayList<>();
+                    int page = 1;
+                    int perPage = 100;
+                    int maxPages = 10; // Safety limit: max 10 pages = 1000 commits
+                    
+                    while (page <= maxPages) {
+                        String apiUrl = String.format("%s/repos/%s/%s/commits?sha=%s&per_page=%d&page=%d", 
+                            GITEE_API_BASE, owner, repo, branch, perPage, page);
+                        
+                        log.info("Fetching page {} for branch: {}", page, branch);
+                        List<Map<String, Object>> commits = callGiteeApiList(apiUrl, accessToken);
+                        
+                        if (commits == null || commits.isEmpty()) {
+                            // No more commits, break the loop
+                            log.info("No more commits on page {}, total fetched: {}", page, allCommits.size());
+                            break;
+                        }
+                        
+                        allCommits.addAll(commits);
+                        log.info("Fetched {} commits on page {}, total so far: {}", commits.size(), page, allCommits.size());
+                        
+                        // If we got fewer commits than perPage, we've reached the end
+                        if (commits.size() < perPage) {
+                            log.info("Received {} commits (less than {}), all commits fetched", commits.size(), perPage);
+                            break;
+                        }
+                        
+                        page++;
+                    }
+                    
+                    if (!allCommits.isEmpty()) {
+                        System.out.println("Total received " + allCommits.size() + " commits for branch: " + branch);
                         
                         // Filter commits to only include first-parent (direct commits on this branch)
-                        List<Map<String, Object>> filteredCommits = filterFirstParentCommits(commits, owner, repo, branch, accessToken);
+                        List<Map<String, Object>> filteredCommits = filterFirstParentCommits(allCommits, owner, repo, branch, accessToken);
                         
                         for (Map<String, Object> commit : filteredCommits) {
                             try {
