@@ -98,6 +98,10 @@ export const GiteeManagement: React.FC = () => {
   // Pagination state for each branch (branch name -> { page, size })
   const [branchPagination, setBranchPagination] = useState<Map<string, { page: number; size: number }>>(new Map());
   
+  // Pagination state for branch list
+  const [branchListPage, setBranchListPage] = useState(1);
+  const [branchListPageSize, setBranchListPageSize] = useState(20);
+  
   // Export Configuration
   const [exportFields, setExportFields] = useState<ExportField[]>(DEFAULT_EXPORT_FIELDS);
   const [isExportConfigOpen, setIsExportConfigOpen] = useState(false);
@@ -741,6 +745,11 @@ export const GiteeManagement: React.FC = () => {
     }
   };
 
+  // Reset pagination when filters change
+  useEffect(() => {
+    setBranchListPage(1);
+  }, [branchNameFilter, branchAuthorFilter]);
+
   const toggleBranchSelection = (branchName: string) => {
     const newSelected = new Set(selectedBranches);
     if (newSelected.has(branchName)) {
@@ -752,8 +761,11 @@ export const GiteeManagement: React.FC = () => {
   };
 
   const toggleAllBranches = () => {
-    // Get filtered branches based on branchNameFilter
-    const filteredBranches = branches.filter(b => !branchNameFilter || b.name.toLowerCase().includes(branchNameFilter.toLowerCase()));
+    // Get filtered branches based on all filters
+    const filteredBranches = branches.filter(b => 
+        (!branchNameFilter || b.name.toLowerCase().includes(branchNameFilter.toLowerCase())) &&
+        (!branchAuthorFilter || (b.lastCommitAuthor && b.lastCommitAuthor.toLowerCase().includes(branchAuthorFilter.toLowerCase())))
+    );
     
     if (selectedBranches.size === filteredBranches.length && filteredBranches.length > 0) {
       setSelectedBranches(new Set());
@@ -761,6 +773,19 @@ export const GiteeManagement: React.FC = () => {
       setSelectedBranches(new Set(filteredBranches.map(b => b.name)));
     }
   };
+  
+  // Filtered branches (before pagination)
+  const filteredBranches = branches.filter(b => 
+      (!branchNameFilter || b.name.toLowerCase().includes(branchNameFilter.toLowerCase())) &&
+      (!branchAuthorFilter || (b.lastCommitAuthor && b.lastCommitAuthor.toLowerCase().includes(branchAuthorFilter.toLowerCase())))
+  );
+  
+  // Paginated branches for display
+  const totalBranchPages = Math.ceil(filteredBranches.length / branchListPageSize);
+  const paginatedBranches = filteredBranches.slice(
+      (branchListPage - 1) * branchListPageSize,
+      branchListPage * branchListPageSize
+  );
 
   // Helper function to deduplicate changeset items within a branch
   // Deduplication is based on the combination of commitHash and filePath
@@ -1629,10 +1654,10 @@ export const GiteeManagement: React.FC = () => {
       )}
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col md:flex-row gap-6 overflow-hidden">
+      <div className="flex-1 flex flex-col md:flex-row gap-6 overflow-hidden min-h-0">
           {/* Left: Branch Search & Multi-Select */}
-          <div className="w-full md:w-1/3 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
-              <div className="p-4 border-b border-slate-100 bg-slate-50/50">
+          <div className="w-full md:w-1/3 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden max-h-full">
+              <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex-shrink-0">
                   <h3 className="font-bold text-slate-700 mb-2">需求分支查询</h3>
                   <div className="relative mb-3">
                       <Search className="absolute left-3 top-2.5 text-slate-400" size={16}/>
@@ -1690,13 +1715,13 @@ export const GiteeManagement: React.FC = () => {
                       <div className="space-y-2">
                           <div className="flex items-center justify-between">
                               <span className="text-xs text-slate-600 font-medium">
-                                  已选中: <span className="font-bold text-blue-600">{selectedBranches.size}</span> / {branches.filter(b => !branchNameFilter || b.name.toLowerCase().includes(branchNameFilter.toLowerCase())).length}
+                                  已选中: <span className="font-bold text-blue-600">{selectedBranches.size}</span> / {filteredBranches.length}
                               </span>
                               <button
                                   onClick={toggleAllBranches}
                                   className="text-xs font-bold text-blue-600 hover:text-blue-700 px-2 py-1 rounded hover:bg-blue-50"
                               >
-                                  {selectedBranches.size === branches.filter(b => !branchNameFilter || b.name.toLowerCase().includes(branchNameFilter.toLowerCase())).length && branches.filter(b => !branchNameFilter || b.name.toLowerCase().includes(branchNameFilter.toLowerCase())).length > 0 ? '取消全选' : '全选'}
+                                  {selectedBranches.size === filteredBranches.length && filteredBranches.length > 0 ? '取消全选' : '全选'}
                               </button>
                           </div>
                           <div className="relative">
@@ -1720,11 +1745,9 @@ export const GiteeManagement: React.FC = () => {
                       </div>
                   )}
               </div>
-              <div className="flex-1 overflow-y-auto p-2">
+              <div className="flex-1 overflow-y-auto p-2 min-h-0">
                   {branches.length > 0 ? (
-                      branches
-                        .filter(branch => !branchNameFilter || branch.name.toLowerCase().includes(branchNameFilter.toLowerCase()))
-                        .map(branch => (
+                      paginatedBranches.map(branch => (
                           <div 
                               key={branch.name}
                               onClick={() => toggleBranchSelection(branch.name)}
@@ -1764,8 +1787,25 @@ export const GiteeManagement: React.FC = () => {
                   )}
               </div>
               
+              {/* Branch List Pagination */}
+              {filteredBranches.length > 0 && (
+                  <div className="px-4 py-3 border-t border-slate-200 bg-white flex-shrink-0">
+                      <Pagination
+                          currentPage={branchListPage}
+                          totalPages={totalBranchPages}
+                          pageSize={branchListPageSize}
+                          totalItems={filteredBranches.length}
+                          onPageChange={setBranchListPage}
+                          onPageSizeChange={(size) => {
+                              setBranchListPageSize(size);
+                              setBranchListPage(1);
+                          }}
+                      />
+                  </div>
+              )}
+              
               {selectedBranches.size > 0 && (
-                  <div className="p-4 border-t border-slate-100 bg-slate-50 space-y-2">
+                  <div className="p-4 border-t border-slate-100 bg-slate-50 space-y-2 flex-shrink-0">
                       <button
                           onClick={handleAddToAnalysis}
                           disabled={loading || selectedBranches.size === 0}
@@ -1787,15 +1827,15 @@ export const GiteeManagement: React.FC = () => {
           </div>
 
           {/* Right: Changeset Display */}
-          <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
-              <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+          <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden max-h-full min-h-0">
+              <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center flex-shrink-0">
                   <div className="flex items-center gap-2">
                       <h3 className="font-bold text-slate-700">变更集预览</h3>
                       {changesetData.size > 0 && <span className="text-xs font-mono bg-green-100 text-green-700 px-2 py-0.5 rounded">{changesetData.size}个分支</span>}
                   </div>
               </div>
               
-              <div className="flex-1 overflow-y-auto p-4 bg-slate-50">
+              <div className="flex-1 overflow-y-auto p-4 bg-slate-50 min-h-0">
                   {changesetData.size > 0 ? (
                       <div className="space-y-4">
                           {Array.from(changesetData.keys()).sort().map(branchName => (
