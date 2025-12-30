@@ -36,6 +36,16 @@ public class OracleSynchronizer {
 
             // Get full table definitions from source
             Map<String, String> sourceTableDDLs = getTableDDLs(sourceConnStr, sourceUser, sourcePassword);
+            
+            // ✓ 性能优化：批量获取所有表的注释、索引、约束，避免N+1查询
+            Map<String, String> sourceTableComments = getAllTableComments(sourceConnStr, sourceUser, sourcePassword);
+            Map<String, String> targetTableComments = getAllTableComments(targetConnStr, targetUser, targetPassword);
+            Map<String, Map<String, String>> sourceColumnComments = getAllColumnComments(sourceConnStr, sourceUser, sourcePassword);
+            Map<String, Map<String, String>> targetColumnComments = getAllColumnComments(targetConnStr, targetUser, targetPassword);
+            Map<String, List<String>> sourceIndexes = getAllIndexes(sourceConnStr, sourceUser, sourcePassword);
+            Map<String, List<String>> targetIndexes = getAllIndexes(targetConnStr, targetUser, targetPassword);
+            Map<String, List<String>> sourceConstraints = getAllConstraints(sourceConnStr, sourceUser, sourcePassword);
+            Map<String, List<String>> targetConstraints = getAllConstraints(targetConnStr, targetUser, targetPassword);
 
             // Compare schemas and generate DDL
             StringBuilder ddlScript = new StringBuilder();
@@ -60,7 +70,7 @@ public class OracleSynchronizer {
                         ddlScript.append(createTableDDL).append("\n/\n");
                         
                         // Add table comment if exists
-                        String tableComment = getTableComment(sourceConnStr, sourceUser, sourcePassword, tableName);
+                        String tableComment = sourceTableComments.get(tableName);
                         if (tableComment != null && !tableComment.isEmpty()) {
                             ddlScript.append("COMMENT ON TABLE ").append(tableName).append(" IS '").append(tableComment.replace("'", "''")).append("';\n/\n");
                         }
@@ -80,12 +90,18 @@ public class OracleSynchronizer {
                     TableSchema targetTable = targetSchema.get(tableName);
                     
                     // Check for column differences and generate ALTER statements
+                    // ✓ 性能优化：传入预加载的注释、索引、约束数据
                     List<String> modifications = compareColumns(tableName, sourceTable, targetTable, 
-                        sourceConnStr, sourceUser, sourcePassword, targetConnStr, targetUser, targetPassword);
+                        sourceColumnComments.getOrDefault(tableName, new HashMap<>()),
+                        targetColumnComments.getOrDefault(tableName, new HashMap<>()),
+                        sourceIndexes.getOrDefault(tableName, new ArrayList<>()),
+                        targetIndexes.getOrDefault(tableName, new ArrayList<>()),
+                        sourceConstraints.getOrDefault(tableName, new ArrayList<>()),
+                        targetConstraints.getOrDefault(tableName, new ArrayList<>()));
                     
-                    // ✓ 新增：比较表注释差异
-                    String sourceTableComment = getTableComment(sourceConnStr, sourceUser, sourcePassword, tableName);
-                    String targetTableComment = getTableComment(targetConnStr, targetUser, targetPassword, tableName);
+                    // ✓ 比较表注释差异
+                    String sourceTableComment = sourceTableComments.get(tableName);
+                    String targetTableComment = targetTableComments.get(tableName);
                     
                     if ((sourceTableComment != null && !sourceTableComment.isEmpty()) && 
                         !sourceTableComment.equals(targetTableComment)) {
@@ -239,15 +255,13 @@ public class OracleSynchronizer {
 
     /**
      * Compare columns between source and target tables with comments, indexes, and constraints
+     * ✓ 性能优化：直接接收预加载的数据，避免重复查询数据库
      */
     private List<String> compareColumns(String tableName, TableSchema source, TableSchema target,
-                                       String sourceConnStr, String sourceUser, String sourcePassword,
-                                       String targetConnStr, String targetUser, String targetPassword) {
+                                       Map<String, String> sourceComments, Map<String, String> targetComments,
+                                       List<String> sourceIndexes, List<String> targetIndexes,
+                                       List<String> sourceConstraints, List<String> targetConstraints) {
         List<String> modifications = new ArrayList<>();
-        
-        // Get column comments
-        Map<String, String> sourceComments = getColumnComments(sourceConnStr, sourceUser, sourcePassword, tableName);
-        Map<String, String> targetComments = getColumnComments(targetConnStr, targetUser, targetPassword, tableName);
         
         // Check for missing columns in target
         for (ColumnInfo sourceCol : source.getColumns()) {
@@ -292,9 +306,6 @@ public class OracleSynchronizer {
         }
         
         // Compare indexes
-        List<String> sourceIndexes = getIndexes(sourceConnStr, sourceUser, sourcePassword, tableName);
-        List<String> targetIndexes = getIndexes(targetConnStr, targetUser, targetPassword, tableName);
-        
         for (String sourceIndex : sourceIndexes) {
             if (!targetIndexes.contains(sourceIndex)) {
                 modifications.add(sourceIndex);
@@ -302,9 +313,6 @@ public class OracleSynchronizer {
         }
         
         // Compare constraints (CHECK, UNIQUE)
-        List<String> sourceConstraints = getConstraints(sourceConnStr, sourceUser, sourcePassword, tableName);
-        List<String> targetConstraints = getConstraints(targetConnStr, targetUser, targetPassword, tableName);
-        
         for (String sourceConstraint : sourceConstraints) {
             if (!targetConstraints.contains(sourceConstraint)) {
                 modifications.add(sourceConstraint);
@@ -315,139 +323,121 @@ public class OracleSynchronizer {
     }
     
     /**
-     * Get table comment from Oracle database
-     * Note: user_tab_comments only contains comments for current user's tables
+     * ✓ 性能优化：批量获取所有表的表注释
      */
-    private String getTableComment(String connStr, String user, String password, String tableName) {
-        try (Connection conn = DriverManager.getConnection(connStr, user, password)) {
-            // Try without OWNER first (for user_tab_comments which is scoped to current user)
-            String sql = "SELECT COMMENTS FROM user_tab_comments WHERE TABLE_NAME = ?";
-            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
-                stmt.setString(1, tableName.toUpperCase());
-                try (ResultSet rs = stmt.executeQuery()) {
-                    if (rs.next()) {
-                        return rs.getString("COMMENTS");
-                    }
-                }
-            }
-        } catch (SQLException e) {
-            log.warn("Failed to get table comment for {}", tableName, e);
-        }
-        return null;
-    }
-    
-    /**
-     * Get column comments from Oracle database
-     */
-    private Map<String, String> getColumnComments(String connStr, String user, String password, String tableName) {
+    private Map<String, String> getAllTableComments(String connStr, String user, String password) {
         Map<String, String> comments = new HashMap<>();
         try (Connection conn = DriverManager.getConnection(connStr, user, password)) {
-            // Try user_col_comments first (Oracle 12c+)
-            String sql = "SELECT COLUMN_NAME, COMMENTS FROM user_col_comments WHERE TABLE_NAME = ?";
-            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
-                stmt.setString(1, tableName.toUpperCase());
-                try (ResultSet rs = stmt.executeQuery()) {
-                    while (rs.next()) {
-                        comments.put(rs.getString("COLUMN_NAME"), rs.getString("COMMENTS"));
+            String sql = "SELECT TABLE_NAME, COMMENTS FROM user_tab_comments WHERE TABLE_TYPE = 'TABLE'";
+            try (PreparedStatement stmt = conn.prepareStatement(sql);
+                 ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    String tableName = rs.getString("TABLE_NAME");
+                    String comment = rs.getString("COMMENTS");
+                    if (comment != null) {
+                        comments.put(tableName, comment);
                     }
                 }
             }
         } catch (SQLException e) {
-            log.warn("Failed to get column comments for {} using user_col_comments", tableName, e);
-            // Fallback: try all_col_comments if user_col_comments fails
-            try (Connection conn = DriverManager.getConnection(connStr, user, password)) {
-                String sql = "SELECT COLUMN_NAME, COMMENTS FROM all_col_comments WHERE TABLE_NAME = ? AND OWNER = ?";
-                try (PreparedStatement stmt = conn.prepareStatement(sql)) {
-                    stmt.setString(1, tableName.toUpperCase());
-                    stmt.setString(2, user.toUpperCase());
-                    try (ResultSet rs = stmt.executeQuery()) {
-                        while (rs.next()) {
-                            comments.put(rs.getString("COLUMN_NAME"), rs.getString("COMMENTS"));
-                        }
-                    }
-                }
-            } catch (SQLException e2) {
-                log.warn("Failed to get column comments for {} using all_col_comments", tableName, e2);
-            }
+            log.warn("Failed to get all table comments", e);
         }
         return comments;
     }
-
+    
     /**
-     * Get indexes for a table from Oracle database
+     * ✓ 性能优化：批量获取所有表的列注释
      */
-    private List<String> getIndexes(String connStr, String user, String password, String tableName) {
-        List<String> indexes = new ArrayList<>();
+    private Map<String, Map<String, String>> getAllColumnComments(String connStr, String user, String password) {
+        Map<String, Map<String, String>> allComments = new HashMap<>();
         try (Connection conn = DriverManager.getConnection(connStr, user, password)) {
-            // Query to get indexes and their columns (supports Oracle 10g+)
-            String sql = "SELECT ui.INDEX_NAME, ui.UNIQUENESS, " +
+            String sql = "SELECT TABLE_NAME, COLUMN_NAME, COMMENTS FROM user_col_comments";
+            try (PreparedStatement stmt = conn.prepareStatement(sql);
+                 ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    String tableName = rs.getString("TABLE_NAME");
+                    String columnName = rs.getString("COLUMN_NAME");
+                    String comment = rs.getString("COMMENTS");
+                    
+                    allComments.computeIfAbsent(tableName, k -> new HashMap<>()).put(columnName, comment);
+                }
+            }
+        } catch (SQLException e) {
+            log.warn("Failed to get all column comments", e);
+        }
+        return allComments;
+    }
+    
+    /**
+     * ✓ 性能优化：批量获取所有表的索引
+     */
+    private Map<String, List<String>> getAllIndexes(String connStr, String user, String password) {
+        Map<String, List<String>> allIndexes = new HashMap<>();
+        try (Connection conn = DriverManager.getConnection(connStr, user, password)) {
+            String sql = "SELECT ui.TABLE_NAME, ui.INDEX_NAME, ui.UNIQUENESS, " +
                         "(SELECT LISTAGG(uic.COLUMN_NAME, ',') WITHIN GROUP (ORDER BY uic.COLUMN_POSITION) " +
                         " FROM user_ind_columns uic WHERE uic.INDEX_NAME = ui.INDEX_NAME) AS COLUMNS " +
                         "FROM user_indexes ui " +
-                        "WHERE ui.TABLE_NAME = ? AND ui.INDEX_NAME NOT LIKE 'SYS_%' " +
-                        "AND ui.INDEX_NAME NOT IN (SELECT CONSTRAINT_NAME FROM user_constraints WHERE TABLE_NAME = ? AND CONSTRAINT_TYPE = 'P')";
+                        "WHERE ui.INDEX_NAME NOT LIKE 'SYS_%' " +
+                        "AND ui.INDEX_NAME NOT IN (SELECT CONSTRAINT_NAME FROM user_constraints WHERE CONSTRAINT_TYPE = 'P')";
             
-            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
-                stmt.setString(1, tableName.toUpperCase());
-                stmt.setString(2, tableName.toUpperCase());
-                try (ResultSet rs = stmt.executeQuery()) {
-                    while (rs.next()) {
-                        String indexName = rs.getString("INDEX_NAME");
-                        String uniqueness = rs.getString("UNIQUENESS");
-                        String columns = rs.getString("COLUMNS");
-                        
-                        if (columns != null && !columns.isEmpty()) {
-                            String indexDDL;
-                            if ("UNIQUE".equalsIgnoreCase(uniqueness)) {
-                                indexDDL = String.format("CREATE UNIQUE INDEX %s ON %s (%s);", indexName, tableName, columns);
-                            } else {
-                                indexDDL = String.format("CREATE INDEX %s ON %s (%s);", indexName, tableName, columns);
-                            }
-                            indexes.add(indexDDL);
+            try (PreparedStatement stmt = conn.prepareStatement(sql);
+                 ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    String tableName = rs.getString("TABLE_NAME");
+                    String indexName = rs.getString("INDEX_NAME");
+                    String uniqueness = rs.getString("UNIQUENESS");
+                    String columns = rs.getString("COLUMNS");
+                    
+                    if (columns != null && !columns.isEmpty()) {
+                        String indexDDL;
+                        if ("UNIQUE".equalsIgnoreCase(uniqueness)) {
+                            indexDDL = String.format("CREATE UNIQUE INDEX %s ON %s (%s);", indexName, tableName, columns);
+                        } else {
+                            indexDDL = String.format("CREATE INDEX %s ON %s (%s);", indexName, tableName, columns);
                         }
+                        allIndexes.computeIfAbsent(tableName, k -> new ArrayList<>()).add(indexDDL);
                     }
                 }
             }
         } catch (SQLException e) {
-            log.warn("Failed to get indexes for {}", tableName, e);
+            log.warn("Failed to get all indexes", e);
         }
-        return indexes;
+        return allIndexes;
     }
-
+    
     /**
-     * Get constraints for a table from Oracle database
+     * ✓ 性能优化：批量获取所有表的约束
      */
-    private List<String> getConstraints(String connStr, String user, String password, String tableName) {
-        List<String> constraints = new ArrayList<>();
+    private Map<String, List<String>> getAllConstraints(String connStr, String user, String password) {
+        Map<String, List<String>> allConstraints = new HashMap<>();
         try (Connection conn = DriverManager.getConnection(connStr, user, password)) {
-            // Query to get UNIQUE and CHECK constraints
-            String sql = "SELECT CONSTRAINT_NAME, CONSTRAINT_TYPE, SEARCH_CONDITION " +
+            String sql = "SELECT TABLE_NAME, CONSTRAINT_NAME, CONSTRAINT_TYPE, SEARCH_CONDITION " +
                         "FROM user_constraints " +
-                        "WHERE TABLE_NAME = ? AND CONSTRAINT_TYPE IN ('U', 'C') " +
-                        "ORDER BY CONSTRAINT_TYPE";
+                        "WHERE CONSTRAINT_TYPE IN ('U', 'C') " +
+                        "ORDER BY TABLE_NAME, CONSTRAINT_TYPE";
             
-            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
-                stmt.setString(1, tableName.toUpperCase());
-                try (ResultSet rs = stmt.executeQuery()) {
-                    while (rs.next()) {
-                        String constraintName = rs.getString("CONSTRAINT_NAME");
-                        String constraintType = rs.getString("CONSTRAINT_TYPE");
-                        String searchCondition = rs.getString("SEARCH_CONDITION");
-                        
-                        if ("C".equals(constraintType) && searchCondition != null && !searchCondition.isEmpty()) {
-                            String constraintDDL = String.format("ALTER TABLE %s ADD CONSTRAINT %s CHECK (%s);", 
-                                tableName, constraintName, searchCondition);
-                            constraints.add(constraintDDL);
-                        }
+            try (PreparedStatement stmt = conn.prepareStatement(sql);
+                 ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    String tableName = rs.getString("TABLE_NAME");
+                    String constraintName = rs.getString("CONSTRAINT_NAME");
+                    String constraintType = rs.getString("CONSTRAINT_TYPE");
+                    String searchCondition = rs.getString("SEARCH_CONDITION");
+                    
+                    if ("C".equals(constraintType) && searchCondition != null && !searchCondition.isEmpty()) {
+                        String constraintDDL = String.format("ALTER TABLE %s ADD CONSTRAINT %s CHECK (%s);", 
+                            tableName, constraintName, searchCondition);
+                        allConstraints.computeIfAbsent(tableName, k -> new ArrayList<>()).add(constraintDDL);
                     }
                 }
             }
         } catch (SQLException e) {
-            log.warn("Failed to get constraints for {}", tableName, e);
+            log.warn("Failed to get all constraints", e);
         }
-        return constraints;
+        return allConstraints;
     }
-
+    
     /**
      * Table schema information holder
      */
