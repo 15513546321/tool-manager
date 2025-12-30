@@ -263,14 +263,19 @@ public class GiteeService {
             
             if ("token".equals("token") && accessToken != null && !accessToken.trim().isEmpty()) {
                 for (String branch : branches) {
-                    String apiUrl = String.format("%s/repos/%s/%s/commits?sha=%s&per_page=100", 
+                    // Fetch commits - filter by first-parent to exclude merged commits from other branches
+                    String apiUrl = String.format("%s/repos/%s/%s/commits?sha=%s&per_page=200", 
                         GITEE_API_BASE, owner, repo, branch);
                     log.info("Calling Gitee API for commits on branch: : {}", branch);
                     List<Map<String, Object>> commits = callGiteeApiList(apiUrl, accessToken);
                     
                     if (commits != null && !commits.isEmpty()) {
                         System.out.println("Received " + commits.size() + " commits for branch: " + branch);
-                        for (Map<String, Object> commit : commits) {
+                        
+                        // Filter commits to only include first-parent (direct commits on this branch)
+                        List<Map<String, Object>> filteredCommits = filterFirstParentCommits(commits, owner, repo, branch, accessToken);
+                        
+                        for (Map<String, Object> commit : filteredCommits) {
                             try {
                                 Map<String, Object> changeset = new HashMap<>();
                                 changeset.put("branch", branch);
@@ -530,6 +535,186 @@ public class GiteeService {
         }
         
         return new ArrayList<>(changedFiles);
+    }
+    
+    /**
+     * Compare two commits and get changeset between them
+     */
+    public List<Map<String, Object>> compareCommits(String repoUrl, String authType, String accessToken, 
+                                                      String privateKey, String branchName, String fromCommit, 
+                                                      String toCommit, String author) {
+        List<Map<String, Object>> changesets = new ArrayList<>();
+        
+        try {
+            if ("ssh".equals(authType)) {
+                // Use SSH git command to compare commits
+                changesets = gitOperationService.compareCommitsSSH(repoUrl, privateKey, branchName, fromCommit, toCommit);
+            } else if ("token".equals(authType)) {
+                // Use Gitee HTTP API to compare commits
+                changesets = compareCommitsHTTP(repoUrl, accessToken, branchName, fromCommit, toCommit, author);
+            } else {
+                log.error("Unknown auth type: {}", authType);
+            }
+        } catch (Exception e) {
+            log.error("Failed to compare commits: ", e);
+        }
+        
+        return changesets;
+    }
+    
+    /**
+     * Compare two commits using HTTP API
+     */
+    private List<Map<String, Object>> compareCommitsHTTP(String repoUrl, String accessToken, String branchName, 
+                                                           String fromCommit, String toCommit, String author) {
+        List<Map<String, Object>> changesets = new ArrayList<>();
+        
+        try {
+            String[] urlParts = extractRepoInfo(repoUrl);
+            if (urlParts == null) {
+                log.error("Failed to extract repo info from URL: {}", repoUrl);
+                return changesets;
+            }
+            
+            String owner = urlParts[0];
+            String repo = urlParts[1];
+            
+            log.info("Comparing commits for {}/{}: {} -> {}", owner, repo, fromCommit, toCommit);
+            
+            // Use Gitee compare API
+            String compareUrl = String.format("%s/repos/%s/%s/compare/%s...%s", 
+                GITEE_API_BASE, owner, repo, fromCommit, toCommit);
+            
+            Map<String, Object> compareResult = callGiteeApi(compareUrl, accessToken);
+            
+            if (compareResult != null && compareResult.containsKey("commits")) {
+                List<Map<String, Object>> commits = (List<Map<String, Object>>) compareResult.get("commits");
+                
+                if (commits != null && !commits.isEmpty()) {
+                    log.info("Found {} commits between {} and {}", commits.size(), fromCommit, toCommit);
+                    
+                    for (Map<String, Object> commit : commits) {
+                        try {
+                            Map<String, Object> changeset = new HashMap<>();
+                            changeset.put("branch", branchName);
+                            String commitHash = (String) commit.get("sha");
+                            changeset.put("commitHash", commitHash);
+                            
+                            // Extract author
+                            String commitAuthor = "Unknown";
+                            Map<String, Object> authorMap = (Map<String, Object>) commit.get("author");
+                            if (authorMap != null) {
+                                commitAuthor = (String) authorMap.getOrDefault("name", "Unknown");
+                            }
+                            changeset.put("author", commitAuthor);
+                            
+                            // Filter by author if specified
+                            if (author != null && !author.trim().isEmpty()) {
+                                String authorFilter = author.trim().toLowerCase();
+                                if (!commitAuthor.toLowerCase().contains(authorFilter)) {
+                                    continue;
+                                }
+                            }
+                            
+                            // Extract commit details
+                            Map<String, Object> commitDetail = (Map<String, Object>) commit.get("commit");
+                            if (commitDetail != null) {
+                                changeset.put("message", commitDetail.getOrDefault("message", ""));
+                                
+                                Map<String, Object> committer = (Map<String, Object>) commitDetail.get("committer");
+                                if (committer != null) {
+                                    changeset.put("date", committer.getOrDefault("date", ""));
+                                }
+                            } else {
+                                changeset.put("message", "");
+                                changeset.put("date", "");
+                            }
+                            
+                            // Fetch file list for this commit
+                            String filePath = "N/A";
+                            try {
+                                filePath = getCommitFilesFromGiteeAPI(owner, repo, commitHash, accessToken);
+                            } catch (Exception fileEx) {
+                                log.error("Failed to fetch files for commit {}: {}", commitHash, fileEx.getMessage());
+                            }
+                            changeset.put("filePath", filePath);
+                            changesets.add(changeset);
+                        } catch (Exception commitEx) {
+                            log.error("Error processing commit: ", commitEx);
+                            continue;
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.error("Failed to compare commits via HTTP: ", e);
+        }
+        
+        return changesets;
+    }
+    
+    /**
+     * Filter commits to only include first-parent commits (direct commits on branch, excluding merges from other branches)
+     * This ensures we only get commits that were directly committed to the current branch
+     */
+    private List<Map<String, Object>> filterFirstParentCommits(List<Map<String, Object>> commits, String owner, String repo, String branch, String accessToken) {
+        List<Map<String, Object>> filtered = new ArrayList<>();
+        
+        try {
+            // Get the branch info to find the first commit
+            String branchApiUrl = String.format("%s/repos/%s/%s/branches/%s", GITEE_API_BASE, owner, repo, branch);
+            Map<String, Object> branchInfo = callGiteeApi(branchApiUrl, accessToken);
+            
+            if (branchInfo == null) {
+                log.warn("Could not fetch branch info, returning all commits");
+                return commits;
+            }
+            
+            // Track parent chain - only follow first parent
+            Set<String> firstParentChain = new HashSet<>();
+            String currentSha = null;
+            
+            // Get starting commit SHA from branch
+            Map<String, Object> commitInfo = (Map<String, Object>) branchInfo.get("commit");
+            if (commitInfo != null) {
+                currentSha = (String) commitInfo.get("sha");
+            }
+            
+            // Build first-parent chain by following first parent only
+            while (currentSha != null && firstParentChain.size() < 200) { // Limit to prevent infinite loop
+                firstParentChain.add(currentSha);
+                
+                // Get commit details
+                String commitApiUrl = String.format("%s/repos/%s/%s/commits/%s", GITEE_API_BASE, owner, repo, currentSha);
+                Map<String, Object> commit = callGiteeApi(commitApiUrl, accessToken);
+                
+                if (commit == null) break;
+                
+                // Get parents - only follow first parent (index 0)
+                List<Map<String, Object>> parents = (List<Map<String, Object>>) commit.get("parents");
+                if (parents != null && !parents.isEmpty()) {
+                    currentSha = (String) parents.get(0).get("sha"); // Only follow first parent
+                } else {
+                    currentSha = null; // No more parents
+                }
+            }
+            
+            // Filter original commits list to only include those in first-parent chain
+            for (Map<String, Object> commit : commits) {
+                String sha = (String) commit.get("sha");
+                if (sha != null && firstParentChain.contains(sha)) {
+                    filtered.add(commit);
+                }
+            }
+            
+            log.info("Filtered commits from {} to {} (first-parent only)", commits.size(), filtered.size());
+            
+        } catch (Exception e) {
+            log.error("Error filtering first-parent commits, returning all commits: ", e);
+            return commits;
+        }
+        
+        return filtered.isEmpty() ? commits : filtered;
     }
 }
 

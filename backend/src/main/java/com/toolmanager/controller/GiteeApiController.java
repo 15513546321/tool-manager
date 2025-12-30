@@ -362,8 +362,57 @@ public class GiteeApiController {
                 .body(ApiResponse.error("Failed to fetch branch files: " + e.getMessage()));
         }
     }
+
+    /**
+     * Compare two commits and get the changeset between them
+     * POST /api/gitee/compare-commits
+     */
+    @PostMapping("/compare-commits")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> compareCommits(@RequestBody GiteeRequest request) {
+        try {
+            if (request.getRepoUrl() == null || request.getRepoUrl().trim().isEmpty()) {
+                return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("Repository URL is required"));
+            }
+
+            if (request.getBranchName() == null || request.getBranchName().trim().isEmpty()) {
+                return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("Branch name is required"));
+            }
+
+            // Get fromCommit and toCommit from branches list (reusing existing field)
+            if (request.getBranches() == null || request.getBranches().size() < 2) {
+                return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("Both fromCommit and toCommit are required"));
+            }
+
+            String fromCommit = request.getBranches().get(0);
+            String toCommit = request.getBranches().get(1);
+
+            // Call Gitee service to compare commits
+            List<Map<String, Object>> changesets = giteeService.compareCommits(
+                request.getRepoUrl(),
+                request.getAuthType(),
+                request.getAccessToken(),
+                request.getPrivateKey(),
+                request.getBranchName(),
+                fromCommit,
+                toCommit,
+                request.getAuthor()
+            );
+
+            if (changesets.isEmpty()) {
+                return ResponseEntity.ok(
+                    ApiResponse.error("No differences found between the two commits")
+                );
+            }
+
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> result = (List<Map<String, Object>>) (List<?>) changesets;
+            return ResponseEntity.ok(ApiResponse.success(result));
+        } catch (Exception e) {
+            return ResponseEntity.status(400)
+                .body(ApiResponse.error("Failed to compare commits: " + e.getMessage()));
+        }
+    }
 }
-
-
-
-

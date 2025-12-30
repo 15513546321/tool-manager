@@ -531,11 +531,12 @@ public class GitOperationService {
                     
                     log.info("✓ Clone successful for branch: {}", branch);
                     
-                    // Get commit log from the cloned repo
+                    // Get commit log from the cloned repo - filter by first-parent only (exclude merges from other branches)
                     ProcessBuilder logPb = new ProcessBuilder(
                         "git", "--git-dir=" + tempCloneDir.getAbsolutePath(),
                         "log", "--format=%H|%an|%ai|%s",
-                        "--max-count=50",
+                        "--first-parent",
+                        "--max-count=200",
                         "refs/heads/" + branch
                     );
                     
@@ -856,9 +857,115 @@ public class GitOperationService {
         
         return new ArrayList<>(changedFiles);
     }
+
+    /**
+     * Compare two commits using SSH and get changesets between them
+     */
+    public List<Map<String, Object>> compareCommitsSSH(String repoUrl, String privateKey, String branchName, 
+                                                         String fromCommit, String toCommit) {
+        List<Map<String, Object>> commits = new ArrayList<>();
+        
+        try {
+            log.info("📥 Comparing commits via SSH: {} -> {}", fromCommit, toCommit);
+            System.out.println("📥 Starting SSH commit comparison: " + fromCommit + " -> " + toCommit);
+            
+            // Get SSH key file
+            File keyFile = getSSHKeyFile(privateKey);
+            if (keyFile == null) {
+                log.error("❌ Error: No SSH key found!");
+                return commits;
+            }
+            
+            // Create temp directory for bare clone
+            String tempDirName = "jgit_compare_" + System.nanoTime();
+            File tempCloneDir = new File(System.getProperty("java.io.tmpdir"), tempDirName);
+            tempCloneDir.mkdirs();
+            
+            try {
+                // Clone repository
+                ProcessBuilder clonePb = new ProcessBuilder(
+                    "git", "clone", "--bare", repoUrl, tempCloneDir.getAbsolutePath()
+                );
+                
+                Map<String, String> cloneEnv = clonePb.environment();
+                cloneEnv.put("GIT_SSH_COMMAND", "ssh -i " + keyFile.getAbsolutePath() + 
+                    " -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null");
+                
+                clonePb.redirectErrorStream(true);
+                Process cloneProcess = clonePb.start();
+                BufferedReader cloneReader = new BufferedReader(new InputStreamReader(cloneProcess.getInputStream()));
+                String line;
+                while ((line = cloneReader.readLine()) != null) {
+                    log.debug("[Clone] {}", line);
+                }
+                cloneReader.close();
+                
+                boolean cloneCompleted = cloneProcess.waitFor(30, java.util.concurrent.TimeUnit.SECONDS);
+                if (!cloneCompleted || cloneProcess.exitValue() != 0) {
+                    log.error("❌ Failed to clone repository");
+                    return commits;
+                }
+                
+                log.info("✓ Clone successful");
+                
+                // Get commits between fromCommit and toCommit
+                ProcessBuilder logPb = new ProcessBuilder(
+                    "git", "--git-dir=" + tempCloneDir.getAbsolutePath(),
+                    "log", "--format=%H|%an|%ai|%s",
+                    "--first-parent",
+                    "--max-count=200",
+                    fromCommit + ".." + toCommit
+                );
+                
+                logPb.redirectErrorStream(true);
+                Process logProcess = logPb.start();
+                BufferedReader logReader = new BufferedReader(new InputStreamReader(logProcess.getInputStream()));
+                
+                int commitCount = 0;
+                while ((line = logReader.readLine()) != null) {
+                    if (line.trim().isEmpty()) continue;
+                    
+                    String[] parts = line.split("\\|");
+                    if (parts.length >= 4) {
+                        String commitHash = parts[0];
+                        
+                        // Get file list for this commit
+                        String filePaths = getCommitFilePaths(tempCloneDir, commitHash);
+                        
+                        Map<String, Object> commit = new HashMap<>();
+                        commit.put("commitHash", commitHash);
+                        commit.put("author", parts[1]);
+                        commit.put("date", parts[2]);
+                        commit.put("message", parts[3]);
+                        commit.put("branch", branchName);
+                        commit.put("filePath", filePaths);
+                        commits.add(commit);
+                        commitCount++;
+                    }
+                }
+                logReader.close();
+                
+                boolean logCompleted = logProcess.waitFor(10, java.util.concurrent.TimeUnit.SECONDS);
+                if (logCompleted && logProcess.exitValue() == 0) {
+                    log.info("✓ Found {} commits between {} and {}", commitCount, fromCommit, toCommit);
+                } else {
+                    log.error("❌ Git log command failed");
+                }
+                
+            } finally {
+                // Clean up temp directory
+                deleteDir(tempCloneDir);
+            }
+            
+            System.out.println("✓ Found " + commits.size() + " commits via SSH comparison");
+            log.info("✓ SSH commit comparison completed. Total commits: {}", commits.size());
+            
+        } catch (Exception e) {
+            System.err.println("❌ Failed to compare commits via SSH: " + e.getMessage());
+            log.error("Failed to compare commits via SSH: ", e);
+        }
+        
+        return commits;
+    }
 }
-
-
-
-
 

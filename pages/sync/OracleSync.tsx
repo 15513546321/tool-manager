@@ -968,14 +968,14 @@ export const OracleSync: React.FC = () => {
                             </div>
                         </div>
 
-                        <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
+                        <div className="flex-1 overflow-y-auto p-6 bg-slate-50 max-h-[400px]">
                             <div className="space-y-3">
                                 <h4 className="text-sm font-bold text-slate-700 uppercase">已配置的连接</h4>
                                 {/* 连接列表 - 表格形式 */}
                                 {(configTab === 'source' ? sourceConns : targetConns).length > 0 ? (
-                                    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+                                    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
                                         <table className="w-full text-sm">
-                                            <thead className="bg-slate-50 border-b border-slate-200">
+                                            <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
                                                 <tr>
                                                     <th className="px-6 py-3 text-left font-semibold text-slate-700">连接名称</th>
                                                     <th className="px-6 py-3 text-left font-semibold text-slate-700">用户名</th>

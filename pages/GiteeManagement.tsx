@@ -76,8 +76,6 @@ export const GiteeManagement: React.FC = () => {
 
   // Search State
   const [searchQuery, setSearchQuery] = useState('');
-  const [branchNameFilter, setBranchNameFilter] = useState(''); // Branch name filter for branch search
-  const [branchAuthorFilter, setBranchAuthorFilter] = useState(''); // Author filter for branches (last commit author)
   const [authorFilter, setAuthorFilter] = useState(''); // Author filter for commits
   const [loading, setLoading] = useState(false);
   
@@ -100,7 +98,16 @@ export const GiteeManagement: React.FC = () => {
   
   // Pagination state for branch list
   const [branchListPage, setBranchListPage] = useState(1);
+  
+  // Commit comparison state
+  const [isCompareModalOpen, setIsCompareModalOpen] = useState(false);
+  const [compareBranchName, setCompareBranchName] = useState('');
+  const [compareFromCommit, setCompareFromCommit] = useState('');
+  const [compareToCommit, setCompareToCommit] = useState('');
   const [branchListPageSize, setBranchListPageSize] = useState(20);
+  
+  // File list view state - tracks which branches show detailed commits
+  const [showCommitsForBranch, setShowCommitsForBranch] = useState<Set<string>>(new Set());
   
   // Export Configuration
   const [exportFields, setExportFields] = useState<ExportField[]>(DEFAULT_EXPORT_FIELDS);
@@ -532,9 +539,7 @@ export const GiteeManagement: React.FC = () => {
           authType: config.authType,
           accessToken: config.accessToken,
           privateKey: config.privateKey || '',
-          searchQuery: searchQuery,
-          branchName: branchNameFilter || undefined, // Pass branch name filter if specified
-          author: branchAuthorFilter || undefined // Pass branch author filter if specified
+          searchQuery: searchQuery
         })
       });
 
@@ -745,10 +750,7 @@ export const GiteeManagement: React.FC = () => {
     }
   };
 
-  // Reset pagination when filters change
-  useEffect(() => {
-    setBranchListPage(1);
-  }, [branchNameFilter, branchAuthorFilter]);
+
 
   const toggleBranchSelection = (branchName: string) => {
     const newSelected = new Set(selectedBranches);
@@ -761,28 +763,16 @@ export const GiteeManagement: React.FC = () => {
   };
 
   const toggleAllBranches = () => {
-    // Get filtered branches based on all filters
-    const filteredBranches = branches.filter(b => 
-        (!branchNameFilter || b.name.toLowerCase().includes(branchNameFilter.toLowerCase())) &&
-        (!branchAuthorFilter || (b.lastCommitAuthor && b.lastCommitAuthor.toLowerCase().includes(branchAuthorFilter.toLowerCase())))
-    );
-    
-    if (selectedBranches.size === filteredBranches.length && filteredBranches.length > 0) {
+    if (selectedBranches.size === branches.length && branches.length > 0) {
       setSelectedBranches(new Set());
     } else {
-      setSelectedBranches(new Set(filteredBranches.map(b => b.name)));
+      setSelectedBranches(new Set(branches.map(b => b.name)));
     }
   };
   
-  // Filtered branches (before pagination)
-  const filteredBranches = branches.filter(b => 
-      (!branchNameFilter || b.name.toLowerCase().includes(branchNameFilter.toLowerCase())) &&
-      (!branchAuthorFilter || (b.lastCommitAuthor && b.lastCommitAuthor.toLowerCase().includes(branchAuthorFilter.toLowerCase())))
-  );
-  
   // Paginated branches for display
-  const totalBranchPages = Math.ceil(filteredBranches.length / branchListPageSize);
-  const paginatedBranches = filteredBranches.slice(
+  const totalBranchPages = Math.ceil(branches.length / branchListPageSize);
+  const paginatedBranches = branches.slice(
       (branchListPage - 1) * branchListPageSize,
       branchListPage * branchListPageSize
   );
@@ -794,6 +784,11 @@ export const GiteeManagement: React.FC = () => {
     const deduplicated: ChangesetItem[] = [];
     
     items.forEach(item => {
+      // Filter out N/A file paths
+      if (!item.filePath || item.filePath.trim() === '' || item.filePath === 'N/A') {
+        return;
+      }
+      
       // Create a unique key combining commitHash and filePath
       const key = `${item.commitHash}|${item.filePath.trim()}`;
       if (!seen.has(key)) {
@@ -803,6 +798,21 @@ export const GiteeManagement: React.FC = () => {
     });
     
     return deduplicated;
+  };
+
+  // Helper function to get unique file list from changeset items
+  const getUniqueFiles = (items: ChangesetItem[]): string[] => {
+    const fileSet = new Set<string>();
+    
+    items.forEach(item => {
+      if (item.filePath && item.filePath !== 'N/A') {
+        // Split multiple files if they're separated by newlines
+        const files = item.filePath.split('\n').filter(f => f.trim() && f !== 'N/A');
+        files.forEach(file => fileSet.add(file.trim()));
+      }
+    });
+    
+    return Array.from(fileSet).sort();
   };
 
   const handleFetchMultiBranchChanges = async () => {
@@ -887,7 +897,7 @@ export const GiteeManagement: React.FC = () => {
   // Pagination handlers
   const handleBranchPageChange = (branchName: string, page: number) => {
     const items = changesetData.get(branchName) || [];
-    const pagination = branchPagination.get(branchName) || { page: 1, size: 10 };
+    const pagination = branchPagination.get(branchName) || { page: 1, size: 50 };
     const totalPages = Math.ceil(items.length / pagination.size);
     const newPage = Math.max(1, Math.min(page, totalPages || 1));
     
@@ -900,9 +910,81 @@ export const GiteeManagement: React.FC = () => {
 
   const getPaginatedItems = (branchName: string) => {
     const items = changesetData.get(branchName) || [];
-    const pagination = branchPagination.get(branchName) || { page: 1, size: 10 };
+    const pagination = branchPagination.get(branchName) || { page: 1, size: 50 };
     const start = (pagination.page - 1) * pagination.size;
     return items.slice(start, start + pagination.size);
+  };
+
+  // Handle commit comparison
+  const handleCommitComparison = async () => {
+    if (!compareBranchName || !compareFromCommit || !compareToCommit) {
+      alert('请填写分支名称和两个提交ID');
+      return;
+    }
+
+    if (!config.repoUrl || !config.repoUrl.trim()) {
+      alert('请先配置仓库地址');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const response = await fetch('/api/gitee/compare-commits', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repoUrl: config.repoUrl,
+          authType: config.authType,
+          accessToken: config.accessToken,
+          privateKey: config.privateKey || '',
+          branchName: compareBranchName,
+          branches: [compareFromCommit.trim(), compareToCommit.trim()], // Use branches array to pass commit IDs
+          author: authorFilter || undefined
+        })
+      });
+
+      const result = await response.json();
+      
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || '对比失败');
+      }
+
+      // Process comparison result
+      const newChangesetData = new Map<string, ChangesetItem[]>();
+      const newPagination = new Map<string, { page: number; size: number }>();
+      
+      if (result.data && Array.isArray(result.data)) {
+        const items: ChangesetItem[] = result.data.map((item: any) => ({
+          branch: compareBranchName,
+          commitHash: item.commitHash || 'N/A',
+          author: item.author || 'Unknown',
+          date: item.date || 'N/A',
+          message: item.message || '',
+          filePath: item.filePath || 'N/A'
+        }));
+
+        if (items.length > 0) {
+          const deduplicated = deduplicateChangesetItems(items);
+          newChangesetData.set(compareBranchName, deduplicated);
+          newPagination.set(compareBranchName, { page: 1, size: 50 });
+        }
+      }
+      
+      setChangesetData(newChangesetData);
+      setBranchPagination(newPagination);
+      setIsCompareModalOpen(false);
+      recordAction('Gitee管理', `提交对比 - 分支: ${compareBranchName}, ${compareFromCommit} → ${compareToCommit}`);
+      
+      if (newChangesetData.size === 0) {
+        alert('未找到差异提交记录');
+      }
+    } catch (error) {
+      console.error('Failed to compare commits:', error);
+      alert(`提交对比失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDownloadChangeset = async () => {
@@ -983,7 +1065,7 @@ export const GiteeManagement: React.FC = () => {
     try {
       const timestamp = new Date().toISOString().slice(0, 10);
       
-      // Generate TXT content - organized by branch with file lists
+      // Generate TXT content - organized by branch with unique file lists (no N/A)
       const lines: string[] = [];
       lines.push(`=== Gitee 分支变更汇总 ===`);
       lines.push(`生成时间: ${new Date().toLocaleString('zh-CN')}`);
@@ -996,15 +1078,10 @@ export const GiteeManagement: React.FC = () => {
       Array.from(changesetData.keys()).sort().forEach(branchName => {
         const items = changesetData.get(branchName) || [];
         
-        // Collect unique files for this branch
-        const uniqueFiles = new Set<string>();
-        items.forEach(item => {
-          // Split by newlines in case filePath contains multiple files
-          const files = item.filePath ? item.filePath.split('\n').filter(f => f.trim()) : [];
-          files.forEach(f => uniqueFiles.add(f.trim()));
-        });
+        // Use the helper function to get unique files (filters N/A)
+        const uniqueFiles = getUniqueFiles(items);
 
-        const fileCount = uniqueFiles.size;
+        const fileCount = uniqueFiles.length;
         const commitCount = items.length;
         totalFiles += fileCount;
         totalCommits += commitCount;
@@ -1015,7 +1092,7 @@ export const GiteeManagement: React.FC = () => {
         lines.push(`【变更的文件列表】`);
         
         // List all unique files for this branch
-        Array.from(uniqueFiles).sort().forEach(filePath => {
+        uniqueFiles.forEach(filePath => {
           lines.push(`  - ${filePath}`);
         });
       });
@@ -1069,7 +1146,7 @@ export const GiteeManagement: React.FC = () => {
     recordAction('Gitee管理', `导出单个提交记录TXT: ${item.commitHash}`);
   };
 
-  // Download single branch as TXT (only file list)
+  // Download single branch as TXT (only unique file list, no N/A)
   const downloadBranchTxt = (branchName: string) => {
     const items = changesetData.get(branchName) || [];
     if (items.length === 0) {
@@ -1078,22 +1155,27 @@ export const GiteeManagement: React.FC = () => {
     }
 
     const timestamp = new Date().toISOString().slice(0, 10);
-    const lines = [`=== 分支: ${branchName} ===`];
-    items.forEach(item => {
-      lines.push(item.filePath);
-    });
+    const uniqueFiles = getUniqueFiles(items);
+    
+    const lines = [
+      `=== 分支: ${branchName} ===`,
+      `文件数量: ${uniqueFiles.length}`,
+      `生成时间: ${new Date().toLocaleString('zh-CN')}`,
+      '',
+      ...uniqueFiles
+    ];
 
     const content = lines.join('\n');
-    const blob = new Blob([content], { type: 'text/plain' });
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `gitee_${branchName}_${timestamp}.txt`;
+    a.download = `gitee_${branchName}_files_${timestamp}.txt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    recordAction('Gitee管理', `导出单个分支TXT: ${branchName}`);
+    recordAction('Gitee管理', `导出单个分支文件列表TXT: ${branchName}, 文件数: ${uniqueFiles.length}`);
   };
 
   // Helper function to prepare export data from items
@@ -1103,7 +1185,15 @@ export const GiteeManagement: React.FC = () => {
 
     items.forEach(item => {
       // If filePath contains multiple files (separated by newlines), create one row per file
-      const files = item.filePath ? item.filePath.split('\n').filter((f: string) => f.trim()) : [''];
+      // Filter out N/A values
+      const files = item.filePath 
+        ? item.filePath.split('\n')
+            .map((f: string) => f.trim())
+            .filter((f: string) => f && f !== 'N/A')
+        : [];
+      
+      // Skip if no valid files after filtering
+      if (files.length === 0) return;
       
       files.forEach(filePath => {
         const row: any = {};
@@ -1112,7 +1202,7 @@ export const GiteeManagement: React.FC = () => {
           if (field.id === 'branch') {
             row[field.label] = item.branch;
           } else if (field.id === 'filePath') {
-            row[field.label] = filePath.trim(); // One file per row
+            row[field.label] = filePath; // One file per row (already trimmed and filtered)
           } else if (field.id === 'commitHash') {
             row[field.label] = item.commitHash;
           } else if (field.id === 'message') {
@@ -1675,53 +1765,18 @@ export const GiteeManagement: React.FC = () => {
                           <ArrowRight size={16}/>
                       </button>
                   </div>
-                  <div className="relative mb-3">
-                      <GitBranch className="absolute left-3 top-2.5 text-slate-400" size={14}/>
-                      <input 
-                          type="text"
-                          placeholder="按分支名称过滤..."
-                          value={branchNameFilter}
-                          onChange={(e) => setBranchNameFilter(e.target.value)}
-                          className={`${INPUT_STYLE} pl-9 pr-8 text-xs`}
-                      />
-                      {branchNameFilter && (
-                          <button
-                              onClick={() => setBranchNameFilter('')}
-                              className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
-                          >
-                              <X size={14}/>
-                          </button>
-                      )}
-                  </div>
-                  <div className="relative mb-3">
-                      <User className="absolute left-3 top-2.5 text-slate-400" size={14}/>
-                      <input 
-                          type="text"
-                          placeholder="按分支提交人过滤..."
-                          value={branchAuthorFilter}
-                          onChange={(e) => setBranchAuthorFilter(e.target.value)}
-                          className={`${INPUT_STYLE} pl-9 pr-8 text-xs`}
-                      />
-                      {branchAuthorFilter && (
-                          <button
-                              onClick={() => setBranchAuthorFilter('')}
-                              className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
-                          >
-                              <X size={14}/>
-                          </button>
-                      )}
-                  </div>
+
                   {branches.length > 0 && (
                       <div className="space-y-2">
                           <div className="flex items-center justify-between">
                               <span className="text-xs text-slate-600 font-medium">
-                                  已选中: <span className="font-bold text-blue-600">{selectedBranches.size}</span> / {filteredBranches.length}
+                                  已选中: <span className="font-bold text-blue-600">{selectedBranches.size}</span> / {branches.length}
                               </span>
                               <button
                                   onClick={toggleAllBranches}
                                   className="text-xs font-bold text-blue-600 hover:text-blue-700 px-2 py-1 rounded hover:bg-blue-50"
                               >
-                                  {selectedBranches.size === filteredBranches.length && filteredBranches.length > 0 ? '取消全选' : '全选'}
+                                  {selectedBranches.size === branches.length && branches.length > 0 ? '取消全选' : '全选'}
                               </button>
                           </div>
                           <div className="relative">
@@ -1774,9 +1829,24 @@ export const GiteeManagement: React.FC = () => {
                                           </div>
                                       </div>
                                   </div>
-                                  <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-mono shrink-0">
-                                      {branch.lastCommitHash}
-                                  </span>
+                                  <div className="flex flex-col gap-1 shrink-0">
+                                      <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-mono">
+                                          {branch.lastCommitHash}
+                                      </span>
+                                      <button
+                                          onClick={(e) => {
+                                              e.stopPropagation();
+                                              setCompareBranchName(branch.name);
+                                              setCompareFromCommit('');
+                                              setCompareToCommit('');
+                                              setIsCompareModalOpen(true);
+                                          }}
+                                          className="text-[10px] bg-blue-100 hover:bg-blue-200 text-blue-700 px-2 py-1 rounded font-bold transition-colors"
+                                          title="提交对比"
+                                      >
+                                          对比
+                                      </button>
+                                  </div>
                               </div>
                           </div>
                       ))
@@ -1788,13 +1858,13 @@ export const GiteeManagement: React.FC = () => {
               </div>
               
               {/* Branch List Pagination */}
-              {filteredBranches.length > 0 && (
+              {branches.length > 0 && (
                   <div className="px-4 py-3 border-t border-slate-200 bg-white flex-shrink-0">
                       <Pagination
                           currentPage={branchListPage}
                           totalPages={totalBranchPages}
                           pageSize={branchListPageSize}
-                          totalItems={filteredBranches.length}
+                          totalItems={branches.length}
                           onPageChange={setBranchListPage}
                           onPageSizeChange={(size) => {
                               setBranchListPageSize(size);
@@ -1847,10 +1917,31 @@ export const GiteeManagement: React.FC = () => {
                                               <GitBranch size={16} className="text-blue-700"/>
                                               <h4 className="font-bold text-blue-700">{branchName}</h4>
                                               <span className="text-xs bg-blue-200 text-blue-700 px-2 py-0.5 rounded">
+                                                  {getUniqueFiles(changesetData.get(branchName) || []).length} 个文件
+                                              </span>
+                                              <span className="text-xs bg-purple-200 text-purple-700 px-2 py-0.5 rounded">
                                                   {(changesetData.get(branchName) || []).length} 条提交
                                               </span>
                                           </div>
                                           <div className="flex gap-2">
+                                              <button
+                                                  onClick={() => {
+                                                      const newSet = new Set(showCommitsForBranch);
+                                                      if (newSet.has(branchName)) {
+                                                          newSet.delete(branchName);
+                                                      } else {
+                                                          newSet.add(branchName);
+                                                      }
+                                                      setShowCommitsForBranch(newSet);
+                                                  }}
+                                                  className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 shadow-sm transition-colors ${
+                                                      showCommitsForBranch.has(branchName) 
+                                                      ? 'bg-purple-600 hover:bg-purple-700 text-white' 
+                                                      : 'bg-purple-100 hover:bg-purple-200 text-purple-700'
+                                                  }`}
+                                              >
+                                                  <Eye size={14}/> {showCommitsForBranch.has(branchName) ? '隐藏提交' : '查看提交'}
+                                              </button>
                                               <button
                                                   onClick={() => downloadBranchTxt(branchName)}
                                                   className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold flex items-center gap-1 shadow-sm transition-colors"
@@ -1867,51 +1958,73 @@ export const GiteeManagement: React.FC = () => {
                                       </div>
                                   </div>
                                   
-                                  {/* Commits List */}
-                                  <div className="divide-y divide-slate-100">
-                                      {getPaginatedItems(branchName).map((item, idx) => (
-                                          <div key={idx} className="p-3 hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => setSelectedCommitDetail(item)}>
-                                              <div className="flex items-start justify-between gap-2">
-                                                  <div className="flex-1 min-w-0">
-                                                      <div className="flex items-center gap-2 mb-1">
-                                                          <code className="text-[11px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-bold">
-                                                              {item.commitHash}
-                                                          </code>
-                                                          <span className="text-xs text-slate-500">{item.author}</span>
-                                                      </div>
-                                                      <div className="text-sm text-slate-700 font-mono truncate mb-1">
-                                                          {item.message}
-                                                      </div>
-                                                      <div className="text-xs text-slate-500 flex items-center gap-1">
-                                                          <FileText size={12}/> {item.filePath}
-                                                      </div>
-                                                      <div className="text-xs text-slate-400 mt-1">
-                                                          <Calendar size={12} className="inline mr-1"/>
-                                                          {item.date}
+                                  {/* File List or Commits List based on view mode */}
+                                  {showCommitsForBranch.has(branchName) ? (
+                                      // Detailed Commits View
+                                      <>
+                                          <div className="divide-y divide-slate-100">
+                                              {getPaginatedItems(branchName).map((item, idx) => (
+                                                  <div key={idx} className="p-3 hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => setSelectedCommitDetail(item)}>
+                                                      <div className="flex items-start justify-between gap-2">
+                                                          <div className="flex-1 min-w-0">
+                                                              <div className="flex items-center gap-2 mb-1">
+                                                                  <code className="text-[11px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-bold">
+                                                                      {item.commitHash}
+                                                                  </code>
+                                                                  <span className="text-xs text-slate-500">{item.author}</span>
+                                                              </div>
+                                                              <div className="text-sm text-slate-700 font-mono truncate mb-1">
+                                                                  {item.message}
+                                                              </div>
+                                                              <div className="text-xs text-slate-500 flex items-center gap-1">
+                                                                  <FileText size={12}/> {item.filePath}
+                                                              </div>
+                                                              <div className="text-xs text-slate-400 mt-1">
+                                                                  <Calendar size={12} className="inline mr-1"/>
+                                                                  {item.date}
+                                                              </div>
+                                                          </div>
+                                                          <Eye size={16} className="text-slate-400 hover:text-blue-600 flex-shrink-0 mt-1"/>
                                                       </div>
                                                   </div>
-                                                  <Eye size={16} className="text-slate-400 hover:text-blue-600 flex-shrink-0 mt-1"/>
+                                              ))}
+                                          </div>
+
+                                          {/* Pagination for this branch */}
+                                          {(() => {
+                                            const items = changesetData.get(branchName) || [];
+                                            const pagination = branchPagination.get(branchName) || { page: 1, size: 50 };
+                                            const totalPages = Math.ceil(items.length / pagination.size);
+                                            return items.length > pagination.size ? (
+                                              <Pagination
+                                                currentPage={pagination.page}
+                                                totalPages={totalPages}
+                                                pageSize={pagination.size}
+                                                totalItems={items.length}
+                                                onPageChange={(page) => handleBranchPageChange(branchName, page)}
+                                                onPageSizeChange={(size) => handleBranchPageSizeChange(branchName, size)}
+                                              />
+                                            ) : null;
+                                          })()}
+                                      </>
+                                  ) : (
+                                      // Simple File List View
+                                      <div className="p-4">
+                                          <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                                              <h5 className="text-xs font-bold text-slate-600 uppercase mb-2 flex items-center gap-2">
+                                                  <FileText size={14} className="text-slate-500"/>
+                                                  变更文件列表
+                                              </h5>
+                                              <div className="space-y-1 max-h-96 overflow-y-auto">
+                                                  {getUniqueFiles(changesetData.get(branchName) || []).map((file, idx) => (
+                                                      <div key={idx} className="text-xs font-mono text-slate-700 bg-white px-3 py-2 rounded border border-slate-100 hover:border-blue-200 transition-colors">
+                                                          {file}
+                                                      </div>
+                                                  ))}
                                               </div>
                                           </div>
-                                      ))}
-                                  </div>
-
-                                  {/* Pagination for this branch */}
-                                  {(() => {
-                                    const items = changesetData.get(branchName) || [];
-                                    const pagination = branchPagination.get(branchName) || { page: 1, size: 10 };
-                                    const totalPages = Math.ceil(items.length / pagination.size);
-                                    return items.length > pagination.size ? (
-                                      <Pagination
-                                        currentPage={pagination.page}
-                                        totalPages={totalPages}
-                                        pageSize={pagination.size}
-                                        totalItems={items.length}
-                                        onPageChange={(page) => handleBranchPageChange(branchName, page)}
-                                        onPageSizeChange={(size) => handleBranchPageSizeChange(branchName, size)}
-                                      />
-                                    ) : null;
-                                  })()}
+                                      </div>
+                                  )}
                               </div>
                           ))}
                       </div>
@@ -1941,6 +2054,96 @@ export const GiteeManagement: React.FC = () => {
               )}
           </div>
       </div>
+
+      {/* Commit Comparison Modal */}
+      {isCompareModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+              <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
+                  <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-purple-50">
+                      <div>
+                          <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                              <GitBranch size={20} className="text-blue-600"/>
+                              提交对比
+                          </h3>
+                          <p className="text-xs text-slate-500 mt-1">输入两个提交ID查看差异变更</p>
+                      </div>
+                      <button 
+                          onClick={() => setIsCompareModalOpen(false)} 
+                          className="text-slate-400 hover:text-slate-600 text-2xl font-bold"
+                      >
+                          ×
+                      </button>
+                  </div>
+                  
+                  <div className="p-6 space-y-4">
+                      <div>
+                          <label className="text-xs font-bold text-slate-600 uppercase mb-2 block">分支名称</label>
+                          <input 
+                              type="text"
+                              value={compareBranchName}
+                              onChange={(e) => setCompareBranchName(e.target.value)}
+                              placeholder="例如: feature/xxx"
+                              className={`${INPUT_STYLE}`}
+                          />
+                      </div>
+
+                      <div>
+                          <label className="text-xs font-bold text-slate-600 uppercase mb-2 block flex items-center gap-1">
+                              起始提交 ID
+                              <span className="text-red-500">*</span>
+                          </label>
+                          <input 
+                              type="text"
+                              value={compareFromCommit}
+                              onChange={(e) => setCompareFromCommit(e.target.value)}
+                              placeholder="例如: abc123def456 (完整或前7位)"
+                              className={`${INPUT_STYLE} font-mono text-sm`}
+                          />
+                          <p className="text-[10px] text-slate-400 mt-1">支持完整SHA或短SHA (前7位)</p>
+                      </div>
+
+                      <div>
+                          <label className="text-xs font-bold text-slate-600 uppercase mb-2 block flex items-center gap-1">
+                              结束提交 ID
+                              <span className="text-red-500">*</span>
+                          </label>
+                          <input 
+                              type="text"
+                              value={compareToCommit}
+                              onChange={(e) => setCompareToCommit(e.target.value)}
+                              placeholder="例如: def456ghi789 (完整或前7位)"
+                              className={`${INPUT_STYLE} font-mono text-sm`}
+                          />
+                          <p className="text-[10px] text-slate-400 mt-1">将显示从起始到结束之间的所有变更</p>
+                      </div>
+
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                          <p className="text-xs text-blue-800 flex items-center gap-2">
+                              <AlertTriangle size={14}/>
+                              <span>对比将获取从起始提交到结束提交之间的所有差异文件</span>
+                          </p>
+                      </div>
+                  </div>
+                  
+                  <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
+                      <button 
+                          onClick={() => setIsCompareModalOpen(false)} 
+                          className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg text-sm font-medium"
+                      >
+                          取消
+                      </button>
+                      <button 
+                          onClick={handleCommitComparison}
+                          disabled={loading || !compareBranchName || !compareFromCommit || !compareToCommit}
+                          className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-bold flex items-center gap-2 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                          <GitBranch size={16}/>
+                          {loading ? '对比中...' : '开始对比'}
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
 
       {/* Commit Detail Modal - View & Export Single Commit */}
       {selectedCommitDetail && (
