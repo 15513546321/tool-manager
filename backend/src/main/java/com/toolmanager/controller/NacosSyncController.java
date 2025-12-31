@@ -1658,27 +1658,42 @@ public class NacosSyncController {
                 }
                 
                 // 扫描项目文件（XML, Java, Properties）
+                // ✅ 修复：使用 try-with-resources 确保流正确关闭，使用 collect 而非 forEach 避免并发问题
                 java.nio.file.Path tempPath = java.nio.file.Paths.get(tempDir);
-                java.nio.file.Files.walk(tempPath)
-                    .filter(path -> {
-                        String name = path.getFileName().toString();
-                        return name.endsWith(".xml") || name.endsWith(".java") || name.endsWith(".properties");
-                    })
-                    // 移除文件数量限制，读取整个分支的所有相关文件
-                    .forEach(path -> {
-                        try {
-                            String content = new String(java.nio.file.Files.readAllBytes(path), StandardCharsets.UTF_8);
-                            Map<String, String> fileMap = new HashMap<>();
-                            fileMap.put("name", path.getFileName().toString());
-                            fileMap.put("path", tempPath.relativize(path).toString());
-                            fileMap.put("content", content);
-                            files.add(fileMap);
-                        } catch (Exception e) {
-                            System.err.println("Error reading file: " + path + " - " + e.getMessage());
-                        }
-                    });
                 
-                System.out.println("Successfully fetched " + files.size() + " files from repository");
+                List<java.nio.file.Path> filePaths;
+                try (java.util.stream.Stream<java.nio.file.Path> pathStream = java.nio.file.Files.walk(tempPath)) {
+                    filePaths = pathStream
+                        .filter(java.nio.file.Files::isRegularFile)
+                        .filter(path -> {
+                            String name = path.getFileName().toString();
+                            return name.endsWith(".xml") || name.endsWith(".java") || name.endsWith(".properties");
+                        })
+                        .collect(java.util.stream.Collectors.toList());
+                }
+                
+                System.out.println("Found " + filePaths.size() + " files to process");
+                
+                // 顺序处理每个文件，避免并发问题
+                int successCount = 0;
+                int failCount = 0;
+                for (java.nio.file.Path path : filePaths) {
+                    try {
+                        String content = new String(java.nio.file.Files.readAllBytes(path), StandardCharsets.UTF_8);
+                        Map<String, String> fileMap = new HashMap<>();
+                        fileMap.put("name", path.getFileName().toString());
+                        fileMap.put("path", tempPath.relativize(path).toString());
+                        fileMap.put("content", content);
+                        files.add(fileMap);
+                        successCount++;
+                    } catch (Exception e) {
+                        failCount++;
+                        System.err.println("Error reading file: " + path + " - " + e.getMessage());
+                        e.printStackTrace();
+                    }
+                }
+                
+                System.out.println("Successfully fetched " + successCount + " files from repository (failed: " + failCount + ")");
                 return ResponseEntity.ok(new ApiResponse<>(true, "Successfully fetched " + files.size() + " files", files));
                 
             } finally {
