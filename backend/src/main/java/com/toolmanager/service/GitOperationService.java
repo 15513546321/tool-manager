@@ -163,31 +163,60 @@ public class GitOperationService {
             pb.redirectErrorStream(true);
             Process process = pb.start();
             
-            // Read output
+            // Read output - MUST read all output to avoid pipe broken (exit code 141)
             BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), "UTF-8"));
             int lineCount = 0;
             String line;
             StringBuilder output = new StringBuilder();
-            while ((line = reader.readLine()) != null && lineCount < 100) {
+            
+            // Read ALL output without limit to prevent pipe broken
+            while ((line = reader.readLine()) != null) {
                 output.append(line).append("\n");
                 lineCount++;
             }
             reader.close();
             
-            int exitCode = process.waitFor();
-            log.info("SSH test exit code: : {}", exitCode);
-            System.out.println("SSH test output: " + output.toString());
+            // Wait for process with timeout (10 seconds)
+            boolean finished = process.waitFor(10, java.util.concurrent.TimeUnit.SECONDS);
+            if (!finished) {
+                process.destroy();
+                result.put("success", false);
+                result.put("message", "SSH connection timeout (10s). Network may be slow or repository is unreachable.");
+                return result;
+            }
             
-            if (exitCode == 0 && lineCount > 0) {
+            int exitCode = process.exitValue();
+            log.info("SSH test exit code: {}", exitCode);
+            log.info("SSH test output lines: {}", lineCount);
+            
+            // Exit code 0 means success
+            if (exitCode == 0) {
                 result.put("success", true);
-                result.put("message", "✓ SSH connection successful!");
+                result.put("message", "✓ SSH 连接成功! 找到 " + lineCount + " 个分支引用");
                 result.put("branchCount", lineCount);
-                log.info("SSH connection successful! Found : {}", lineCount + " refs");
+                log.info("SSH connection successful! Found {} refs", lineCount);
                 return result;
             } else {
+                // Show actual output for debugging
+                String outputStr = output.toString().trim();
+                String errorMsg = "SSH 连接失败 (退出码: " + exitCode + ")";
+                
+                if (exitCode == 128) {
+                    errorMsg += "\n原因: 仓库不存在或无访问权限";
+                } else if (exitCode == 141) {
+                    errorMsg += "\n原因: SSH 连接中断 (可能是网络问题或 SSH 密钥配置错误)";
+                } else if (exitCode == 255) {
+                    errorMsg += "\n原因: SSH 认证失败 (检查密钥是否正确)";
+                }
+                
+                if (!outputStr.isEmpty()) {
+                    errorMsg += "\n详细信息: " + outputStr;
+                }
+                
                 result.put("success", false);
-                result.put("message", "SSH connection failed. Exit code: " + exitCode + ". Make sure your SSH key is correct and repository is accessible.");
-                log.error("SSH command failed with exit code: : {}", exitCode);
+                result.put("message", errorMsg);
+                result.put("output", outputStr);
+                log.error("SSH command failed with exit code: {}, output: {}", exitCode, outputStr);
                 return result;
             }
         } catch (Exception e) {
@@ -225,27 +254,54 @@ public class GitOperationService {
             pb.redirectErrorStream(true);
             Process process = pb.start();
             
-            // Read output
+            // Read output - MUST read all output to avoid pipe broken (exit code 141)
             BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
             int lineCount = 0;
             String line;
-            while ((line = reader.readLine()) != null && lineCount < 100) {
+            StringBuilder output = new StringBuilder();
+            
+            // Read ALL output without limit to prevent pipe broken
+            while ((line = reader.readLine()) != null) {
+                output.append(line).append("\n");
                 lineCount++;
             }
             reader.close();
             
-            int exitCode = process.waitFor();
+            // Wait for process with timeout
+            boolean finished = process.waitFor(10, java.util.concurrent.TimeUnit.SECONDS);
+            if (!finished) {
+                process.destroy();
+                result.put("success", false);
+                result.put("message", "HTTP connection timeout (10s). Network may be slow or repository is unreachable.");
+                return result;
+            }
             
-            if (exitCode == 0 && lineCount > 0) {
+            int exitCode = process.exitValue();
+            
+            if (exitCode == 0) {
                 result.put("success", true);
-                result.put("message", "✓ HTTP connection successful!");
+                result.put("message", "✓ HTTP 连接成功! 找到 " + lineCount + " 个分支引用");
                 result.put("branchCount", lineCount);
-                log.info("HTTP connection successful! Found : {}", lineCount + " refs");
+                log.info("HTTP connection successful! Found {} refs", lineCount);
                 return result;
             } else {
+                String outputStr = output.toString().trim();
+                String errorMsg = "HTTP 连接失败 (退出码: " + exitCode + ")";
+                
+                if (exitCode == 128) {
+                    errorMsg += "\n原因: 仓库不存在或无访问权限 (检查 Token 和 URL)";
+                } else if (exitCode == 141) {
+                    errorMsg += "\n原因: 连接中断 (可能是网络问题)";
+                }
+                
+                if (!outputStr.isEmpty()) {
+                    errorMsg += "\n详细信息: " + outputStr;
+                }
+                
                 result.put("success", false);
-                result.put("message", "HTTP connection failed. Exit code: " + exitCode + ". Check your Token and repository URL.");
-                log.error("HTTP git command failed with exit code: : {}", exitCode);
+                result.put("message", errorMsg);
+                result.put("output", outputStr);
+                log.error("HTTP git command failed with exit code: {}, output: {}", exitCode, outputStr);
                 return result;
             }
         } catch (Exception e) {
