@@ -74,6 +74,12 @@ export const DocManagement: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   
+  // Search & Pagination State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchField, setSearchField] = useState<'all' | 'id' | 'name' | 'module' | 'downstream'>('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
   // 数据源选择模式
   const [sourceMode, setSourceMode] = useState<'local' | 'online'>('online');
   const [onlineConfig, setOnlineConfig] = useState<OnlineSourceConfig>({
@@ -92,8 +98,9 @@ export const DocManagement: React.FC = () => {
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   
-  // 打开配置对话框时，重新加载配置信息
-  const handleOpenConfig = async () => {
+  // Load configuration and try to fetch data (Auto-load)
+  const loadAndFetchData = async () => {
+    console.log('Starting auto-load sequence...');
     try {
       // 重新加载认证方式 - 如果数据库中没有，使用默认值 'token'
       let authType = 'token';  // 默认使用 token 方式
@@ -144,7 +151,12 @@ export const DocManagement: React.FC = () => {
       try {
         const branchResult = await apiService.configApi.getByKey('doc-management-selected-branch');
         if (branchResult && branchResult.configValue) {
-          selectedBranch = JSON.parse(branchResult.configValue);
+          try {
+            selectedBranch = JSON.parse(branchResult.configValue);
+          } catch (e) {
+            // 如果不是JSON格式，直接作为字符串使用
+            selectedBranch = branchResult.configValue;
+          }
           console.log('✓ Loaded selected branch:', selectedBranch);
         }
       } catch (err) {
@@ -153,101 +165,22 @@ export const DocManagement: React.FC = () => {
       
       // 更新状态 - 确保所有字段都被正确初始化
       const finalAuthType = (authType === 'ssh' ? 'ssh' : 'token') as ('token' | 'ssh');
-      
-      setOnlineConfig({
-        repoUrl,
-        authType: finalAuthType,
-        authUsername: finalAuthType === 'ssh' ? publicKey : undefined,
-        authPassword: undefined,
-        authToken: finalAuthType === 'token' ? accessToken : undefined,
-        sshKeyContent: finalAuthType === 'ssh' ? privateKey : undefined,
-        sshPassphrase: undefined,
-        branch: selectedBranch,
-        branches: [],
-        isConnected: false,
-        connectionError: undefined
-      });
-      
-      console.log('✓ Config dialog opened with auth type:', authType);
-    } catch (err) {
-      console.warn('Failed to reload configuration:', err);
-      // 即使加载失败，也显示对话框，使用默认值
-      setOnlineConfig({
-        repoUrl: '',
-        authType: 'token',
-        authUsername: undefined,
-        authPassword: undefined,
-        authToken: undefined,
-        sshKeyContent: undefined,
-        sshPassphrase: undefined,
-        branch: '',
-        branches: [],
-        isConnected: false,
-        connectionError: undefined
-      });
-    }
-    
-    setIsConfigOpen(true);
-  };
-  
-  // 接口检索
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchField, setSearchField] = useState<'all' | 'id' | 'name' | 'module' | 'downstream'>('all');
-  
-  // Pagination State
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
 
-  // 页面加载时自动加载配置（从apiService.configApi）
-  useEffect(() => {
-    const loadConfiguration = async () => {
-      try {
-        // 首先加载认证方式 - 使用独立的doc-management-*配置key
-        let authType = 'token';  // 默认使用 token 方式
-        try {
-          const authTypeResult = await apiService.configApi.getByKey('doc-management-auth-type');
-          if (authTypeResult?.configValue) {
-            authType = JSON.parse(authTypeResult.configValue);
-          }
-        } catch (err) {
-          console.warn('Failed to load auth type, using default (token):', err);
-        }
-        
-        let repoUrl = '';
-        let accessToken = '';
-        let privateKey = '';
-        let publicKey = '';
-        let selectedBranch = '';
-        
-        // 从对应的认证类型配置中加载 - 使用独立的doc-management配置
-        if (authType === 'token') {
+        // 尝试从独立配置中获取分支（如果之前没获取到）
+        if (!selectedBranch) {
           try {
-            const tokenResult = await apiService.configApi.getByKey('doc-management-token-config');
-            if (tokenResult && tokenResult.configValue) {
-              const tokenConfig = JSON.parse(tokenResult.configValue);
-              repoUrl = tokenConfig.repoUrl || '';
-              accessToken = tokenConfig.accessToken || '';
-              selectedBranch = tokenConfig.branch || '';
+            const branchResult = await apiService.configApi.getByKey('doc-management-selected-branch');
+            if (branchResult && branchResult.configValue) {
+              try {
+                selectedBranch = JSON.parse(branchResult.configValue);
+              } catch (e) {
+                selectedBranch = branchResult.configValue;
+              }
             }
           } catch (err) {
-            console.warn('Failed to load token config:', err);
-          }
-        } else if (authType === 'ssh') {
-          try {
-            const sshResult = await apiService.configApi.getByKey('doc-management-ssh-config');
-            if (sshResult && sshResult.configValue) {
-              const sshConfig = JSON.parse(sshResult.configValue);
-              repoUrl = sshConfig.repoUrl || '';
-              privateKey = sshConfig.privateKey || '';
-              publicKey = sshConfig.publicKey || '';
-              selectedBranch = sshConfig.branch || '';
-            }
-          } catch (err) {
-            console.warn('Failed to load SSH config:', err);
+            console.warn('Failed to load selected branch from separate config:', err);
           }
         }
-        
-        const finalAuthType = (authType === 'ssh' ? 'ssh' : 'token') as ('token' | 'ssh');
         
         setOnlineConfig({
           repoUrl,
@@ -263,30 +196,100 @@ export const DocManagement: React.FC = () => {
           connectionError: undefined
         });
         
-        // 如果有有效的仓库配置，尝试从缓存加载接口
-        if (repoUrl) {
-          const cachedResult = await apiService.configApi.getByKey('doc-management-interface-cache');
-          if (cachedResult && cachedResult.configValue) {
-            const cacheData = JSON.parse(cachedResult.configValue);
-            if (cacheData.interfaces && Array.isArray(cacheData.interfaces)) {
-              // 转换为 XmlTransaction 并加载
-              const transactions = cacheData.interfaces.map((iface: any) => ({
-                id: iface.id,
-                trsName: iface.name,
-                module: iface.module,
-                actionRef: '',
-                template: 'ExecuteLogTemplate',
-                inputs: iface.inputs || [],
-                outputs: iface.outputs || [],
-                filePath: iface.filePath || '',
-                actionClass: '',
-                downstreamCalls: iface.downstreamCalls || []
-              }));
-              setTransactions(transactions);
-              setSourceMode('online');
-              recordAction('接口管理 - 文档管理', `页面初始化 - 从在线配置加载 ${transactions.length} 个接口`);
-            }
+        // 如果有有效的仓库配置，尝试从后端 code 目录加载 (skipGitFetch=false)
+        if (repoUrl && selectedBranch) {
+          console.log('Initiating fetch from backend...');
+          setIsProcessing(true);
+          try {
+             // Fetch from backend with skipGitFetch=false (尝试同步最新代码)
+             const response = await fetch('/api/nacos-sync/fetch-git-repository', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  repoUrl: repoUrl,
+                  branch: selectedBranch,
+                  authType: finalAuthType,
+                  accessToken: finalAuthType === 'token' ? accessToken : undefined,
+                  privateKey: finalAuthType === 'ssh' ? privateKey : undefined,
+                  skipGitFetch: false // 关键修改：尝试 git pull 同步代码，后端已做降级处理（失败则使用现有代码）
+                })
+             });
+             const result = await response.json();
+             
+             if (result.success && Array.isArray(result.data) && result.data.length > 0) {
+                 const newTransactions = parseProjectFiles(result.data);
+                 setTransactions(newTransactions);
+                 setSourceMode('online');
+                 
+                 // UPDATE CACHE HERE
+                 const remoteInterfaces = newTransactions.map(t => ({
+                    id: t.id,
+                    name: t.trsName,
+                    module: t.module,
+                    description: '',
+                    inputs: t.inputs,
+                    outputs: t.outputs,
+                    downstreamCalls: t.downstreamCalls,
+                    filePath: t.filePath
+                 }));
+                 try {
+                     await apiService.configApi.save({
+                        configKey: 'doc-management-interface-cache',
+                        configValue: JSON.stringify({
+                            interfaces: remoteInterfaces,
+                            timestamp: Date.now(),
+                            repoUrl: repoUrl,
+                            branch: selectedBranch
+                        }),
+                        configType: 'DOC_MANAGEMENT',
+                        description: 'Document Management interface cache'
+                     });
+                     console.log('✓ Updated interface cache in database');
+                 } catch (cacheErr) {
+                     console.warn('Failed to update interface cache:', cacheErr);
+                 }
+
+                 recordAction('接口管理 - 文档管理', `初始化 - 从本地代码缓存加载 ${newTransactions.length} 个接口`);
+                 console.log(`✓ Loaded ${newTransactions.length} interfaces from local code cache`);
+             } else {
+                 // 如果失败（比如 code 目录不存在），回退到读取数据库缓存
+                 console.warn('Failed to load from code cache or empty, falling back to DB cache. Reason:', result.message);
+                 throw new Error(result.message || "Code cache empty or invalid");
+             }
+          } catch (e) {
+             console.warn('Error loading from code cache, trying DB cache:', e);
+             // 回退逻辑：尝试从数据库缓存加载
+             const cachedResult = await apiService.configApi.getByKey('doc-management-interface-cache');
+             if (cachedResult && cachedResult.configValue) {
+                const cacheData = JSON.parse(cachedResult.configValue);
+                if (cacheData.interfaces && Array.isArray(cacheData.interfaces)) {
+                  const transactions = cacheData.interfaces.map((iface: any) => ({
+                    id: iface.id,
+                    trsName: iface.name,
+                    module: iface.module,
+                    actionRef: '',
+                    template: 'ExecuteLogTemplate',
+                    inputs: iface.inputs || [],
+                    outputs: iface.outputs || [],
+                    filePath: iface.filePath || '',
+                    actionClass: '',
+                    downstreamCalls: iface.downstreamCalls || []
+                  }));
+                  setTransactions(transactions);
+                  setSourceMode('online');
+                  recordAction('接口管理 - 文档管理', `初始化 - 从数据库缓存加载 ${transactions.length} 个接口`);
+                  alert(`无法连接到代码仓库，已加载本地缓存的 ${transactions.length} 个接口。\n错误: ${e instanceof Error ? e.message : '未知错误'}`);
+                } else {
+                    alert(`无法连接到代码仓库，且本地没有缓存数据。\n错误: ${e instanceof Error ? e.message : '未知错误'}`);
+                }
+             } else {
+                 alert(`无法连接到代码仓库，且本地没有缓存数据。\n错误: ${e instanceof Error ? e.message : '未知错误'}`);
+             }
+          } finally {
+             setIsProcessing(false);
           }
+        } else {
+            console.log('Skipping auto-load: Missing repoUrl or branch configuration');
         }
       } catch (err) {
         console.warn('Failed to load saved configuration:', err);
@@ -302,44 +305,17 @@ export const DocManagement: React.FC = () => {
       }
     };
 
-    loadConfiguration();
-  }, []);
+    // Initial load
+    useEffect(() => {
+      loadAndFetchData();
+    }, []);
 
-  // 当页面加载时，如果有缓存的接口数据就直接加载（不重新获取）
-  useEffect(() => {
-    const loadCachedInterfaces = async () => {
-      try {
-        // 仅在页面初始化时加载缓存，不自动调用获取
-        if (onlineConfig.repoUrl && !transactions.length) {
-          const cachedResult = await apiService.configApi.getByKey('doc-management-interface-cache');
-          if (cachedResult && cachedResult.configValue) {
-            const cacheData = JSON.parse(cachedResult.configValue);
-            if (cacheData.interfaces && Array.isArray(cacheData.interfaces)) {
-              const cachedTransactions = cacheData.interfaces.map((iface: any) => ({
-                id: iface.id,
-                trsName: iface.name,
-                module: iface.module,
-                actionRef: '',
-                template: 'ExecuteLogTemplate',
-                inputs: iface.inputs || [],
-                outputs: iface.outputs || [],
-                filePath: iface.filePath || '',
-                actionClass: '',
-                downstreamCalls: iface.downstreamCalls || []
-              }));
-              setTransactions(cachedTransactions);
-              setSourceMode('online');
-              console.log(`✓ Loaded ${cachedTransactions.length} cached interfaces from database`);
-            }
-          }
-        }
-      } catch (err) {
-        console.warn('Failed to load cached interfaces:', err);
-      }
+    // Open config dialog
+    const handleOpenConfig = () => {
+        setIsConfigOpen(true);
     };
 
-    loadCachedInterfaces();
-  }, [onlineConfig.repoUrl]); // 仅当repoUrl加载完成时执行一次
+
 
   // 接口检索功能 - 根据选择的字段进行过滤
   const filteredTransactions = useMemo(() => {
@@ -417,6 +393,34 @@ export const DocManagement: React.FC = () => {
             setCurrentPage(1); 
             return newTransactions; 
         });
+
+        // Update cache with local files so they persist on refresh (until next online fetch)
+        const localInterfaces = newTransactions.map(t => ({
+            id: t.id,
+            name: t.trsName,
+            module: t.module,
+            description: '',
+            inputs: t.inputs,
+            outputs: t.outputs,
+            downstreamCalls: t.downstreamCalls,
+            filePath: t.filePath
+        }));
+        try {
+            await apiService.configApi.save({
+                configKey: 'doc-management-interface-cache',
+                configValue: JSON.stringify({
+                    interfaces: localInterfaces,
+                    timestamp: Date.now(),
+                    repoUrl: 'local-upload',
+                    branch: 'local'
+                }),
+                configType: 'DOC_MANAGEMENT',
+                description: 'Document Management interface cache (Local Upload)'
+            });
+        } catch (cacheErr) {
+            console.warn('Failed to cache local upload:', cacheErr);
+        }
+
         // Log
         recordAction('接口管理 - 文档管理', `按钮:加载文件夹 - 已加载 ${newTransactions.length} 个接口文件`);
     } catch (err) {
@@ -748,6 +752,33 @@ export const DocManagement: React.FC = () => {
       // 静默模式下失败不报错，仅记录日志
       console.warn('Auto-load failed:', errorMsg);
       recordAction('接口管理 - 文档管理', `在线获取异常 - ${errorMsg}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // 清理在线缓存
+  const handleClearCache = async () => {
+    if (!confirm('确定要清理本地代码缓存吗？清理后下次获取将重新拉取代码。')) {
+      return;
+    }
+    
+    setIsProcessing(true);
+    try {
+      const response = await fetch('/api/nacos-sync/clear-git-cache', {
+        method: 'POST'
+      });
+      const result = await response.json();
+      
+      if (result.success) {
+        alert('✅ ' + result.message);
+        recordAction('接口管理 - 文档管理', '清理在线代码缓存');
+      } else {
+        alert('❌ ' + (result.message || '清理失败'));
+      }
+    } catch (err) {
+      console.error('Clear cache error:', err);
+      alert('❌ 清理失败: ' + (err instanceof Error ? err.message : '未知错误'));
     } finally {
       setIsProcessing(false);
     }
@@ -1716,6 +1747,22 @@ export const DocManagement: React.FC = () => {
               >
                 {isProcessing ? <Activity className="animate-spin" size={16} /> : <Download size={16} />}
                 {isProcessing ? '获取中...' : '获取并解析'}
+              </button>
+            </div>
+            
+            {/* 缓存管理区域 */}
+            <div className="px-6 py-3 bg-slate-100 border-t border-slate-200 flex justify-between items-center text-xs text-slate-500">
+              <div className="flex items-center gap-2">
+                <GitBranch size={14} />
+                <span>当前缓存分支: {onlineConfig.branch || '无'}</span>
+              </div>
+              <button 
+                onClick={handleClearCache}
+                disabled={isProcessing}
+                className="text-red-600 hover:text-red-800 hover:underline flex items-center gap-1"
+              >
+                <AlertTriangle size={12} />
+                清理本地代码缓存
               </button>
             </div>
           </div>

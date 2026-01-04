@@ -1628,7 +1628,28 @@ public class NacosSyncController {
     }
 
     /**
+     * 清理 Git 缓存目录
+     */
+    @PostMapping("/clear-git-cache")
+    public ResponseEntity<ApiResponse<String>> clearGitCache() {
+        try {
+            String codeDir = System.getProperty("user.dir") + java.io.File.separator + "code";
+            java.io.File dir = new java.io.File(codeDir);
+            if (dir.exists()) {
+                deleteDirectory(dir);
+                log.info("Git cache directory cleared: {}", codeDir);
+                return ResponseEntity.ok(new ApiResponse<>(true, "缓存清理成功", "Code directory deleted"));
+            }
+            return ResponseEntity.ok(new ApiResponse<>(true, "缓存为空，无需清理", "No code directory found"));
+        } catch (Exception e) {
+            log.error("Failed to clear git cache: {}", e.getMessage());
+            return ResponseEntity.ok(new ApiResponse<>(false, "清理失败: " + e.getMessage(), null));
+        }
+    }
+
+    /**
      * 从 Git 仓库获取并解析项目文件
+     * 使用持久化目录 'code' 存储代码，支持增量更新
      */
     @PostMapping("/fetch-git-repository")
     public ResponseEntity<ApiResponse<List<Map<String, String>>>> fetchGitRepository(@RequestBody GitFetchRequest request) {
@@ -1640,42 +1661,100 @@ public class NacosSyncController {
             }
             
             String branch = request.getBranch() != null ? request.getBranch() : "master";
-            System.out.println("Fetching from " + request.getRepoUrl() + " branch: " + branch);
+            String repoUrl = request.getRepoUrl();
             
-            // 创建临时目录用于 clone
-            String tempDir = System.getProperty("java.io.tmpdir") + "/git_repo_" + System.currentTimeMillis();
+            log.info("Fetching from {} branch: {}", repoUrl, branch);
+            
+            // 提取仓库名作为子目录名
+            String repoName = repoUrl.substring(repoUrl.lastIndexOf("/") + 1);
+            if (repoName.endsWith(".git")) {
+                repoName = repoName.substring(0, repoName.length() - 4);
+            }
+            // 简单的名称净化，防止路径遍历
+            repoName = repoName.replaceAll("[^a-zA-Z0-9._-]", "_");
+            
+            // 确定 code 目录路径
+            String codeDirPath = System.getProperty("user.dir") + java.io.File.separator + "code";
+            String repoPath = codeDirPath + java.io.File.separator + repoName;
+            java.io.File repoDir = new java.io.File(repoPath);
+            
+            log.info("Target repository path: {}", repoPath);
             
             try {
-                // Clone 仓库 - 添加 --recursive 以支持子模块
-                log.info("Executing git clone for: {} (branch: {})", request.getRepoUrl(), branch);
-                ProcessBuilder clonePb = new ProcessBuilder("git", "clone", "--recursive", "-b", branch, "--depth", "1", request.getRepoUrl(), tempDir);
-                clonePb.redirectErrorStream(true);
+                boolean shouldFetch = !request.isSkipGitFetch();
                 
-                Process cloneProcess = clonePb.start();
-                
-                // 读取输出以防止缓冲区满
-                java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(cloneProcess.getInputStream()));
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    log.debug("git clone output: {}", line);
-                }
-                
-                int cloneExitCode = cloneProcess.waitFor();
-                
-                if (cloneExitCode != 0) {
-                    log.error("Git clone failed with exit code: {}", cloneExitCode);
-                    return ResponseEntity.ok(new ApiResponse<>(false, "仓库克隆失败 (Exit Code: " + cloneExitCode + ")", files));
+                if (repoDir.exists() && new java.io.File(repoDir, ".git").exists()) {
+                    if (shouldFetch) {
+                        // 仓库已存在，执行更新
+                        log.info("Repository exists, updating...");
+                        
+                        try {
+                            // 1. Fetch all
+                            runGitCommand(repoDir, "git", "fetch", "--all");
+                            
+                            // 2. Reset hard to match remote branch (safest for read-only view)
+                            runGitCommand(repoDir, "git", "reset", "--hard", "origin/" + branch);
+                            
+                            // 3. Checkout branch
+                            runGitCommand(repoDir, "git", "checkout", branch);
+                            
+                            // 4. Pull latest
+                            runGitCommand(repoDir, "git", "pull", "origin", branch);
+                            
+                            log.info("Repository updated successfully");
+                        } catch (Exception e) {
+                            // 降级策略：如果更新失败，记录错误但继续解析现有代码
+                            log.error("Git update failed, proceeding with existing code: {}", e.getMessage());
+                        }
+                    } else {
+                        log.info("Repository exists, skipping git fetch (using cached code)...");
+                    }
+                } else {
+                    // 仓库不存在，强制 Clone (忽略 skipGitFetch)
+                    log.info("Repository does not exist (or invalid), cloning...");
+                    
+                    // 确保父目录存在
+                    new java.io.File(codeDirPath).mkdirs();
+                    
+                    // 如果目录存在但不是有效git仓库，先清理
+                    if (repoDir.exists()) {
+                        deleteDirectory(repoDir);
+                    }
+                    
+                    // Clone 仓库 - 添加 --recursive 以支持子模块
+                    log.info("Executing git clone for: {} (branch: {})", repoUrl, branch);
+                    ProcessBuilder clonePb = new ProcessBuilder("git", "clone", "--recursive", "-b", branch, repoUrl, repoPath);
+                    clonePb.redirectErrorStream(true);
+                    
+                    Process cloneProcess = clonePb.start();
+                    
+                    // 读取输出以防止缓冲区满
+                    java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(cloneProcess.getInputStream()));
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        log.debug("git clone output: {}", line);
+                    }
+                    
+                    int cloneExitCode = cloneProcess.waitFor();
+                    
+                    if (cloneExitCode != 0) {
+                        log.error("Git clone failed with exit code: {}", cloneExitCode);
+                        return ResponseEntity.ok(new ApiResponse<>(false, "仓库克隆失败 (Exit Code: " + cloneExitCode + ")", files));
+                    }
                 }
                 
                 // 扫描项目文件（XML, Java, Properties）
                 // 使用 Files.walkFileTree 替代 Files.walk 以获得更好的控制和容错性，确保逐个文件读取
-                java.nio.file.Path tempPath = java.nio.file.Paths.get(tempDir);
+                java.nio.file.Path tempPath = java.nio.file.Paths.get(repoPath);
                 List<java.nio.file.Path> filePaths = new ArrayList<>();
                 final int[] totalScanned = {0};
                 
-                log.info("Starting deep scan of directory: {}", tempDir);
+                log.info("Starting deep scan of directory: {}", repoPath);
                 
-                java.nio.file.Files.walkFileTree(tempPath, new java.nio.file.SimpleFileVisitor<java.nio.file.Path>() {
+                // 开启 FOLLOW_LINKS 以支持软链接
+                java.util.Set<java.nio.file.FileVisitOption> options = java.util.EnumSet.of(java.nio.file.FileVisitOption.FOLLOW_LINKS);
+                
+                java.nio.file.Files.walkFileTree(tempPath, options, Integer.MAX_VALUE, new java.nio.file.SimpleFileVisitor<java.nio.file.Path>() {
                     @Override
                     public java.nio.file.FileVisitResult preVisitDirectory(java.nio.file.Path dir, java.nio.file.attribute.BasicFileAttributes attrs) {
                         // 显式跳过 .git 目录
@@ -1689,13 +1768,10 @@ public class NacosSyncController {
                     public java.nio.file.FileVisitResult visitFile(java.nio.file.Path file, java.nio.file.attribute.BasicFileAttributes attrs) {
                         totalScanned[0]++;
                         String name = file.getFileName().toString();
+                        String lowerName = name.toLowerCase();
                         
-                        // 再次检查路径中是否包含 .git (防止非标准结构)
-                        if (file.toString().contains(java.io.File.separator + ".git" + java.io.File.separator)) {
-                            return java.nio.file.FileVisitResult.CONTINUE;
-                        }
-
-                        if (name.endsWith(".xml") || name.endsWith(".java") || name.endsWith(".properties")) {
+                        // 忽略大小写检查后缀
+                        if (lowerName.endsWith(".xml") || lowerName.endsWith(".java") || lowerName.endsWith(".properties")) {
                             filePaths.add(file);
                             // 记录每100个找到的文件，避免日志过多
                             if (filePaths.size() % 100 == 0) {
@@ -1719,10 +1795,26 @@ public class NacosSyncController {
                 int failCount = 0;
                 for (java.nio.file.Path path : filePaths) {
                     try {
-                        String content = new String(java.nio.file.Files.readAllBytes(path), StandardCharsets.UTF_8);
+                        byte[] fileBytes = java.nio.file.Files.readAllBytes(path);
+                        String content;
+                        
+                        // 尝试检测编码：先试 UTF-8，如果包含乱码字符（替换字符），尝试 GBK
+                        try {
+                            java.nio.charset.CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder();
+                            decoder.onMalformedInput(java.nio.charset.CodingErrorAction.REPORT);
+                            decoder.onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT);
+                            content = decoder.decode(java.nio.ByteBuffer.wrap(fileBytes)).toString();
+                        } catch (java.nio.charset.CharacterCodingException e) {
+                            // UTF-8 解析失败，尝试 GBK
+                            // log.warn("File {} is not valid UTF-8, trying GBK...", path.getFileName());
+                            content = new String(fileBytes, java.nio.charset.Charset.forName("GBK"));
+                        }
+                        
                         Map<String, String> fileMap = new HashMap<>();
                         fileMap.put("name", path.getFileName().toString());
-                        fileMap.put("path", tempPath.relativize(path).toString());
+                        // 使用 toString() 避免路径解析问题，并统一分隔符
+                        String relativePath = tempPath.relativize(path).toString().replace("\\", "/");
+                        fileMap.put("path", relativePath);
                         fileMap.put("content", content);
                         files.add(fileMap);
                         successCount++;
@@ -1733,29 +1825,58 @@ public class NacosSyncController {
                     }
                 }
                 
-                System.out.println("Successfully fetched " + successCount + " files from repository (failed: " + failCount + ")");
-                return ResponseEntity.ok(new ApiResponse<>(true, "Successfully fetched " + files.size() + " files", files));
+                String msg = String.format("成功获取 %d 个文件 (扫描: %d, 匹配: %d, 失败: %d)", 
+                    successCount, totalScanned[0], filePaths.size(), failCount);
+                System.out.println(msg);
+                return ResponseEntity.ok(new ApiResponse<>(true, msg, files));
                 
-            } finally {
-                // 清理临时目录
-                try {
-                    java.nio.file.Files.walk(java.nio.file.Paths.get(tempDir))
-                        .sorted(Comparator.reverseOrder())
-                        .forEach(path -> {
-                            try {
-                                java.nio.file.Files.delete(path);
-                            } catch (Exception e) {
-                                System.err.println("Error deleting temp file: " + e.getMessage());
-                            }
-                        });
-                } catch (Exception e) {
-                    System.err.println("Error cleaning up temp directory: " + e.getMessage());
-                }
+            } catch (Exception e) {
+                log.error("Git operation failed: {}", e.getMessage());
+                e.printStackTrace();
+                return ResponseEntity.ok(new ApiResponse<>(false, "Git操作失败: " + e.getMessage(), files));
             }
         } catch (Exception e) {
             System.err.println("Fetch repository error: " + e.getMessage());
             e.printStackTrace();
             return ResponseEntity.ok(new ApiResponse<>(false, "获取仓库异常: " + e.getMessage(), new ArrayList<>()));
+        }
+    }
+
+    /**
+     * 递归删除目录
+     */
+    private void deleteDirectory(java.io.File file) {
+        if (file.isDirectory()) {
+            java.io.File[] entries = file.listFiles();
+            if (entries != null) {
+                for (java.io.File entry : entries) {
+                    deleteDirectory(entry);
+                }
+            }
+        }
+        if (!file.delete()) {
+            System.err.println("Failed to delete file: " + file.getAbsolutePath());
+        }
+    }
+
+    /**
+     * 执行 Git 命令
+     */
+    private void runGitCommand(java.io.File workingDir, String... command) throws Exception {
+        ProcessBuilder pb = new ProcessBuilder(command);
+        pb.directory(workingDir);
+        pb.redirectErrorStream(true);
+        Process p = pb.start();
+        
+        java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(p.getInputStream()));
+        String line;
+        while ((line = reader.readLine()) != null) {
+            log.debug("git output: {}", line);
+        }
+        
+        int exitCode = p.waitFor();
+        if (exitCode != 0) {
+            throw new RuntimeException("Command failed with exit code " + exitCode + ": " + String.join(" ", command));
         }
     }
 
@@ -1890,9 +2011,13 @@ public class NacosSyncController {
 
     public static class GitFetchRequest extends GitConnectionRequest {
         private String branch;
+        private boolean skipGitFetch;
 
         public String getBranch() { return branch; }
         public void setBranch(String branch) { this.branch = branch; }
+
+        public boolean isSkipGitFetch() { return skipGitFetch; }
+        public void setSkipGitFetch(boolean skipGitFetch) { this.skipGitFetch = skipGitFetch; }
     }
 
     public static class ApiResponse<T> {
