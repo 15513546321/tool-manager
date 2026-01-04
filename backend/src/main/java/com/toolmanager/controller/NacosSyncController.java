@@ -1682,44 +1682,42 @@ public class NacosSyncController {
             
             try {
                 boolean shouldFetch = !request.isSkipGitFetch();
+                boolean dirExists = repoDir.exists();
+                boolean isGitRepo = dirExists && new java.io.File(repoDir, ".git").exists();
                 
-                if (repoDir.exists() && new java.io.File(repoDir, ".git").exists()) {
-                    if (shouldFetch) {
-                        // 仓库已存在，执行更新
-                        log.info("Repository exists, updating...");
-                        
-                        try {
-                            // 1. Fetch all
-                            runGitCommand(repoDir, "git", "fetch", "--all");
-                            
-                            // 2. Reset hard to match remote branch (safest for read-only view)
-                            runGitCommand(repoDir, "git", "reset", "--hard", "origin/" + branch);
-                            
-                            // 3. Checkout branch
-                            runGitCommand(repoDir, "git", "checkout", branch);
-                            
-                            // 4. Pull latest
-                            runGitCommand(repoDir, "git", "pull", "origin", branch);
-                            
-                            log.info("Repository updated successfully");
-                        } catch (Exception e) {
-                            // 降级策略：如果更新失败，记录错误但继续解析现有代码
-                            log.error("Git update failed, proceeding with existing code: {}", e.getMessage());
+                if (dirExists) {
+                    if (isGitRepo) {
+                        if (shouldFetch) {
+                            // 仓库已存在且是Git仓库，执行更新
+                            log.info("Repository exists, updating...");
+                            try {
+                                // 1. Fetch all
+                                runGitCommand(repoDir, "git", "fetch", "--all");
+                                // 2. Reset hard to match remote branch (safest for read-only view)
+                                runGitCommand(repoDir, "git", "reset", "--hard", "origin/" + branch);
+                                // 3. Checkout branch
+                                runGitCommand(repoDir, "git", "checkout", branch);
+                                // 4. Pull latest
+                                runGitCommand(repoDir, "git", "pull", "origin", branch);
+                                log.info("Repository updated successfully");
+                            } catch (Exception e) {
+                                // 降级策略：如果更新失败，记录错误但继续解析现有代码
+                                log.error("Git update failed, proceeding with existing code: {}", e.getMessage());
+                            }
+                        } else {
+                            log.info("Repository exists, skipping git fetch (using cached code)...");
                         }
                     } else {
-                        log.info("Repository exists, skipping git fetch (using cached code)...");
+                        // 目录存在但不是Git仓库
+                        log.warn("Directory exists at {} but is not a git repository. Skipping git operations and using existing files.", repoPath);
+                        // 不执行删除，保留用户可能手动上传的文件
                     }
                 } else {
-                    // 仓库不存在，强制 Clone (忽略 skipGitFetch)
-                    log.info("Repository does not exist (or invalid), cloning...");
+                    // 仓库不存在，执行 Clone
+                    log.info("Repository does not exist, cloning...");
                     
                     // 确保父目录存在
                     new java.io.File(codeDirPath).mkdirs();
-                    
-                    // 如果目录存在但不是有效git仓库，先清理
-                    if (repoDir.exists()) {
-                        deleteDirectory(repoDir);
-                    }
                     
                     // Clone 仓库 - 添加 --recursive 以支持子模块
                     log.info("Executing git clone for: {} (branch: {})", repoUrl, branch);
@@ -1739,7 +1737,11 @@ public class NacosSyncController {
                     
                     if (cloneExitCode != 0) {
                         log.error("Git clone failed with exit code: {}", cloneExitCode);
-                        return ResponseEntity.ok(new ApiResponse<>(false, "仓库克隆失败 (Exit Code: " + cloneExitCode + ")", files));
+                        // 如果克隆失败，但目录可能被创建了（空的或部分的），我们仍然尝试扫描吗？
+                        // 通常克隆失败意味着没有代码，但为了保险起见，如果目录存在，我们还是尝试扫描一下
+                        if (!new java.io.File(repoPath).exists()) {
+                             return ResponseEntity.ok(new ApiResponse<>(false, "仓库克隆失败 (Exit Code: " + cloneExitCode + ")", files));
+                        }
                     }
                 }
                 

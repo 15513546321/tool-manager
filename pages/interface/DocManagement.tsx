@@ -374,8 +374,9 @@ export const DocManagement: React.FC = () => {
     // Read all files first
     for (let i = 0; i < fileList.length; i++) {
       const file = fileList[i];
-      // Accept XML, Java, Properties
-      if (file.name.endsWith('.xml') || file.name.endsWith('.java') || file.name.endsWith('.properties')) {
+      const lowerName = file.name.toLowerCase();
+      // Accept XML, Java, Properties (case-insensitive)
+      if (lowerName.endsWith('.xml') || lowerName.endsWith('.java') || lowerName.endsWith('.properties')) {
         try {
             const text = await file.text();
             const path = file.webkitRelativePath || file.name;

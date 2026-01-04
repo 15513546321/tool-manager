@@ -6,10 +6,19 @@ const parseChildren = (element: Element): XmlField[] => {
   const children = Array.from(element.children);
   
   children.forEach(child => {
+    const type = child.tagName.toLowerCase(); // Normalize tag name to lowercase
+    
+    // Special handling for <fields> wrapper inside <field-list>: flatten it
+    // This ensures that children of <fields> become direct children of the parent in our model
+    if (type === 'fields') {
+        const grandChildren = parseChildren(child);
+        fields.push(...grandChildren);
+        return;
+    }
+
     const name = child.getAttribute("name") || "";
     const description = child.getAttribute("description") || "";
     const pattern = child.getAttribute("pattern") || undefined;
-    const type = child.tagName; 
     
     const field: XmlField = {
       name,
@@ -89,6 +98,19 @@ export interface FileEntry {
   content: string;
 }
 
+// Helper for case-insensitive tag search
+const getElementsByTagNameCI = (parent: Document | Element, tagName: string): Element[] => {
+    const result: Element[] = [];
+    const lowerTagName = tagName.toLowerCase();
+    const all = parent.getElementsByTagName('*');
+    for (let i = 0; i < all.length; i++) {
+        if (all[i].tagName.toLowerCase() === lowerTagName) {
+            result.push(all[i]);
+        }
+    }
+    return result;
+};
+
 // --- Main Parser Function ---
 export const parseProjectFiles = (files: FileEntry[]): XmlTransaction[] => {
   const transactions: XmlTransaction[] = [];
@@ -97,7 +119,9 @@ export const parseProjectFiles = (files: FileEntry[]): XmlTransaction[] => {
   const propertiesMap: Record<string, string> = {}; 
   
   files.forEach(file => {
-    if (file.name.endsWith('.java')) {
+    const lowerName = file.name.toLowerCase();
+    
+    if (lowerName.endsWith('.java')) {
       // Improved regex to capture class name even if not public or abstract
       const classMatch = file.content.match(/(?:public|protected|private|abstract|static|\s)*class\s+(\w+)/);
       if (classMatch) {
@@ -111,7 +135,7 @@ export const parseProjectFiles = (files: FileEntry[]): XmlTransaction[] => {
           javaAuthorMap[className] = authorMatch[1].trim();
         }
       }
-    } else if (file.name.endsWith('.properties')) {
+    } else if (lowerName.endsWith('.properties')) {
       const lines = file.content.split('\n');
       lines.forEach(line => {
         if (line.trim().startsWith('#')) return;
@@ -130,19 +154,32 @@ export const parseProjectFiles = (files: FileEntry[]): XmlTransaction[] => {
   const parser = new DOMParser();
   
   files.forEach(file => {
-    if (!file.name.endsWith('.xml')) return;
+    const lowerName = file.name.toLowerCase();
+    if (!lowerName.endsWith('.xml')) return;
 
     try {
-        const xmlDoc = parser.parseFromString(file.content, "text/xml");
+        let xmlDoc = parser.parseFromString(file.content, "text/xml");
         
         // Check for parsing errors
         if (xmlDoc.getElementsByTagName("parsererror").length > 0) {
-            console.warn(`Skipping invalid XML file: ${file.name}`);
-            return;
+            // Retry strategy: Wrap in a dummy root element
+            // This handles files that are lists of transactions without a single root
+            // Also strip XML declaration if present to avoid "xml declaration not at start" error
+            const contentWithoutDecl = file.content.replace(/<\?xml[^>]*\?>/gi, '');
+            const wrappedContent = `<root>${contentWithoutDecl}</root>`;
+            
+            const retryDoc = parser.parseFromString(wrappedContent, "text/xml");
+            
+            if (retryDoc.getElementsByTagName("parsererror").length === 0) {
+                xmlDoc = retryDoc;
+            } else {
+                console.warn(`Skipping invalid XML file: ${file.name}`);
+                return;
+            }
         }
         
         const localActionMap: Record<string, string> = {}; 
-        const actionNodes = xmlDoc.getElementsByTagName("action");
+        const actionNodes = getElementsByTagNameCI(xmlDoc, "action");
         for (let i = 0; i < actionNodes.length; i++) {
           const name = actionNodes[i].getAttribute("name");
           const clazz = actionNodes[i].getAttribute("class");
@@ -151,15 +188,21 @@ export const parseProjectFiles = (files: FileEntry[]): XmlTransaction[] => {
           }
         }
 
-        const transNodes = xmlDoc.getElementsByTagName("transaction");
+        const transNodes = getElementsByTagNameCI(xmlDoc, "transaction");
+
         for (let i = 0; i < transNodes.length; i++) {
           const node = transNodes[i];
           const id = node.getAttribute("id") || "";
+          
+          // Skip if no ID
+          if (!id) continue;
+
           const template = node.getAttribute("template") || "";
           const trsName = node.getAttribute("description") || "";
           
-          const actionRefs = node.getElementsByTagName("actions")[0]?.getElementsByTagName("ref");
-          const actionRef = actionRefs && actionRefs.length > 0 ? actionRefs[0].textContent || "" : "";
+          const actionsNodes = getElementsByTagNameCI(node, "actions");
+          const actionRefs = actionsNodes.length > 0 ? getElementsByTagNameCI(actionsNodes[0], "ref") : [];
+          const actionRef = actionRefs.length > 0 ? actionRefs[0].textContent || "" : "";
           
           let fullClassPath = localActionMap[actionRef] || "";
           if (!fullClassPath) {
@@ -168,10 +211,12 @@ export const parseProjectFiles = (files: FileEntry[]): XmlTransaction[] => {
           
           const simpleClassName = fullClassPath.split('.').pop() || "";
           
-          const inputNode = node.getElementsByTagName("input")[0];
+          const inputNodes = getElementsByTagNameCI(node, "input");
+          const inputNode = inputNodes[0];
           const inputs = inputNode ? parseChildren(inputNode) : [];
 
-          const outputNode = node.getElementsByTagName("output")[0];
+          const outputNodes = getElementsByTagNameCI(node, "output");
+          const outputNode = outputNodes[0];
           const outputs = outputNode ? parseChildren(outputNode) : [];
 
           // Use the file path (relative path) to determine module
@@ -202,8 +247,8 @@ export const parseProjectFiles = (files: FileEntry[]): XmlTransaction[] => {
             downstreamCalls: Array.from(downstreamCalls)
           });
         }
-    } catch (e) {
-        console.error(`Error processing file ${file.name}:`, e);
+    } catch (err) {
+        console.error(`Error parsing XML file ${file.name}:`, err);
     }
   });
 
