@@ -1646,33 +1646,73 @@ public class NacosSyncController {
             String tempDir = System.getProperty("java.io.tmpdir") + "/git_repo_" + System.currentTimeMillis();
             
             try {
-                // Clone 仓库
-                ProcessBuilder clonePb = new ProcessBuilder("git", "clone", "-b", branch, "--depth", "1", request.getRepoUrl(), tempDir);
+                // Clone 仓库 - 添加 --recursive 以支持子模块
+                log.info("Executing git clone for: {} (branch: {})", request.getRepoUrl(), branch);
+                ProcessBuilder clonePb = new ProcessBuilder("git", "clone", "--recursive", "-b", branch, "--depth", "1", request.getRepoUrl(), tempDir);
                 clonePb.redirectErrorStream(true);
                 
                 Process cloneProcess = clonePb.start();
+                
+                // 读取输出以防止缓冲区满
+                java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(cloneProcess.getInputStream()));
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    log.debug("git clone output: {}", line);
+                }
+                
                 int cloneExitCode = cloneProcess.waitFor();
                 
                 if (cloneExitCode != 0) {
-                    return ResponseEntity.ok(new ApiResponse<>(false, "仓库克隆失败", files));
+                    log.error("Git clone failed with exit code: {}", cloneExitCode);
+                    return ResponseEntity.ok(new ApiResponse<>(false, "仓库克隆失败 (Exit Code: " + cloneExitCode + ")", files));
                 }
                 
                 // 扫描项目文件（XML, Java, Properties）
-                // ✅ 修复：使用 try-with-resources 确保流正确关闭，使用 collect 而非 forEach 避免并发问题
+                // 使用 Files.walkFileTree 替代 Files.walk 以获得更好的控制和容错性，确保逐个文件读取
                 java.nio.file.Path tempPath = java.nio.file.Paths.get(tempDir);
+                List<java.nio.file.Path> filePaths = new ArrayList<>();
+                final int[] totalScanned = {0};
                 
-                List<java.nio.file.Path> filePaths;
-                try (java.util.stream.Stream<java.nio.file.Path> pathStream = java.nio.file.Files.walk(tempPath)) {
-                    filePaths = pathStream
-                        .filter(java.nio.file.Files::isRegularFile)
-                        .filter(path -> {
-                            String name = path.getFileName().toString();
-                            return name.endsWith(".xml") || name.endsWith(".java") || name.endsWith(".properties");
-                        })
-                        .collect(java.util.stream.Collectors.toList());
-                }
+                log.info("Starting deep scan of directory: {}", tempDir);
                 
-                System.out.println("Found " + filePaths.size() + " files to process");
+                java.nio.file.Files.walkFileTree(tempPath, new java.nio.file.SimpleFileVisitor<java.nio.file.Path>() {
+                    @Override
+                    public java.nio.file.FileVisitResult preVisitDirectory(java.nio.file.Path dir, java.nio.file.attribute.BasicFileAttributes attrs) {
+                        // 显式跳过 .git 目录
+                        if (dir.getFileName().toString().equals(".git")) {
+                            return java.nio.file.FileVisitResult.SKIP_SUBTREE;
+                        }
+                        return java.nio.file.FileVisitResult.CONTINUE;
+                    }
+
+                    @Override
+                    public java.nio.file.FileVisitResult visitFile(java.nio.file.Path file, java.nio.file.attribute.BasicFileAttributes attrs) {
+                        totalScanned[0]++;
+                        String name = file.getFileName().toString();
+                        
+                        // 再次检查路径中是否包含 .git (防止非标准结构)
+                        if (file.toString().contains(java.io.File.separator + ".git" + java.io.File.separator)) {
+                            return java.nio.file.FileVisitResult.CONTINUE;
+                        }
+
+                        if (name.endsWith(".xml") || name.endsWith(".java") || name.endsWith(".properties")) {
+                            filePaths.add(file);
+                            // 记录每100个找到的文件，避免日志过多
+                            if (filePaths.size() % 100 == 0) {
+                                log.info("Found {} matching files so far...", filePaths.size());
+                            }
+                        }
+                        return java.nio.file.FileVisitResult.CONTINUE;
+                    }
+
+                    @Override
+                    public java.nio.file.FileVisitResult visitFileFailed(java.nio.file.Path file, java.io.IOException exc) {
+                        System.err.println("Failed to visit file: " + file + " (" + exc.getMessage() + ")");
+                        return java.nio.file.FileVisitResult.CONTINUE; // 即使出错也继续处理其他文件
+                    }
+                });
+                
+                log.info("Scan complete. Scanned {} files/dirs, found {} matching files.", totalScanned[0], filePaths.size());
                 
                 // 顺序处理每个文件，避免并发问题
                 int successCount = 0;
