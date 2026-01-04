@@ -252,6 +252,14 @@ export const parseProjectFiles = (files: FileEntry[]): XmlTransaction[] => {
     }
   });
 
+  // Sort transactions for consistency: Module first, then ID
+  transactions.sort((a, b) => {
+    if (a.module !== b.module) {
+      return a.module.localeCompare(b.module);
+    }
+    return a.id.localeCompare(b.id);
+  });
+
   return transactions;
 };
 

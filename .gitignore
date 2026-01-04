@@ -28,6 +28,9 @@ backend/target/
 backend/data/
 backend/build/
 
+# Local test data
+eibs3g-service/
+
 # IDE
 *.swp
 *.swo
