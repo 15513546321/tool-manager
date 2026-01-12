@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { ParameterConfig } from '../types';
-import { Plus, Trash2, Filter, Search, X, Edit2, Save, ExternalLink, Settings, Check, Edit } from 'lucide-react';
+import { Plus, Trash2, Filter, Search, X, Edit2, Save, ExternalLink, Settings, Check, Edit, Download, Upload } from 'lucide-react';
 import { Database, TABLE } from '../services/database';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { Pagination } from '../components/Pagination';
@@ -48,6 +48,11 @@ export const ParameterConfigPage: React.FC = () => {
   const [editCatValue, setEditCatValue] = useState('');
   const [editingSubCat, setEditingSubCat] = useState<string | null>(null);
   const [editSubCatValue, setEditSubCatValue] = useState('');
+
+  // Import/Export State
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importData, setImportData] = useState('');
+  const [importError, setImportError] = useState('');
 
   // Confirmation State
   const [confirmState, setConfirmState] = useState<{
@@ -110,75 +115,187 @@ export const ParameterConfigPage: React.FC = () => {
     loadData();
   }, []);
 
-  const saveParams = async (newParams: ParameterConfig[]) => {
-    setParams(newParams);
+  // 计算过滤后的参数
+  const filteredParams = useMemo(() => {
+    return params.filter(param => {
+      const matchesCategory = !categoryFilter || param.category === categoryFilter;
+      const matchesSubCategory = !subCategoryFilter || param.subCategory === subCategoryFilter;
+      const matchesSearch = !searchFilter || 
+        param.key.toLowerCase().includes(searchFilter.toLowerCase()) ||
+        param.value.toLowerCase().includes(searchFilter.toLowerCase()) ||
+        (param.description && param.description.toLowerCase().includes(searchFilter.toLowerCase()));
+      
+      return matchesCategory && matchesSubCategory && matchesSearch;
+    });
+  }, [params, categoryFilter, subCategoryFilter, searchFilter]);
+
+  // 计算分类列表
+  const categories = useMemo(() => {
+    return Object.keys(categoryMap);
+  }, [categoryMap]);
+
+  // 计算小类列表
+  const subCategories = useMemo(() => {
+    if (!categoryFilter) {
+      // 如果没有选择大类，返回所有小类
+      const allSubCategories = new Set<string>();
+      Object.values(categoryMap).forEach(subCats => {
+        subCats.forEach(subCat => allSubCategories.add(subCat));
+      });
+      return Array.from(allSubCategories);
+    }
+    return categoryMap[categoryFilter] || [];
+  }, [categoryMap, categoryFilter]);
+
+  // 计算分页相关变量
+  const totalPages = Math.ceil(filteredParams.length / pageSize);
+  const paginatedParams = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return filteredParams.slice(startIndex, startIndex + pageSize);
+  }, [filteredParams, currentPage, pageSize]);
+
+  // 分页处理函数
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+  };
+
+  const handlePageSizeChange = (size: number) => {
+    setPageSize(size);
+    setCurrentPage(1); // 重置到第一页
+  };
+
+  // 修复数据丢失问题：优化保存逻辑
+  const saveSingleParam = async (param: ParameterConfig) => {
     try {
-      for (const param of newParams) {
-        await systemParameterApi.save({
-          paramKey: param.key,
-          paramValue: param.value,
-          paramType: param.subCategory,
-          description: param.description,
-          category: param.category,
-          updatedBy: 'admin'
-        });
+      await systemParameterApi.save({
+        paramKey: param.key,
+        paramValue: param.value,
+        paramType: param.subCategory,
+        description: param.description,
+        category: param.category,
+        updatedBy: 'admin'
+      });
+      return true;
+    } catch (error) {
+      console.error('Failed to save parameter:', error);
+      return false;
+    }
+  };
+
+  const saveParams = async (newParams: ParameterConfig[]) => {
+    // 先更新本地状态
+    setParams(newParams);
+    
+    // 然后只保存有变化的参数
+    try {
+      const savePromises = newParams.map(async (param) => {
+        return await saveSingleParam(param);
+      });
+      
+      const results = await Promise.all(savePromises);
+      const successCount = results.filter(result => result).length;
+      
+      if (successCount < newParams.length) {
+        console.warn(`部分参数保存失败，成功保存 ${successCount}/${newParams.length} 个参数`);
       }
     } catch (error) {
       console.error('Failed to save parameters:', error);
     }
   };
 
-  // Compute unique categories from categoryMap
-  const categories = useMemo(() => {
-    return Object.keys(categoryMap).sort();
-  }, [categoryMap]);
-
-  // Compute unique sub-categories based on selected category
-  const subCategories = useMemo(() => {
-    if (categoryFilter && categoryMap[categoryFilter]) {
-      return categoryMap[categoryFilter];
+  // 修复新增参数逻辑
+  const handleAdd = async () => {
+    if (newParam.key && newParam.value && newParam.category && newParam.subCategory) {
+      const newParamWithId = { 
+        ...newParam, 
+        id: Date.now().toString(),
+        description: newParam.description || ''
+      } as ParameterConfig;
+      
+      try {
+        // 先保存到数据库
+        const success = await saveSingleParam(newParamWithId);
+        
+        if (success) {
+          // 成功后更新本地状态
+          setParams(prev => [...prev, newParamWithId]);
+          recordAction('系统设置 - 参数配置', `添加参数: ${newParam.key}=${newParam.value}`);
+          setIsAdding(false);
+          setNewParam({ category: 'System', subCategory: 'General' });
+        } else {
+          alert('保存失败，请重试');
+        }
+      } catch (error) {
+        console.error('Failed to add parameter:', error);
+        alert('保存失败，请重试');
+      }
     }
-    // Show all subcategories if no filter
-    const allSubs = new Set<string>();
-    Object.values(categoryMap).forEach(subs => subs.forEach(s => allSubs.add(s)));
-    return Array.from(allSubs).sort();
-  }, [categoryMap, categoryFilter]);
-
-  const filteredParams = params.filter(p => {
-    const matchesCategory = categoryFilter ? p.category === categoryFilter : true;
-    const matchesSubCategory = subCategoryFilter ? p.subCategory === subCategoryFilter : true;
-    const matchesSearch = searchFilter ? (
-      p.key.toLowerCase().includes(searchFilter.toLowerCase()) || 
-      p.value.toLowerCase().includes(searchFilter.toLowerCase()) ||
-      p.description.toLowerCase().includes(searchFilter.toLowerCase())
-    ) : true;
-
-    return matchesCategory && matchesSubCategory && matchesSearch;
-  });
-
-  // Compute pagination
-  const totalPages = Math.ceil(filteredParams.length / pageSize);
-  const paginatedParams = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    return filteredParams.slice(start, start + pageSize);
-  }, [filteredParams, currentPage, pageSize]);
-
-  const handlePageChange = (page: number) => {
-    setCurrentPage(Math.max(1, Math.min(page, totalPages || 1)));
   };
 
-  const handlePageSizeChange = (size: number) => {
-    setPageSize(size);
-    setCurrentPage(1);
+  // Excel批量导出功能
+  const handleExport = async () => {
+    try {
+      const blob = await systemParameterApi.exportToExcel();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `system_parameters_${new Date().toISOString().split('T')[0]}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      recordAction('系统设置 - 参数配置', '导出参数到Excel');
+      alert('导出成功！');
+    } catch (error) {
+      console.error('Failed to export parameters:', error);
+      alert('导出失败，请重试');
+    }
   };
 
-  const handleAdd = () => {
-    if (newParam.key && newParam.value && newParam.category) {
-      saveParams([...params, { ...newParam, id: Date.now().toString() } as ParameterConfig]);
-      recordAction('系统设置 - 参数配置', `添加参数: ${newParam.key}=${newParam.value}`);
-      setIsAdding(false);
-      setNewParam({ category: 'System', subCategory: 'General' });
+  // Excel批量导入功能
+  const handleImport = async (file: File) => {
+    if (!file) return;
+    
+    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+      setImportError('请选择Excel文件 (.xlsx 或 .xls)');
+      return;
     }
+    
+    setConfirmState({
+      isOpen: true,
+      title: '批量导入参数',
+      message: '确定要导入Excel文件中的参数吗？这将采用增量导入方式（已存在参数更新，新参数新增）。',
+      type: 'warning',
+      onConfirm: async () => {
+        try {
+          await systemParameterApi.importFromExcel(file);
+          
+          // 导入成功后，重新从API加载数据以确保数据一致性
+          const paramData = await systemParameterApi.getAll();
+          const convertedParams = paramData.map((param: any) => ({
+            id: param.id.toString(),
+            category: param.category || 'System',
+            subCategory: param.paramType || 'General',
+            key: param.paramKey,
+            value: param.paramValue,
+            description: param.description || ''
+          }));
+          
+          // 更新本地状态
+          setParams(convertedParams);
+          
+          setIsImportModalOpen(false);
+          setImportError('');
+          
+          recordAction('系统设置 - 参数配置', `批量导入参数: ${convertedParams.length} 个参数`);
+          alert(`导入完成，成功导入 ${convertedParams.length} 个参数`);
+        } catch (error) {
+          console.error('Failed to import parameters:', error);
+          setImportError('导入失败，请检查文件格式');
+        }
+      }
+    });
   };
 
   const handleDelete = (id: string) => {
@@ -397,6 +514,21 @@ export const ParameterConfigPage: React.FC = () => {
            <p className="text-slate-500 text-sm mt-1">管理系统业务参数键值对</p>
         </div>
         <div className="flex gap-3">
+          {/* 添加导入导出按钮 */}
+          <button 
+            onClick={() => setIsImportModalOpen(true)}
+            className="bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-green-700 transition-colors shadow-sm"
+          >
+            <Upload size={18} />
+            批量导入
+          </button>
+          <button 
+            onClick={handleExport}
+            className="bg-purple-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-purple-700 transition-colors shadow-sm"
+          >
+            <Download size={18} />
+            批量导出
+          </button>
           <button 
             onClick={() => setIsCatManagerOpen(true)}
             className="bg-slate-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-slate-700 transition-colors shadow-sm"
@@ -815,6 +947,89 @@ export const ParameterConfigPage: React.FC = () => {
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import Modal */}
+      {isImportModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <Upload size={20} />
+                批量导入参数
+              </h3>
+              <button onClick={() => setIsImportModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="p-6">
+              <div className="mb-4">
+                <p className="text-sm text-slate-600 mb-3">请选择Excel文件进行导入：</p>
+                
+                <div className="border-2 border-dashed border-slate-200 rounded-lg p-6 text-center hover:border-blue-300 transition-colors">
+                  <input
+                    type="file"
+                    id="excel-file"
+                    accept=".xlsx,.xls"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        handleImport(file);
+                      }
+                    }}
+                  />
+                  <label
+                    htmlFor="excel-file"
+                    className="cursor-pointer flex flex-col items-center justify-center"
+                  >
+                    <Upload size={48} className="text-slate-300 mb-2" />
+                    <span className="text-slate-600 font-medium">点击选择Excel文件</span>
+                    <span className="text-slate-400 text-sm mt-1">支持 .xlsx 和 .xls 格式</span>
+                  </label>
+                </div>
+                
+                {importError && (
+                  <div className="mt-3 text-red-500 text-sm bg-red-50 border border-red-200 rounded px-3 py-2">
+                    {importError}
+                  </div>
+                )}
+              </div>
+              
+              <div className="bg-slate-50 rounded-lg p-4 text-sm text-slate-600">
+                <h4 className="font-semibold mb-2">导入说明：</h4>
+                <ul className="space-y-1 text-xs">
+                  <li>• 导入将采用增量导入方式（已存在参数更新，新参数新增）</li>
+                  <li>• 请确保Excel文件包含以下列：参数键、参数值、参数类型、分类</li>
+                  <li>• 建议先导出当前参数作为备份</li>
+                </ul>
+              </div>
+            </div>
+            
+            <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3 bg-slate-50">
+              <button
+                onClick={() => setIsImportModalOpen(false)}
+                className="px-4 py-2 text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => {
+                  const fileInput = document.getElementById('excel-file') as HTMLInputElement;
+                  if (fileInput?.files?.[0]) {
+                    handleImport(fileInput.files[0]);
+                  } else {
+                    setImportError('请先选择Excel文件');
+                  }
+                }}
+                className="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors"
+              >
+                开始导入
+              </button>
             </div>
           </div>
         </div>

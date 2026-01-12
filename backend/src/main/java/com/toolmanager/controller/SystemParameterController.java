@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import lombok.RequiredArgsConstructor;
 
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -115,5 +116,43 @@ public class SystemParameterController {
         parameterCategoryRepository.flush();
         
         return ResponseEntity.ok(categoryMap);
+    }
+
+    /**
+     * Batch save parameters
+     * POST /api/system-param/batch
+     */
+    @PostMapping("/batch")
+    public ResponseEntity<List<SystemParameterDto>> batchSaveParameters(@RequestBody List<SystemParameterDto> dtos) {
+        List<SystemParameterDto> savedParams = systemParameterService.batchSaveParameters(dtos);
+        return ResponseEntity.ok(savedParams);
+    }
+
+    /**
+     * Export parameters to Excel
+     * GET /api/system-param/export
+     */
+    @GetMapping("/export")
+    public ResponseEntity<byte[]> exportParametersToExcel() {
+        byte[] excelData = systemParameterService.exportParametersToExcel();
+        return ResponseEntity.ok()
+                .header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                .header("Content-Disposition", "attachment; filename=system_parameters.xlsx")
+                .body(excelData);
+    }
+
+    /**
+     * Import parameters from Excel
+     * POST /api/system-param/import
+     */
+    @PostMapping(value = "/import", consumes = "multipart/form-data")
+    public ResponseEntity<List<SystemParameterDto>> importParametersFromExcel(@RequestParam("file") org.springframework.web.multipart.MultipartFile file) {
+        try {
+            byte[] excelData = file.getBytes();
+            List<SystemParameterDto> importedParams = systemParameterService.importParametersFromExcel(excelData);
+            return ResponseEntity.ok(importedParams);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to read uploaded file", e);
+        }
     }
 }

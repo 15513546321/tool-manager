@@ -206,6 +206,35 @@ export const systemParameterApi = {
     if (!res.ok) throw new Error('Failed to save parameter categories');
     return res.json();
   },
+
+  // Batch operations
+  batchSave: async (params: any[]) => {
+    const res = await fetch(`${API_BASE_URL}/system-param/batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    if (!res.ok) throw new Error('Failed to batch save parameters');
+    return res.json();
+  },
+
+  exportToExcel: async () => {
+    const res = await fetch(`${API_BASE_URL}/system-param/export`);
+    if (!res.ok) throw new Error('Failed to export parameters');
+    return res.blob();
+  },
+
+  importFromExcel: async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    const res = await fetch(`${API_BASE_URL}/system-param/import`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!res.ok) throw new Error('Failed to import parameters');
+    return res.json();
+  },
 };
 
 // Suggestion APIs
