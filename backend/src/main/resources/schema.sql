@@ -89,14 +89,11 @@ CREATE TABLE IF NOT EXISTS db_connections (
 CREATE TABLE IF NOT EXISTS documents (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     title VARCHAR(500) NOT NULL,
+    category VARCHAR(255) NOT NULL,
+    sub_category VARCHAR(255),
     description TEXT,
-    doc_type VARCHAR(50),
-    category_id BIGINT,
-    content CLOB,
-    status VARCHAR(50) DEFAULT 'DRAFT',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    created_by VARCHAR(255),
     updated_by VARCHAR(255)
 );
 
@@ -252,8 +249,8 @@ CREATE INDEX IF NOT EXISTS idx_system_parameters_category ON system_parameters(c
 CREATE INDEX IF NOT EXISTS idx_db_connections_db_type ON db_connections(db_type);
 
 CREATE INDEX IF NOT EXISTS idx_documents_title ON documents(title);
-CREATE INDEX IF NOT EXISTS idx_documents_category_id ON documents(category_id);
-CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status);
+CREATE INDEX IF NOT EXISTS idx_documents_category ON documents(category);
+CREATE INDEX IF NOT EXISTS idx_documents_sub_category ON documents(sub_category);
 CREATE INDEX IF NOT EXISTS idx_documents_created_at ON documents(created_at);
 
 CREATE INDEX IF NOT EXISTS idx_document_versions_document_id ON document_versions(document_id);

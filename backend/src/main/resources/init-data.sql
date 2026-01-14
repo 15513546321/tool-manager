@@ -1,8 +1,5 @@
--- Clear all existing documents and versions  
-DELETE FROM document_versions;
-DELETE FROM documents;
-
 -- Initialize Announcements (after clearing old data)
+-- Note: Data persistence is now enabled, so we don't clear existing data
 -- Wait for tables to be created by Hibernate first
 -- Initialize Menu Items (only if not exists)
 INSERT INTO menu_items (menu_id, name, path, icon, visible, parent_id, sort_order, created_at, updated_at)

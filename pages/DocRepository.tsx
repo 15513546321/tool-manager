@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { DocItem, DocVersion } from '../types';
 import { 
   FileText, 
@@ -33,6 +33,11 @@ import { recordAction } from '../services/auditService';
 import { decodeBase64Content, base64ToUint8Array } from '../services/utils';
 import { Database, TABLE } from '../services/database';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { ErrorBoundary } from '../components/ErrorBoundary';
+import { PDFViewer } from '../components/PDFViewer';
+import { MarkdownViewer } from '../components/MarkdownViewer';
+import { ImageViewer } from '../components/ImageViewer';
+import { CodeViewer } from '../components/CodeViewer';
 import { documentApi } from '../services/apiService';
 
 // 默认分类 - 仅在后端无数据时使用
@@ -56,6 +61,9 @@ interface HeadingItem {
 export const DocRepository: React.FC = () => {
   const [docs, setDocs] = useState<DocItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [notification, setNotification] = useState<{type: 'success' | 'error', message: string} | null>(null);
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [categoryMap, setCategoryMap] = useState<Record<string, string[]>>(() => {
     const saved = Database.findObject<Record<string, string[]>>(TABLE.DOC_CATEGORIES);
@@ -100,7 +108,7 @@ export const DocRepository: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Preview State
-  const [previewContent, setPreviewContent] = useState<{type: 'html' | 'iframe' | 'text' | 'word', content: string} | null>(null);
+  const [previewContent, setPreviewContent] = useState<{type: 'html' | 'iframe' | 'text' | 'word' | 'pdf' | 'markdown' | 'image' | 'code', content: string} | null>(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [previewVersionId, setPreviewVersionId] = useState<string | null>(null);
   
@@ -119,6 +127,9 @@ export const DocRepository: React.FC = () => {
       onConfirm: () => void;
       type?: 'danger' | 'info';
   }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
+
+  // Version History Collapse State
+  const [isVersionHistoryCollapsed, setIsVersionHistoryCollapsed] = useState<boolean>(false);
 
   // 从后端 API 加载文档
   useEffect(() => {
@@ -214,7 +225,27 @@ export const DocRepository: React.FC = () => {
       const isBase64 = fileContent.startsWith('data:');
       
       try {
-        if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+        if (fileName.endsWith('.pdf')) {
+           setPreviewContent({ type: 'pdf', content: fileContent });
+           setIsPreviewLoading(false);
+           return;
+
+        } else if (fileName.endsWith('.md') || fileName.endsWith('.markdown')) {
+           setPreviewContent({ type: 'markdown', content: fileContent });
+           setIsPreviewLoading(false);
+           return;
+
+        } else if (fileName.match(/\.(jpg|jpeg|png|gif|bmp|webp)$/i)) {
+           setPreviewContent({ type: 'image', content: fileContent });
+           setIsPreviewLoading(false);
+           return;
+
+        } else if (fileName.match(/\.(js|ts|java|py|xml|html|css|json|sql|sh|yml|yaml)$/i)) {
+           setPreviewContent({ type: 'code', content: fileContent });
+           setIsPreviewLoading(false);
+           return;
+
+        } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
            // Excel Preview
            let workbook;
            if (isBase64) {
@@ -466,23 +497,36 @@ export const DocRepository: React.FC = () => {
     setIsModalOpen(true);
   };
 
+  const showNotification = useCallback((type: 'success' | 'error', message: string) => {
+    setNotification({ type, message });
+    setTimeout(() => setNotification(null), 3000);
+  }, []);
+
   const handleSubmit = async () => {
     if (!file && modalMode === 'create') {
-      alert('Please upload a file');
+      showNotification('error', '请上传文件');
       return;
     }
 
+    setIsSaving(true);
     let fileContent = '';
     let fileSize = '';
     
     if (file) {
-      // Read as DataURL (Base64) for all files to support binaries
-      fileSize = `${(file.size / 1024).toFixed(1)}KB`;
-      const reader = new FileReader();
-      fileContent = await new Promise<string>((resolve) => {
-        reader.onload = (e) => resolve(e.target?.result as string);
-        reader.readAsDataURL(file);
-      });
+      try {
+        fileSize = `${(file.size / 1024).toFixed(1)}KB`;
+        const reader = new FileReader();
+        fileContent = await new Promise<string>((resolve, reject) => {
+          reader.onload = (e) => resolve(e.target?.result as string);
+          reader.onerror = (e) => reject(new Error('Failed to read file'));
+          reader.readAsDataURL(file);
+        });
+      } catch (error) {
+        console.error('File reading error:', error);
+        showNotification('error', '文件读取失败，请重试');
+        setIsSaving(false);
+        return;
+      }
     } else if (modalMode === 'update' && formData.updateType === 'overwrite' && selectedDoc) {
       fileContent = selectedDoc.versions[0].fileContent;
       fileSize = selectedDoc.versions[0].size;
@@ -500,18 +544,16 @@ export const DocRepository: React.FC = () => {
 
     if (modalMode === 'create') {
       try {
-        // Create document without id and versions - those will be handled separately
         const newDoc = {
           title: formData.title,
           category: formData.category,
           subCategory: formData.subCategory,
           description: formData.description
         };
-        // Create document and get the response with real ID
+        
         const createdDoc = await documentApi.create(newDoc);
         
-        // Add version to the created document
-        if (createdDoc.id) {
+        if (createdDoc && createdDoc.id) {
           await documentApi.saveVersion(createdDoc.id, {
             documentId: createdDoc.id,
             versionNumber: newVersion.versionNumber,
@@ -520,20 +562,22 @@ export const DocRepository: React.FC = () => {
             fileSize: newVersion.size,
             updatedBy: 'admin'
           });
+          
+          const updated = await documentApi.getById(createdDoc.id);
+          setDocs([updated, ...docs]);
+          setSelectedDocId(updated.id.toString());
+          recordAction('Create Knowledge Doc', `Created: ${formData.title}`);
+          showNotification('success', '文档创建成功');
+          setIsModalOpen(false);
+        } else {
+          throw new Error('Failed to create document: No ID returned');
         }
-        
-        // Fetch updated document with versions
-        const updated = await documentApi.getById(createdDoc.id);
-        setDocs([updated, ...docs]);
-        setSelectedDocId(updated.id.toString());
-        recordAction('Create Knowledge Doc', `Created: ${formData.title}`);
       } catch (error) {
         console.error('Failed to create document:', error);
-        alert('创建文档失败');
+        showNotification('error', `创建文档失败: ${error instanceof Error ? error.message : '未知错误'}`);
       }
     } else if (modalMode === 'update' && selectedDoc) {
       try {
-        // Update document attributes only (without versions)
         const updateDoc = {
           id: selectedDoc.id,
           title: formData.title,
@@ -543,9 +587,7 @@ export const DocRepository: React.FC = () => {
         };
         await documentApi.update(Number(selectedDoc.id), updateDoc);
         
-        // Handle version update if file was selected
         if (formData.updateType === 'overwrite' && file) {
-          // For overwrite, update the latest version
           if (selectedDoc.versions.length > 0) {
             await documentApi.saveVersion(Number(selectedDoc.id), {
               documentId: Number(selectedDoc.id),
@@ -557,7 +599,6 @@ export const DocRepository: React.FC = () => {
             });
           }
         } else if (formData.updateType === 'new' && file) {
-          // For new version, create a new version entry
           await documentApi.saveVersion(Number(selectedDoc.id), {
             documentId: Number(selectedDoc.id),
             versionNumber: newVersion.versionNumber,
@@ -568,18 +609,18 @@ export const DocRepository: React.FC = () => {
           });
         }
         
-        // Fetch updated document with all versions
         const updated = await documentApi.getById(Number(selectedDoc.id));
         const updatedDocs = docs.map(d => d.id === selectedDoc.id ? updated : d);
         setDocs(updatedDocs);
         recordAction('Update Knowledge Doc', `Updated: ${formData.title}`);
+        showNotification('success', '文档更新成功');
+        setIsModalOpen(false);
       } catch (error) {
         console.error('Failed to update document:', error);
-        alert('更新文档失败');
+        showNotification('error', `更新文档失败: ${error instanceof Error ? error.message : '未知错误'}`);
       }
     }
 
-    // Reset form and close modal
     setFormData({
       title: '',
       category: '',
@@ -589,7 +630,7 @@ export const DocRepository: React.FC = () => {
       updateType: 'new',
     });
     setFile(null);
-    setIsModalOpen(false);
+    setIsSaving(false);
   };
 
   const handleDownload = (v: DocVersion) => {
@@ -622,9 +663,8 @@ export const DocRepository: React.FC = () => {
   const handleDeleteVersion = (v: DocVersion) => {
     if (!selectedDoc) return;
     
-    // 如果只有一个版本，不能删除
     if (selectedDoc.versions.length === 1) {
-      alert('无法删除：文档至少需要保留一个版本');
+      showNotification('error', '无法删除：文档至少需要保留一个版本');
       return;
     }
 
@@ -634,21 +674,23 @@ export const DocRepository: React.FC = () => {
       message: `确定要删除版本 v${v.versionNumber} (${v.fileName}) 吗?`,
       type: 'danger',
       onConfirm: async () => {
+        setIsDeleting(true);
         try {
           await documentApi.deleteVersion(Number(v.id));
-          // 重新加载文档信息
           const updated = await documentApi.getById(Number(selectedDoc.id));
           const updatedDocs = docs.map(d => d.id === selectedDoc.id ? updated : d);
           setDocs(updatedDocs);
           setSelectedDocId(updated.id.toString());
-          // 删除后自动显示最新版本（第一个）
           if (updated.versions && updated.versions.length > 0) {
-            setPreviewVersionId(null); // 确保显示最新版本
+            setPreviewVersionId(null);
           }
           recordAction('Delete Knowledge Doc Version', `Deleted v${v.versionNumber}`);
+          showNotification('success', '版本删除成功');
         } catch (error) {
           console.error('Failed to delete version:', error);
-          alert('删除版本失败');
+          showNotification('error', '删除版本失败');
+        } finally {
+          setIsDeleting(false);
         }
       }
     });
@@ -663,15 +705,19 @@ export const DocRepository: React.FC = () => {
       message: `确定要删除文档 "${selectedDoc.title}" 及其所有版本吗? 这个操作无法撤销。`,
       type: 'danger',
       onConfirm: async () => {
+        setIsDeleting(true);
         try {
           await documentApi.delete(Number(selectedDoc.id));
           const updatedDocs = docs.filter(d => d.id !== selectedDoc.id);
           setDocs(updatedDocs);
           setSelectedDocId(null);
           recordAction('Delete Knowledge Doc', `Deleted: ${selectedDoc.title}`);
+          showNotification('success', '文档删除成功');
         } catch (error) {
           console.error('Failed to delete document:', error);
-          alert('删除文档失败');
+          showNotification('error', '删除文档失败');
+        } finally {
+          setIsDeleting(false);
         }
       }
     });
@@ -694,7 +740,39 @@ export const DocRepository: React.FC = () => {
           );
       }
       
-      if (!previewContent) return <div className="text-slate-400 italic">No content available</div>;
+      if (!previewContent || !activeVersion) return <div className="text-slate-400 italic">No content available</div>;
+
+      if (previewContent.type === 'pdf') {
+          return (
+            <ErrorBoundary>
+              <PDFViewer fileContent={activeVersion.fileContent} fileName={activeVersion.fileName} />
+            </ErrorBoundary>
+          );
+      }
+
+      if (previewContent.type === 'markdown') {
+          return (
+            <ErrorBoundary>
+              <MarkdownViewer fileContent={activeVersion.fileContent} fileName={activeVersion.fileName} />
+            </ErrorBoundary>
+          );
+      }
+
+      if (previewContent.type === 'image') {
+          return (
+            <ErrorBoundary>
+              <ImageViewer fileContent={activeVersion.fileContent} fileName={activeVersion.fileName} />
+            </ErrorBoundary>
+          );
+      }
+
+      if (previewContent.type === 'code') {
+          return (
+            <ErrorBoundary>
+              <CodeViewer fileContent={activeVersion.fileContent} fileName={activeVersion.fileName} />
+            </ErrorBoundary>
+          );
+      }
 
       const ContentWrapper = ({children}: {children: React.ReactNode}) => (
         <div className="flex flex-col h-full">
@@ -704,7 +782,6 @@ export const DocRepository: React.FC = () => {
                     dangerouslySetInnerHTML={{ __html: previewContent.content }}
                 />
             </div>
-            {/* Excel Tabs */}
             {excelWorkbook && (
                 <div className="mt-2 border-t border-slate-200 pt-2 flex gap-1 overflow-x-auto pb-2">
                     {excelWorkbook.SheetNames.map(sheet => (
@@ -749,7 +826,6 @@ export const DocRepository: React.FC = () => {
                         dangerouslySetInnerHTML={{ __html: previewContent.content }}
                      />
                  </div>
-                 {/* Word TOC Sidebar */}
                  {wordOutline.length > 0 && (
                      <div className="w-56 shrink-0 border-l border-slate-200 pl-4 overflow-y-auto">
                          <div className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-1">
@@ -785,6 +861,23 @@ export const DocRepository: React.FC = () => {
 
   return (
     <div className="flex h-full bg-slate-50">
+      {/* Notification Toast */}
+      {notification && (
+        <div className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg transition-all transform translate-x-0 ${
+          notification.type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
+        }`}>
+          <div className="flex items-center gap-2">
+            <span>{notification.message}</span>
+            <button 
+              onClick={() => setNotification(null)}
+              className="ml-2 hover:opacity-75"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+      )}
+
       <ConfirmModal 
         isOpen={confirmState.isOpen}
         onClose={() => setConfirmState(prev => ({...prev, isOpen: false}))}
@@ -988,14 +1081,21 @@ export const DocRepository: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Right Sidebar: History */}
+                {/* Right Sidebar: Version History */}
                 <div className="w-72 bg-white border-l border-slate-200 flex flex-col shrink-0">
-                  <div className="p-4 border-b border-slate-100 bg-slate-50/50">
+                  <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
                     <h3 className="font-bold text-slate-700 flex items-center gap-2">
                       <History size={16} /> 版本历史
                     </h3>
+                    <button
+                      onClick={() => setIsVersionHistoryCollapsed(!isVersionHistoryCollapsed)}
+                      className="p-1.5 rounded hover:bg-slate-100 transition-colors"
+                      title={isVersionHistoryCollapsed ? '展开' : '折叠'}
+                    >
+                      {isVersionHistoryCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+                    </button>
                   </div>
-                  <div className="flex-1 overflow-y-auto p-2">
+                  <div className={`flex-1 overflow-y-auto p-2 transition-all ${isVersionHistoryCollapsed ? 'opacity-50 pointer-events-none' : ''}`}>
                      {selectedDoc.versions.map((v, idx) => (
                        <div 
                          key={v.id} 
@@ -1329,9 +1429,10 @@ export const DocRepository: React.FC = () => {
               </button>
               <button 
                 onClick={handleSubmit}
-                className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-500/30 transition-colors"
+                disabled={isSaving}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {modalMode === 'create' ? '立即上传' : '保存修改'}
+                {isSaving ? '保存中...' : (modalMode === 'create' ? '立即上传' : '保存修改')}
               </button>
             </div>
           </div>
