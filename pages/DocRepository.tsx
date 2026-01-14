@@ -879,12 +879,14 @@ export const DocRepository: React.FC = () => {
 
       if (previewContent.type === 'iframe') {
           return (
+            <ErrorBoundary>
               <iframe 
                 src={previewContent.content}
                 className="w-full h-full min-h-[600px] border-none bg-white"
                 title="Preview"
                 sandbox="allow-scripts"
               />
+            </ErrorBoundary>
           );
       }
 
