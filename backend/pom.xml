@@ -152,7 +152,7 @@
                         </goals>
                         <phase>initialize</phase>
                         <configuration>
-                            <arguments>install</arguments>
+                            <arguments>install --legacy-peer-deps</arguments>
                         </configuration>
                     </execution>
                     <!-- Build frontend (TypeScript + React) -->

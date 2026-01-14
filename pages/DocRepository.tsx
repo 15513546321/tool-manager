@@ -18,6 +18,7 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Trash2,
   FileSpreadsheet,
   FileType,
@@ -34,11 +35,10 @@ import { decodeBase64Content, base64ToUint8Array } from '../services/utils';
 import { Database, TABLE } from '../services/database';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ErrorBoundary } from '../components/ErrorBoundary';
-import { PDFViewer } from '../components/PDFViewer';
-import { MarkdownViewer } from '../components/MarkdownViewer';
 import { ImageViewer } from '../components/ImageViewer';
 import { CodeViewer } from '../components/CodeViewer';
 import { documentApi } from '../services/apiService';
+import ReactMarkdown from 'react-markdown';
 
 // 默认分类 - 仅在后端无数据时使用
 
@@ -108,9 +108,11 @@ export const DocRepository: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Preview State
-  const [previewContent, setPreviewContent] = useState<{type: 'html' | 'iframe' | 'text' | 'word' | 'pdf' | 'markdown' | 'image' | 'code', content: string} | null>(null);
+  const [previewContent, setPreviewContent] = useState<{type: 'html' | 'iframe' | 'text' | 'word' | 'pdf' | 'markdown' | 'image' | 'code' | 'ppt', content: string} | null>(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [previewVersionId, setPreviewVersionId] = useState<string | null>(null);
+  const [isVersionDropdownOpen, setIsVersionDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   
   // Excel Specific State
   const [excelWorkbook, setExcelWorkbook] = useState<XLSX.WorkBook | null>(null);
@@ -127,9 +129,6 @@ export const DocRepository: React.FC = () => {
       onConfirm: () => void;
       type?: 'danger' | 'info';
   }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
-
-  // Version History Collapse State
-  const [isVersionHistoryCollapsed, setIsVersionHistoryCollapsed] = useState<boolean>(false);
 
   // 从后端 API 加载文档
   useEffect(() => {
@@ -208,6 +207,23 @@ export const DocRepository: React.FC = () => {
     setCurrentPage(1);
   }, [categoryFilter, subCategoryFilter, searchFilter]);
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsVersionDropdownOpen(false);
+      }
+    };
+
+    if (isVersionDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isVersionDropdownOpen]);
+
   // Generate Preview
   useEffect(() => {
     const generatePreview = async () => {
@@ -227,6 +243,11 @@ export const DocRepository: React.FC = () => {
       try {
         if (fileName.endsWith('.pdf')) {
            setPreviewContent({ type: 'pdf', content: fileContent });
+           setIsPreviewLoading(false);
+           return;
+
+        } else if (fileName.endsWith('.ppt') || fileName.endsWith('.pptx')) {
+           setPreviewContent({ type: 'ppt', content: fileContent });
            setIsPreviewLoading(false);
            return;
 
@@ -726,6 +747,7 @@ export const DocRepository: React.FC = () => {
   const getFileIcon = (fileName: string) => {
       if (fileName.endsWith('.xls') || fileName.endsWith('.xlsx')) return <FileSpreadsheet size={14} className="text-green-600"/>;
       if (fileName.endsWith('.doc') || fileName.endsWith('.docx')) return <FileType size={14} className="text-blue-600"/>;
+      if (fileName.endsWith('.ppt') || fileName.endsWith('.pptx')) return <FileText size={14} className="text-purple-600"/>;
       if (fileName.endsWith('.xml') || fileName.endsWith('.html')) return <FileCode size={14} className="text-orange-600"/>;
       return <FileText size={14} className="text-slate-500"/>;
   };
@@ -745,7 +767,47 @@ export const DocRepository: React.FC = () => {
       if (previewContent.type === 'pdf') {
           return (
             <ErrorBoundary>
-              <PDFViewer fileContent={activeVersion.fileContent} fileName={activeVersion.fileName} />
+              <div className="h-full flex flex-col items-center justify-center p-8">
+                <div className="bg-amber-50 border border-amber-200 p-6 rounded-lg max-w-md">
+                  <div className="flex items-center justify-center gap-3 mb-4">
+                    <FileText size={32} className="text-amber-600" />
+                    <div>
+                      <h3 className="text-lg font-bold text-amber-900">PDF暂不支持预览</h3>
+                      <p className="text-sm text-amber-700 mt-2">请下载后查看</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => handleDownload(activeVersion)}
+                    className="flex items-center gap-2 px-6 py-3 bg-amber-600 text-white rounded-lg hover:bg-amber-700 font-medium transition-colors"
+                  >
+                    <Download size={20} /> 下载文件
+                  </button>
+                </div>
+              </div>
+            </ErrorBoundary>
+          );
+      }
+
+      if (previewContent.type === 'ppt') {
+          return (
+            <ErrorBoundary>
+              <div className="h-full flex flex-col items-center justify-center p-8">
+                <div className="bg-purple-50 border border-purple-200 p-6 rounded-lg max-w-md">
+                  <div className="flex items-center justify-center gap-3 mb-4">
+                    <FileText size={32} className="text-purple-600" />
+                    <div>
+                      <h3 className="text-lg font-bold text-purple-900">PPT暂不支持预览</h3>
+                      <p className="text-sm text-purple-700 mt-2">请下载后查看</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => handleDownload(activeVersion)}
+                    className="flex items-center gap-2 px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium transition-colors"
+                  >
+                    <Download size={20} /> 下载文件
+                  </button>
+                </div>
+              </div>
             </ErrorBoundary>
           );
       }
@@ -753,7 +815,18 @@ export const DocRepository: React.FC = () => {
       if (previewContent.type === 'markdown') {
           return (
             <ErrorBoundary>
-              <MarkdownViewer fileContent={activeVersion.fileContent} fileName={activeVersion.fileName} />
+              <div className="h-full flex flex-col">
+                <div className="bg-green-50 border border-green-200 p-4 rounded-lg mb-4">
+                  <div className="flex items-center gap-2 text-green-700">
+                    <FileText size={20} />
+                    <span className="font-medium">Markdown预览</span>
+                  </div>
+                  <p className="text-sm text-green-600 mt-2">使用 react-markdown 组件预览Markdown文件</p>
+                </div>
+                <div className="flex-1 overflow-auto prose prose-slate max-w-none p-4">
+                  <ReactMarkdown>{activeVersion.fileContent}</ReactMarkdown>
+                </div>
+              </div>
             </ErrorBoundary>
           );
       }
@@ -775,31 +848,33 @@ export const DocRepository: React.FC = () => {
       }
 
       const ContentWrapper = ({children}: {children: React.ReactNode}) => (
-        <div className="flex flex-col h-full">
-            <div className="flex-1 overflow-auto">
-                <div 
-                    className="preview-content font-sans text-slate-800 leading-relaxed p-2"
-                    dangerouslySetInnerHTML={{ __html: previewContent.content }}
-                />
-            </div>
-            {excelWorkbook && (
-                <div className="mt-2 border-t border-slate-200 pt-2 flex gap-1 overflow-x-auto pb-2">
-                    {excelWorkbook.SheetNames.map(sheet => (
-                        <button
-                            key={sheet}
-                            onClick={() => handleSheetChange(sheet)}
-                            className={`px-3 py-1.5 text-xs font-medium rounded-t-lg border-b-2 transition-colors whitespace-nowrap ${
-                                currentSheet === sheet 
-                                    ? 'text-green-700 border-green-600 bg-green-50' 
-                                    : 'text-slate-500 border-transparent hover:bg-slate-50'
-                            }`}
-                        >
-                            {sheet}
-                        </button>
-                    ))}
-                </div>
-            )}
-        </div>
+        <ErrorBoundary>
+          <div className="flex flex-col h-full">
+              <div className="flex-1 overflow-auto">
+                  <div 
+                      className="preview-content font-sans text-slate-800 leading-relaxed p-2"
+                      dangerouslySetInnerHTML={{ __html: previewContent.content }}
+                  />
+              </div>
+              {excelWorkbook && (
+                  <div className="mt-2 border-t border-slate-200 pt-2 flex gap-1 overflow-x-auto pb-2">
+                      {excelWorkbook.SheetNames.map(sheet => (
+                          <button
+                              key={sheet}
+                              onClick={() => handleSheetChange(sheet)}
+                              className={`px-3 py-1.5 text-xs font-medium rounded-t-lg border-b-2 transition-colors whitespace-nowrap ${
+                                  currentSheet === sheet 
+                                      ? 'text-green-700 border-green-600 bg-green-50' 
+                                      : 'text-slate-500 border-transparent hover:bg-slate-50'
+                              }`}
+                          >
+                              {sheet}
+                          </button>
+                      ))}
+                  </div>
+              )}
+          </div>
+        </ErrorBoundary>
       );
 
       if (previewContent.type === 'iframe') {
@@ -819,43 +894,47 @@ export const DocRepository: React.FC = () => {
 
       if (previewContent.type === 'word') {
          return (
-             <div className="flex h-full gap-4">
-                 <div className="flex-1 overflow-auto bg-white pr-2">
-                     <div 
-                        className="preview-content font-sans text-slate-800 leading-relaxed"
-                        dangerouslySetInnerHTML={{ __html: previewContent.content }}
-                     />
-                 </div>
-                 {wordOutline.length > 0 && (
-                     <div className="w-56 shrink-0 border-l border-slate-200 pl-4 overflow-y-auto">
-                         <div className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-1">
-                             <List size={14}/>
-                             Navigation
-                         </div>
-                         <ul className="space-y-1">
-                             {wordOutline.map((item, idx) => (
-                                 <li key={idx}>
-                                     <button 
-                                         onClick={() => handleWordNavClick(item.id)}
-                                         className={`text-left w-full text-xs hover:text-blue-600 hover:underline py-0.5 truncate text-slate-600`}
-                                         style={{ paddingLeft: `${(item.level - 1) * 12}px` }}
-                                         title={item.text}
-                                     >
-                                         {item.text}
-                                     </button>
-                                 </li>
-                             ))}
-                         </ul>
-                     </div>
-                 )}
-             </div>
+             <ErrorBoundary>
+                <div className="flex h-full gap-4">
+                    <div className="flex-1 overflow-auto bg-white pr-2">
+                         <div 
+                            className="preview-content font-sans text-slate-800 leading-relaxed"
+                            dangerouslySetInnerHTML={{ __html: previewContent.content }}
+                         />
+                    </div>
+                    {wordOutline.length > 0 && (
+                        <div className="w-56 shrink-0 border-l border-slate-200 pl-4 overflow-y-auto">
+                            <div className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-1">
+                                <List size={14}/>
+                                Navigation
+                            </div>
+                            <ul className="space-y-1">
+                                {wordOutline.map((item, idx) => (
+                                    <li key={idx}>
+                                        <button 
+                                            onClick={() => handleWordNavClick(item.id)}
+                                            className={`text-left w-full text-xs hover:text-blue-600 hover:underline py-0.5 truncate text-slate-600`}
+                                            style={{ paddingLeft: `${(item.level - 1) * 12}px` }}
+                                            title={item.text}
+                                        >
+                                            {item.text}
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+             </ErrorBoundary>
          );
       }
 
       return (
-        <pre className="whitespace-pre-wrap font-sans text-slate-700 leading-relaxed">
-           {previewContent.content}
-        </pre>
+        <ErrorBoundary>
+          <pre className="whitespace-pre-wrap font-sans text-slate-700 leading-relaxed">
+             {previewContent.content}
+          </pre>
+        </ErrorBoundary>
       );
   };
 
@@ -888,7 +967,7 @@ export const DocRepository: React.FC = () => {
       />
 
       {/* Left Sidebar: List & Filters */}
-      <div className="w-96 flex flex-col border-r border-slate-200 bg-white shadow-sm z-10">
+      <div className="w-96 flex flex-col border-r border-slate-200 bg-white shadow-sm z-10 h-[calc(100vh-2rem)]">
         {/* Header / Filter Area */}
         <div className="p-4 border-b border-slate-100 space-y-3 bg-white">
            <div className="flex items-center justify-between">
@@ -1033,110 +1112,118 @@ export const DocRepository: React.FC = () => {
         {selectedDoc && activeVersion ? (
            <>
              {/* Header */}
-             <div className="bg-white px-8 py-6 border-b border-slate-200 shadow-sm flex justify-between items-start">
-               <div>
-                  <div className="flex items-center gap-3 mb-2">
-                    <h1 className="text-2xl font-bold text-slate-900">{selectedDoc.title}</h1>
-                    <span className="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full font-bold border border-green-200">
-                      v{activeVersion.versionNumber}
-                    </span>
-                    {previewVersionId && (
-                       <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-bold border border-amber-200 flex items-center gap-1">
-                         <History size={10} /> 历史预览
-                       </span>
+             <div className="bg-white px-8 py-6 border-b border-slate-200 shadow-sm">
+               <div className="flex justify-between items-start">
+                 <div>
+                    <div className="flex items-center gap-3 mb-2">
+                      <h1 className="text-2xl font-bold text-slate-900">{selectedDoc.title}</h1>
+                      <span className="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full font-bold border border-green-200">
+                        v{activeVersion.versionNumber}
+                      </span>
+                      {previewVersionId && (
+                         <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-bold border border-amber-200 flex items-center gap-1">
+                           <History size={10} /> 历史预览
+                         </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-4 text-sm text-slate-500">
+                      <span className="flex items-center gap-1">{getFileIcon(activeVersion?.fileName || '')} {activeVersion?.fileName || '未知'}</span>
+                      <span className="flex items-center gap-1"><Clock size={14}/> {activeVersion?.updatedAt || '未知'}</span>
+                      <span className="flex items-center gap-1">by {activeVersion?.updatedBy || 'unknown'}</span>
+                    </div>
+                    {selectedDoc.description && (
+                      <p className="mt-3 text-slate-600 text-sm max-w-2xl">{selectedDoc.description}</p>
                     )}
-                  </div>
-                  <div className="flex items-center gap-4 text-sm text-slate-500">
-                    <span className="flex items-center gap-1">{getFileIcon(activeVersion?.fileName || '')} {activeVersion?.fileName || '未知'}</span>
-                    <span className="flex items-center gap-1"><Clock size={14}/> {activeVersion?.updatedAt || '未知'}</span>
-                    <span className="flex items-center gap-1">by {activeVersion?.updatedBy || 'unknown'}</span>
-                  </div>
-                  {selectedDoc.description && (
-                    <p className="mt-3 text-slate-600 text-sm max-w-2xl">{selectedDoc.description}</p>
-                  )}
-               </div>
-               <div className="flex gap-3">
-                 <button 
-                   onClick={() => handleDownload(activeVersion)}
-                   className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 font-medium text-sm transition-colors"
-                 >
-                   <Download size={16} /> 下载
-                 </button>
-                 {!previewVersionId && selectedDoc && selectedDoc.versions && selectedDoc.versions.length > 0 && selectedDoc.versions[0].id === activeVersion?.id && (
+                 </div>
+                 <div className="flex gap-3">
                    <button 
-                     onClick={handleOpenUpdate}
-                     className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm transition-colors shadow-sm"
+                     onClick={() => handleDownload(activeVersion)}
+                     className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 font-medium text-sm transition-colors"
                    >
-                     <Edit size={16} /> 更新/修改
+                     <Download size={16} /> 下载
                    </button>
-                 )}
+                   {!previewVersionId && selectedDoc && selectedDoc.versions && selectedDoc.versions.length > 0 && selectedDoc.versions[0].id === activeVersion?.id && (
+                     <button 
+                       onClick={handleOpenUpdate}
+                       className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm transition-colors shadow-sm"
+                     >
+                       <Edit size={16} /> 更新/修改
+                     </button>
+                   )}
+                 </div>
                </div>
              </div>
 
-             <div className="flex-1 flex overflow-hidden">
-                {/* Preview */}
-                <div className="flex-1 overflow-y-auto p-8 bg-slate-100/50">
-                  <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-8 min-h-[600px] w-full max-w-6xl mx-auto h-full flex flex-col">
-                    {renderPreview()}
-                  </div>
-                </div>
-
-                {/* Right Sidebar: Version History */}
-                <div className="w-72 bg-white border-l border-slate-200 flex flex-col shrink-0">
-                  <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
-                    <h3 className="font-bold text-slate-700 flex items-center gap-2">
-                      <History size={16} /> 版本历史
-                    </h3>
-                    <button
-                      onClick={() => setIsVersionHistoryCollapsed(!isVersionHistoryCollapsed)}
-                      className="p-1.5 rounded hover:bg-slate-100 transition-colors"
-                      title={isVersionHistoryCollapsed ? '展开' : '折叠'}
-                    >
-                      {isVersionHistoryCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-                    </button>
-                  </div>
-                  <div className={`flex-1 overflow-y-auto p-2 transition-all ${isVersionHistoryCollapsed ? 'opacity-50 pointer-events-none' : ''}`}>
+             {/* Version History - Dropdown Button */}
+             <div className="bg-white border-b border-slate-200 px-8 py-4 shadow-sm relative">
+               <div className="flex items-center gap-2">
+                 <History size={16} className="text-slate-700" />
+                 <h3 className="font-bold text-slate-700">版本历史</h3>
+               </div>
+               <div className="relative" ref={dropdownRef}>
+                  <button 
+                    onClick={() => setIsVersionDropdownOpen(!isVersionDropdownOpen)}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
+                  >
+                   <span className="font-bold text-blue-700">v{activeVersion?.versionNumber}</span>
+                   <ChevronDown 
+                     size={16} 
+                     className={`text-blue-600 transition-transform ${isVersionDropdownOpen ? 'rotate-180' : ''}`}
+                   />
+                 </button>
+                 
+                 {isVersionDropdownOpen && (
+                   <div className="absolute top-full left-0 mt-2 w-80 bg-white border border-slate-200 rounded-lg shadow-xl z-50 max-h-80 overflow-y-auto">
                      {selectedDoc.versions.map((v, idx) => (
                        <div 
                          key={v.id} 
-                         className={`p-3 rounded-lg mb-2 border transition-all ${
+                         onClick={() => { setPreviewVersionId(v.id); setIsVersionDropdownOpen(false); }}
+                         className={`p-3 border-b border-slate-100 last:border-b-0 cursor-pointer hover:bg-slate-50 transition-colors ${
                             activeVersion.id === v.id 
-                              ? 'bg-blue-50 border-blue-200' 
-                              : 'bg-white border-slate-100 hover:border-slate-300'
+                              ? 'bg-blue-50' 
+                              : ''
                          }`}
                        >
-                         <div className="flex justify-between items-start mb-1">
-                           <span className={`font-bold text-sm ${activeVersion.id === v.id ? 'text-blue-700' : 'text-slate-700'}`}>v{v.versionNumber}</span>
-                           <div className="flex gap-1 items-center">
+                         <div className="flex justify-between items-center">
+                           <div className="flex items-center gap-2">
+                             <span className={`font-bold text-sm ${activeVersion.id === v.id ? 'text-blue-700' : 'text-slate-700'}`}>v{v.versionNumber}</span>
                              {idx === 0 && (
                                <span className="text-xs text-green-600 bg-green-50 px-1.5 py-0.5 rounded border border-green-100 font-medium">最新</span>
                              )}
                              <span className="text-xs text-slate-400">{v.updatedAt.split(' ')[0]}</span>
                            </div>
+                           <button 
+                             onClick={(e) => { e.stopPropagation(); handleDownload(v); }}
+                             className="text-blue-600 hover:text-blue-700 p-1"
+                             title="下载"
+                           >
+                             <Download size={14} />
+                           </button>
                          </div>
-                         <div className="text-xs text-slate-500 mb-2 truncate" title={v.fileName}>
+                         <div className="text-xs text-slate-500 truncate" title={v.fileName}>
                            {v.fileName}
                          </div>
-                         <div className="flex gap-2">
-                            <button 
-                              onClick={() => handleDownload(v)}
-                              className="flex-1 flex items-center justify-center gap-1 py-1 text-xs bg-white border border-slate-200 rounded text-slate-600 hover:text-blue-600 hover:border-blue-300 transition-colors"
-                            >
-                              <Download size={12} /> 下载
-                            </button>
-                            {selectedDoc.versions.length > 1 && (
-                              <button
-                                onClick={() => handleDeleteVersion(v)}
-                                className="flex-1 flex items-center justify-center gap-1 py-1 text-xs bg-white border border-slate-200 rounded text-slate-600 hover:text-red-600 hover:border-red-300 transition-colors"
-                              >
-                                <Trash2 size={12} /> 删除
-                              </button>
-                            )}
-                         </div>
+                         {selectedDoc.versions.length > 1 && activeVersion.id !== v.id && (
+                           <button
+                             onClick={(e) => { e.stopPropagation(); handleDeleteVersion(v); }}
+                             className="text-red-600 hover:text-red-700 p-1"
+                             title="删除"
+                           >
+                             <Trash2 size={14} />
+                           </button>
+                         )}
                        </div>
                      ))}
-                  </div>
-                </div>
+                   </div>
+                 )}
+               </div>
+             </div>
+
+             {/* Preview Area */}
+             <div className="flex-1 overflow-y-auto p-8 bg-slate-100/50">
+               <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-8 min-h-[600px] w-full max-w-6xl mx-auto h-full flex flex-col">
+                 {renderPreview()}
+               </div>
              </div>
            </>
         ) : (
