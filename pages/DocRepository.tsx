@@ -215,14 +215,13 @@ export const DocRepository: React.FC = () => {
       }
     };
 
-    if (isVersionDropdownOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
+    // Always add the listener when component mounts
+    document.addEventListener('mousedown', handleClickOutside);
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [isVersionDropdownOpen]);
+  }, []);
 
   // Generate Preview
   useEffect(() => {
@@ -925,7 +924,7 @@ export const DocRepository: React.FC = () => {
                                 ))}
                             </ul>
                         </div>
-                    </div>
+                    )}
                 </div>
              </ErrorBoundary>
          );
