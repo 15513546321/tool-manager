@@ -1,7 +1,12 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Download, Folder, Eye, X, FileJson, ChevronDown, FileCode, Layers, ChevronLeft, ChevronRight, Activity, ArrowRightLeft, Info, GitBranch, Network, Settings, Lock, Key, Globe, AlertTriangle } from 'lucide-react';
-import { parseProjectFiles, FileEntry } from '../../services/xmlParser';
-import { XmlTransaction, XmlField } from '../../types';
+import {
+  parseProjectFiles,
+  FileEntry,
+  clearMiddleProjectChainParserCache,
+  createMiddleProjectChainResolver
+} from '../../services/xmlParser';
+import { XmlTransaction, XmlField, DownstreamCallChain, TransactionCallExpandToken, TransactionChainCall } from '../../types';
 import { recordAction } from '../../services/auditService';
 import { apiService } from '../../services/apiService';
 
@@ -19,6 +24,126 @@ interface OnlineSourceConfig {
   isConnected: boolean;
   connectionError?: string;
 }
+
+interface SharedWorkspaceState {
+  middleReady: boolean;
+  middleEntriesAvailable: boolean;
+  middleProjectName: string;
+  middleEntryCount: number;
+  middleCachedAt: number;
+  chainCount: number;
+  chainMap: Record<string, DownstreamCallChain>;
+}
+
+interface SharedMiddleEntriesPayload {
+  projectName: string;
+  cachedAt: number;
+  entryCount: number;
+  entries: FileEntry[];
+}
+
+interface MiddleResolveWorkerRequest {
+  type: 'resolve-downstream';
+  requestId: string;
+  serviceKey: string;
+  downstreamCall: string;
+  maxDepth?: number;
+  entries?: FileEntry[];
+}
+
+interface MiddleResolveNodeLayerRequest {
+  type: 'resolve-node-layer';
+  requestId: string;
+  serviceKey: string;
+  expandToken: TransactionCallExpandToken;
+  entries?: FileEntry[];
+}
+
+interface MiddleResetWorkerRequest {
+  type: 'reset-cache';
+}
+
+type MiddleWorkerRequest = MiddleResolveWorkerRequest | MiddleResolveNodeLayerRequest | MiddleResetWorkerRequest;
+
+interface MiddleWorkerProgressResponse {
+  type: 'progress';
+  requestId: string;
+  progress: number;
+}
+
+interface MiddleWorkerDownstreamResultResponse {
+  type: 'result-downstream';
+  requestId: string;
+  chain: DownstreamCallChain;
+}
+
+interface MiddleWorkerNodeLayerResultResponse {
+  type: 'result-node-layer';
+  requestId: string;
+  children: TransactionChainCall[];
+}
+
+interface MiddleWorkerErrorResponse {
+  type: 'error';
+  requestId: string;
+  message: string;
+}
+
+type MiddleWorkerResponse =
+  | MiddleWorkerProgressResponse
+  | MiddleWorkerDownstreamResultResponse
+  | MiddleWorkerNodeLayerResultResponse
+  | MiddleWorkerErrorResponse;
+
+interface PendingResolveChainWorkerRequest {
+  kind: 'chain';
+  downstreamCall: string;
+  resolve: (chain: DownstreamCallChain | undefined) => void;
+  reject: (reason?: unknown) => void;
+}
+
+interface PendingResolveNodeLayerWorkerRequest {
+  kind: 'node-layer';
+  resolve: (children: TransactionChainCall[]) => void;
+  reject: (reason?: unknown) => void;
+}
+
+type PendingWorkerRequest = PendingResolveChainWorkerRequest | PendingResolveNodeLayerWorkerRequest;
+
+interface MiddleSourceFileMeta {
+  file: File;
+  key: string;
+  lowerPath: string;
+  lowerName: string;
+  isJava: boolean;
+  isXml: boolean;
+  isYaml: boolean;
+  isProperties: boolean;
+}
+
+const MIDDLE_SCAN_CHUNK_SIZE = 300;
+const MIDDLE_MAX_FILE_BYTES = 2 * 1024 * 1024; // Skip oversized non-code artifacts for upload responsiveness.
+const MIDDLE_GLOBAL_SERVICE_KEY = '__all__';
+const MIDDLE_SERVICE_JAVA_FILE_LIMIT = 320;
+const MIDDLE_SERVICE_APP_CONFIG_LIMIT = 48;
+const MIDDLE_SERVICE_RESOLVER_FILE_LIMIT = 64;
+const MIDDLE_REFERENCE_HINT_JAVA_LIMIT = 360;
+const MIDDLE_WORKER_CHAIN_TIMEOUT_MS = 45_000;
+const MIDDLE_WORKER_NODE_LAYER_TIMEOUT_MS = 30_000;
+const MIDDLE_IGNORED_PATH_SEGMENTS = [
+  '/.git/',
+  '/.idea/',
+  '/node_modules/',
+  '/target/',
+  '/dist/',
+  '/build/',
+  '/logs/',
+  '/log/',
+  '/ffdc/',
+  '/doc/',
+  '/doc(',
+  '/docs/'
+];
 
 // Helper to escape XML special characters
 const escapeXml = (unsafe: string | undefined | null) => {
@@ -68,11 +193,62 @@ const FieldTree: React.FC<{ fields: XmlField[]; depth?: number }> = ({ fields, d
   );
 };
 
+const enrichTransactionsWithChains = (
+  transactions: XmlTransaction[],
+  chainMap: Record<string, DownstreamCallChain>
+): XmlTransaction[] => {
+  if (!transactions || transactions.length === 0) return [];
+
+  return transactions.map(transaction => {
+    const matchedChains = transaction.downstreamCalls
+      .map(call => chainMap[call])
+      .filter((chain): chain is DownstreamCallChain => Boolean(chain));
+
+    return {
+      ...transaction,
+      downstreamChains: matchedChains
+    };
+  });
+};
+
 export const DocManagement: React.FC = () => {
   const [transactions, setTransactions] = useState<XmlTransaction[]>([]);
   const [selectedTransaction, setSelectedTransaction] = useState<XmlTransaction | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const middleFileInputRef = useRef<HTMLInputElement>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isMiddleProcessing, setIsMiddleProcessing] = useState(false);
+  const [middleProjectName, setMiddleProjectName] = useState('');
+  const [middleChainMap, setMiddleChainMap] = useState<Record<string, DownstreamCallChain>>({});
+  const [middleDownstreamTotal, setMiddleDownstreamTotal] = useState(0);
+  const [middleUploadProgress, setMiddleUploadProgress] = useState<{
+    scanned: number;
+    total: number;
+    accepted: number;
+    skipped: number;
+  } | null>(null);
+  const [resolvingDownstreamMap, setResolvingDownstreamMap] = useState<Record<string, boolean>>({});
+  const [resolvingDownstreamProgressMap, setResolvingDownstreamProgressMap] = useState<Record<string, number>>({});
+  const [expandingCallNodeMap, setExpandingCallNodeMap] = useState<Record<string, boolean>>({});
+  const [expandedCallNodeMap, setExpandedCallNodeMap] = useState<Record<string, boolean>>({});
+  const [loadedCallNodeMap, setLoadedCallNodeMap] = useState<Record<string, boolean>>({});
+  const [middleIndexReady, setMiddleIndexReady] = useState(false);
+  const [expandedDownstreamMap, setExpandedDownstreamMap] = useState<Record<string, boolean>>({});
+  const middleSourceFilesRef = useRef<File[]>([]);
+  const middleSourceMetaRef = useRef<MiddleSourceFileMeta[]>([]);
+  const middleServiceFilePoolRef = useRef<Record<string, MiddleSourceFileMeta[]>>({});
+  const middleResolverFilesRef = useRef<File[]>([]);
+  const middleServiceResolverRef = useRef<Record<string, boolean>>({});
+  const middleServiceEntriesRef = useRef<Record<string, FileEntry[]>>({});
+  const middleServiceEntriesLoadingRef = useRef<Record<string, Promise<FileEntry[]>>>({});
+  const middleFileContentCacheRef = useRef<Record<string, string>>({});
+  const middleAllEntriesRef = useRef<FileEntry[]>([]);
+  const middleChainMapRef = useRef<Record<string, DownstreamCallChain>>({});
+  const resolvingDownstreamMapRef = useRef<Record<string, boolean>>({});
+  const middleWorkerRef = useRef<Worker | null>(null);
+  const pendingWorkerRequestsRef = useRef<Record<string, PendingWorkerRequest>>({});
+  const pendingWorkerTimeoutRef = useRef<Record<string, number>>({});
+  const sharedMiddleEntriesLoadingRef = useRef<Promise<boolean> | null>(null);
   
   // Search & Pagination State
   const [searchQuery, setSearchQuery] = useState('');
@@ -97,10 +273,1272 @@ export const DocManagement: React.FC = () => {
   });
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
+
+  const applyMiddleChains = (items: XmlTransaction[]): XmlTransaction[] => {
+    return enrichTransactionsWithChains(items, middleChainMap);
+  };
+
+  const getChainForCall = (transaction: XmlTransaction, downstreamCall: string): DownstreamCallChain | undefined => {
+    return transaction.downstreamChains?.find(chain => chain.downstreamCall === downstreamCall) || middleChainMap[downstreamCall];
+  };
+
+  const buildTransactionsFromCachedInterfaces = (interfaces: any[]): XmlTransaction[] => {
+    return interfaces.map((iface: any) => ({
+      id: iface.id,
+      trsName: iface.name,
+      module: iface.module,
+      actionRef: '',
+      template: 'ExecuteLogTemplate',
+      inputs: iface.inputs || [],
+      outputs: iface.outputs || [],
+      filePath: iface.filePath || '',
+      actionClass: '',
+      downstreamCalls: iface.downstreamCalls || []
+    }));
+  };
+
+  const resetMiddleWorkerCacheOnly = () => {
+    middleServiceResolverRef.current = {};
+    middleServiceEntriesLoadingRef.current = {};
+    clearMiddleProjectChainParserCache();
+    const pendingRequests = pendingWorkerRequestsRef.current;
+    Object.keys(pendingRequests).forEach(key => {
+      pendingRequests[key].reject(new Error('shared middle workspace reset'));
+      clearPendingWorkerTimeout(key);
+    });
+    pendingWorkerRequestsRef.current = {};
+    Object.keys(pendingWorkerTimeoutRef.current).forEach(clearPendingWorkerTimeout);
+    if (middleWorkerRef.current) {
+      const resetMessage: MiddleWorkerRequest = { type: 'reset-cache' };
+      middleWorkerRef.current.postMessage(resetMessage);
+    }
+  };
+
+  const applySharedMiddleEntries = (projectName: string, entries: FileEntry[]) => {
+    middleSourceFilesRef.current = [];
+    middleSourceMetaRef.current = [];
+    middleServiceFilePoolRef.current = {};
+    middleResolverFilesRef.current = [];
+    middleFileContentCacheRef.current = {};
+    middleServiceEntriesRef.current = {
+      [MIDDLE_GLOBAL_SERVICE_KEY]: entries
+    };
+    middleAllEntriesRef.current = entries;
+    resetMiddleWorkerCacheOnly();
+    setMiddleProjectName(projectName || 'shared-middle-project');
+    setMiddleIndexReady(entries.length > 0);
+  };
+
+  const applySharedWorkspaceSummary = (workspace?: SharedWorkspaceState) => {
+    const nextChainMap = workspace?.chainMap || {};
+    setMiddleProjectName(workspace?.middleProjectName || '');
+    setMiddleIndexReady(Boolean(workspace?.middleReady));
+    setMiddleChainMap(nextChainMap);
+  };
+
+  const ensureSharedMiddleEntriesLoaded = async (): Promise<boolean> => {
+    if (middleAllEntriesRef.current.length > 0) return true;
+    if (!middleIndexReady) return false;
+
+    if (sharedMiddleEntriesLoadingRef.current) {
+      return sharedMiddleEntriesLoadingRef.current;
+    }
+
+    sharedMiddleEntriesLoadingRef.current = (async () => {
+      try {
+        const result = await apiService.docManagementApi.getSharedMiddleEntries();
+        const payload = result?.data as SharedMiddleEntriesPayload | undefined;
+        if (!result?.success || !payload || !Array.isArray(payload.entries) || payload.entries.length === 0) {
+          return false;
+        }
+        applySharedMiddleEntries(payload.projectName, payload.entries);
+        return true;
+      } catch (err) {
+        console.warn('Failed to restore shared middle entries:', err);
+        return false;
+      } finally {
+        sharedMiddleEntriesLoadingRef.current = null;
+      }
+    })();
+
+    return sharedMiddleEntriesLoadingRef.current;
+  };
+
+  const buildDownstreamToggleKey = (transaction: XmlTransaction, downstreamCall: string, scope: 'list' | 'modal'): string => {
+    return `${scope}::${transaction.module}::${transaction.id}::${downstreamCall}`;
+  };
+
+  const isDownstreamExpanded = (key: string): boolean => {
+    return !!expandedDownstreamMap[key];
+  };
+
+  const toggleDownstreamExpanded = (key: string) => {
+    setExpandedDownstreamMap(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
+
+  const buildChainCallNodeKey = (
+    downstreamCall: string,
+    beanName: string,
+    pathKey: string,
+    callId: string
+  ): string => {
+    return `${downstreamCall}::${beanName}::${pathKey}::${callId}`;
+  };
+
+  const getChainCallNodeKey = (
+    downstreamCall: string,
+    beanName: string,
+    call: TransactionChainCall
+  ): string => {
+    return buildChainCallNodeKey(downstreamCall, beanName, call.pathKey || '', call.call);
+  };
+
+  const getChainCallIdentity = (call: TransactionChainCall): string => {
+    return `${call.type}|${call.call}|${call.pathKey || ''}|${call.nestLevel || 0}|${call.description || ''}|${call.tableName || ''}|${
+      call.downstreamInterfaceCode || ''
+    }`;
+  };
+
+  const getCallPathStack = (call: TransactionChainCall): string[] => {
+    return (call.pathKey || '')
+      .split('>')
+      .map(item => item.trim())
+      .filter(Boolean);
+  };
+
+  const getCallFullPath = (call: TransactionChainCall): string => {
+    const stack = getCallPathStack(call);
+    stack.push(call.call);
+    return stack.join('>');
+  };
+
+  const hasExpandableChildren = (call: TransactionChainCall): boolean => {
+    return (call.type === 'local-service' || call.type === 'rpc-service') && Boolean(call.expandToken);
+  };
+
+  const isDescendantCall = (call: TransactionChainCall, ancestorFullPath: string): boolean => {
+    const path = call.pathKey || '';
+    return path === ancestorFullPath || path.startsWith(`${ancestorFullPath}>`);
+  };
+
+  const buildMiddleFileKey = (file: File): string => file.webkitRelativePath || file.name;
+
+  const normalizeMiddlePath = (path: string): string => path.replace(/\\/g, '/').toLowerCase();
+
+  const isMiddleSourceFileName = (lowerName: string): boolean => {
+    return (
+      lowerName.endsWith('.java') ||
+      lowerName.endsWith('.xml') ||
+      lowerName.endsWith('.yml') ||
+      lowerName.endsWith('.yaml') ||
+      lowerName.endsWith('.properties')
+    );
+  };
+
+  const shouldIgnoreMiddlePath = (lowerPath: string): boolean => {
+    return MIDDLE_IGNORED_PATH_SEGMENTS.some(segment => lowerPath.includes(segment));
+  };
+
+  const isServicePathMatched = (lowerPath: string, serviceName: string): boolean => {
+    if (!serviceName) return false;
+    return (
+      lowerPath.includes(`/${serviceName}/`) ||
+      lowerPath.includes(`-${serviceName}/`) ||
+      lowerPath.includes(`-${serviceName}-`) ||
+      lowerPath.includes(`_${serviceName}/`) ||
+      lowerPath.includes(`_${serviceName}_`)
+    );
+  };
+
+  const toClassName = (beanName: string): string => {
+    if (!beanName) return '';
+    return beanName.charAt(0).toUpperCase() + beanName.slice(1);
+  };
+
+  const parseDownstreamCallParts = (downstreamCall: string): { serviceName: string; apiServiceBean: string } => {
+    const segments = downstreamCall
+      .split('.')
+      .map(item => item.trim())
+      .filter(Boolean);
+    return {
+      serviceName: (segments[0] || '').toLowerCase(),
+      apiServiceBean: (segments[1] || '').toLowerCase()
+    };
+  };
+
+  const getAllMiddleSourceMetas = (): MiddleSourceFileMeta[] => {
+    if (middleSourceMetaRef.current.length > 0) {
+      return middleSourceMetaRef.current;
+    }
+
+    return middleSourceFilesRef.current.map(file => {
+      const key = buildMiddleFileKey(file);
+      const lowerPath = normalizeMiddlePath(key);
+      const lowerName = file.name.toLowerCase();
+      return {
+        file,
+        key,
+        lowerPath,
+        lowerName,
+        isJava: lowerName.endsWith('.java'),
+        isXml: lowerName.endsWith('.xml'),
+        isYaml: lowerName.endsWith('.yml') || lowerName.endsWith('.yaml'),
+        isProperties: lowerName.endsWith('.properties')
+      } as MiddleSourceFileMeta;
+    });
+  };
+
+  const selectMiddleFilesForDownstream = (downstreamCall: string): File[] => {
+    const { serviceName, apiServiceBean } = parseDownstreamCallParts(downstreamCall);
+    const apiClassName = toClassName(apiServiceBean).toLowerCase();
+    const selected: File[] = [];
+    const selectedKeys = new Set<string>();
+    const allMetas = getAllMiddleSourceMetas();
+    const getServiceFilePool = (key: string): MiddleSourceFileMeta[] => {
+      const cacheKey = key || '__all__';
+      const cached = middleServiceFilePoolRef.current[cacheKey];
+      if (cached) return cached;
+      const matched = key ? allMetas.filter(meta => isServicePathMatched(meta.lowerPath, key)) : allMetas;
+      const pool = matched.length > 0 ? matched : allMetas;
+      middleServiceFilePoolRef.current[cacheKey] = pool;
+      return pool;
+    };
+    const servicePool = getServiceFilePool(serviceName);
+    const apiImplModulePrefixes = new Set(
+      servicePool
+        .filter(
+          meta =>
+            meta.isJava &&
+            (meta.lowerName === `${apiClassName}impl.java` || meta.lowerPath.endsWith(`/${apiClassName}impl.java`))
+        )
+        .map(meta => {
+          const marker = '/src/main/java/';
+          const idx = meta.lowerPath.indexOf(marker);
+          return idx >= 0 ? meta.lowerPath.slice(0, idx + marker.length) : '';
+        })
+        .filter(Boolean)
+    );
+
+    const addFile = (file: File) => {
+      const key = buildMiddleFileKey(file);
+      if (selectedKeys.has(key)) return;
+      selectedKeys.add(key);
+      selected.push(file);
+    };
+
+    const javaCandidates: Array<{ meta: MiddleSourceFileMeta; score: number }> = [];
+    const appConfigCandidates: Array<{ meta: MiddleSourceFileMeta; score: number }> = [];
+    const resolverCandidates: Array<{ meta: MiddleSourceFileMeta; score: number }> = [];
+
+    servicePool.forEach(meta => {
+      const { lowerPath, lowerName, isJava, isXml, isYaml, isProperties } = meta;
+
+      const servicePathMatched =
+        !!serviceName && isServicePathMatched(lowerPath, serviceName);
+      const apiPathMatched =
+        !!apiServiceBean &&
+        (lowerPath.includes(apiServiceBean) ||
+          lowerPath.includes(apiClassName) ||
+          lowerName.includes(apiServiceBean) ||
+          lowerName.includes(`${apiClassName}impl`));
+      const sameApiModuleMatched =
+        apiImplModulePrefixes.size > 0 &&
+        Array.from(apiImplModulePrefixes).some(prefix => lowerPath.startsWith(prefix)) &&
+        (lowerPath.includes('/application/') ||
+          lowerPath.includes('/api/') ||
+          lowerPath.includes('/service/') ||
+          lowerPath.includes('/mapper/') ||
+          lowerPath.includes('/trs/'));
+      const appConfigMatched =
+        (isYaml || isProperties) && (lowerPath.includes('bootstart') || lowerName.startsWith('application'));
+
+      if (isJava) {
+        const serviceScopedJavaMatched =
+          (servicePathMatched || sameApiModuleMatched) &&
+          (lowerPath.includes('/api/') ||
+            lowerPath.includes('/service/') ||
+            lowerPath.includes('/mapper/') ||
+            lowerPath.includes('/trs') ||
+            lowerName.includes('service') ||
+            lowerName.includes('mapper') ||
+            lowerName.startsWith('trs'));
+        if (apiPathMatched || serviceScopedJavaMatched || sameApiModuleMatched) {
+          let score = 0;
+          if (apiPathMatched) score += 120;
+          if (serviceScopedJavaMatched) score += 40;
+          if (servicePathMatched) score += 15;
+          if (sameApiModuleMatched) score += 36;
+          if (lowerPath.includes('/api/')) score += 12;
+          if (lowerPath.includes('/service/')) score += 10;
+          if (lowerPath.includes('/mapper/')) score += 8;
+          if (lowerName.includes(`${apiClassName}impl`)) score += 20;
+          if (lowerName.includes('service')) score += 6;
+          if (lowerName.includes('mapper')) score += 5;
+          javaCandidates.push({ meta, score });
+        }
+      }
+
+      if (appConfigMatched) {
+        let score = 0;
+        if (servicePathMatched) score += 12;
+        if (lowerPath.includes('/bootstart/')) score += 6;
+        if (lowerName.startsWith('application')) score += 5;
+        appConfigCandidates.push({ meta, score });
+      }
+
+    });
+
+    allMetas.forEach(meta => {
+      if (!meta.isXml || !meta.lowerPath.includes('resolver')) return;
+      let score = 0;
+      if (meta.lowerName === 'resolver.xml') score += 20;
+      if (meta.lowerPath.includes('/src/main/resources/')) score += 20;
+      if (meta.lowerPath.includes('/router-center/')) score += 10;
+      if (meta.lowerPath.includes('/pisces-router-')) score += 8;
+      if (serviceName && (meta.lowerPath.includes(`router-${serviceName}`) || meta.lowerPath.includes(`/${serviceName}/`))) {
+        score += 30;
+      }
+      resolverCandidates.push({ meta, score });
+    });
+
+    javaCandidates
+      .sort((left, right) => {
+        const scoreDiff = right.score - left.score;
+        if (scoreDiff !== 0) return scoreDiff;
+        return left.meta.lowerPath.length - right.meta.lowerPath.length;
+      })
+      .slice(0, MIDDLE_SERVICE_JAVA_FILE_LIMIT)
+      .forEach(item => addFile(item.meta.file));
+
+    appConfigCandidates
+      .sort((left, right) => {
+        const scoreDiff = right.score - left.score;
+        if (scoreDiff !== 0) return scoreDiff;
+        return left.meta.lowerPath.length - right.meta.lowerPath.length;
+      })
+      .slice(0, MIDDLE_SERVICE_APP_CONFIG_LIMIT)
+      .forEach(item => addFile(item.meta.file));
+
+    resolverCandidates
+      .sort((left, right) => {
+        const scoreDiff = right.score - left.score;
+        if (scoreDiff !== 0) return scoreDiff;
+        return left.meta.lowerPath.length - right.meta.lowerPath.length;
+      })
+      .slice(0, MIDDLE_SERVICE_RESOLVER_FILE_LIMIT)
+      .forEach(item => addFile(item.meta.file));
+
+    const hasJava = selected.some(file => file.name.toLowerCase().endsWith('.java'));
+    if (!hasJava) {
+      allMetas.forEach(meta => {
+        const { file, lowerName } = meta;
+        if (!lowerName.endsWith('.java')) return;
+        if (
+          lowerName.includes(apiServiceBean) ||
+          lowerName.includes(apiClassName) ||
+          lowerName.includes(`${apiClassName}impl`)
+        ) {
+          addFile(file);
+        }
+      });
+    }
+
+    const stillNoJava = selected.every(file => !file.name.toLowerCase().endsWith('.java'));
+    if (stillNoJava && serviceName) {
+      allMetas.forEach(meta => {
+        if (!meta.isJava) return;
+        if (isServicePathMatched(meta.lowerPath, serviceName)) addFile(meta.file);
+      });
+    }
+
+    return selected;
+  };
+
+  const extractApiImplBeanHints = (content: string): string[] => {
+    const hints = new Set<string>();
+    const add = (value?: string) => {
+      const normalized = (value || '').trim();
+      if (!normalized) return;
+      hints.add(normalized);
+    };
+
+    const qualifierRegex = /@Qualifier\(\s*["']([^"']+)["']\s*\)/g;
+    let qualifierMatch: RegExpExecArray | null;
+    while ((qualifierMatch = qualifierRegex.exec(content)) !== null) {
+      add(qualifierMatch[1]);
+    }
+
+    const resourceNameRegex = /@Resource\(\s*name\s*=\s*["']([^"']+)["']\s*\)/g;
+    let resourceNameMatch: RegExpExecArray | null;
+    while ((resourceNameMatch = resourceNameRegex.exec(content)) !== null) {
+      add(resourceNameMatch[1]);
+    }
+
+    const resourceValueRegex = /@Resource\(\s*["']([^"']+)["']\s*\)/g;
+    let resourceValueMatch: RegExpExecArray | null;
+    while ((resourceValueMatch = resourceValueRegex.exec(content)) !== null) {
+      add(resourceValueMatch[1]);
+    }
+
+    const fieldRegex =
+      /(?:private|protected|public)\s+[A-Za-z0-9_$.<>,?\s\[\]]+\s+([A-Za-z_][A-Za-z0-9_]*)\s*;/g;
+    let fieldMatch: RegExpExecArray | null;
+    while ((fieldMatch = fieldRegex.exec(content)) !== null) {
+      const fieldName = (fieldMatch[1] || '').trim();
+      if (!fieldName) continue;
+      if (fieldName.startsWith('trs') || fieldName.startsWith('api')) {
+        add(fieldName);
+      }
+    }
+
+    return Array.from(hints);
+  };
+
+  const normalizeTypeHint = (rawType: string): string => {
+    const compact = rawType
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\[\]/g, ' ')
+      .trim();
+    if (!compact) return '';
+    const base = compact.split(/\s+/)[0] || '';
+    const simpleName = base.split('.').pop()?.trim() || '';
+    return /^[A-Z]/.test(simpleName) ? simpleName : '';
+  };
+
+  const isTraceableTypeHint = (className: string): boolean => {
+    return /Service$|Mapper$|Impl$/.test(className) || /^(Api|Rt|Trs)[A-Z]/.test(className);
+  };
+
+  const buildTypeHintVariants = (className: string): string[] => {
+    if (!className) return [];
+    const variants = new Set<string>();
+    variants.add(className.toLowerCase());
+    if (className.endsWith('Impl')) {
+      variants.add(className.slice(0, -4).toLowerCase());
+    } else {
+      variants.add(`${className}Impl`.toLowerCase());
+    }
+    return Array.from(variants);
+  };
+
+  const extractReferencedTypeHints = (content: string): string[] => {
+    const hints = new Set<string>();
+    const add = (rawType?: string) => {
+      const className = normalizeTypeHint(rawType || '');
+      if (!className || !isTraceableTypeHint(className)) return;
+      hints.add(className);
+    };
+
+    const fieldTypeRegex =
+      /(?:private|protected|public)\s+(?:static\s+|final\s+|volatile\s+|transient\s+)*([A-Za-z_][A-Za-z0-9_$.]*(?:\s*<[^;=]+>)?)\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:=[^;]*)?;/g;
+    let fieldTypeMatch: RegExpExecArray | null;
+    while ((fieldTypeMatch = fieldTypeRegex.exec(content)) !== null) {
+      add(fieldTypeMatch[1]);
+    }
+
+    return Array.from(hints);
+  };
+
+  const enrichSelectedMiddleFilesByApiHints = async (
+    downstreamCall: string,
+    selectedFiles: File[]
+  ): Promise<File[]> => {
+    if (selectedFiles.length === 0) return selectedFiles;
+    const { apiServiceBean } = parseDownstreamCallParts(downstreamCall);
+    if (!apiServiceBean) return selectedFiles;
+    const apiClassName = toClassName(apiServiceBean).toLowerCase();
+    if (!apiClassName) return selectedFiles;
+
+    const selected = [...selectedFiles];
+    const selectedKeys = new Set(selected.map(file => buildMiddleFileKey(file)));
+    const allMetas = getAllMiddleSourceMetas();
+
+    const addFile = (file: File) => {
+      const key = buildMiddleFileKey(file);
+      if (selectedKeys.has(key)) return;
+      selectedKeys.add(key);
+      selected.push(file);
+    };
+
+    const apiImplFiles = selected.filter(file => {
+      const key = buildMiddleFileKey(file).toLowerCase();
+      const lowerName = file.name.toLowerCase();
+      return lowerName === `${apiClassName}impl.java` || key.endsWith(`/${apiClassName}impl.java`);
+    });
+
+    if (apiImplFiles.length === 0) return selected;
+
+    const beanHints = new Set<string>();
+    for (const file of apiImplFiles) {
+      const path = buildMiddleFileKey(file);
+      let content = middleFileContentCacheRef.current[path];
+      if (content === undefined) {
+        content = await file.text();
+        middleFileContentCacheRef.current[path] = content;
+      }
+      extractApiImplBeanHints(content).forEach(hint => beanHints.add(hint));
+    }
+
+    if (beanHints.size === 0) return selected;
+
+    const classNameHints = new Set<string>();
+    Array.from(beanHints).forEach(hint => {
+      const className = toClassName(hint);
+      if (!className) return;
+      classNameHints.add(className.toLowerCase());
+      classNameHints.add(`${className}Impl`.toLowerCase());
+    });
+    if (classNameHints.size === 0) return selected;
+
+    allMetas.forEach(meta => {
+      if (!meta.isJava) return;
+      const className = meta.lowerName.endsWith('.java') ? meta.lowerName.slice(0, -5) : meta.lowerName;
+      if (classNameHints.has(className)) {
+        addFile(meta.file);
+      }
+    });
+
+    return selected;
+  };
+
+  const enrichSelectedMiddleFilesByReferencedTypes = async (selectedFiles: File[]): Promise<File[]> => {
+    if (selectedFiles.length === 0) return selectedFiles;
+
+    const selected = [...selectedFiles];
+    const selectedKeys = new Set(selected.map(file => buildMiddleFileKey(file)));
+    const allMetas = getAllMiddleSourceMetas();
+    const javaClassMap: Record<string, MiddleSourceFileMeta[]> = {};
+    allMetas.forEach(meta => {
+      if (!meta.isJava) return;
+      const className = meta.lowerName.endsWith('.java') ? meta.lowerName.slice(0, -5) : meta.lowerName;
+      if (!javaClassMap[className]) javaClassMap[className] = [];
+      javaClassMap[className].push(meta);
+    });
+
+    const pendingJavaFiles = selected.filter(file => file.name.toLowerCase().endsWith('.java'));
+    const scannedKeys = new Set<string>();
+    let appendedJavaCount = 0;
+
+    while (pendingJavaFiles.length > 0) {
+      const file = pendingJavaFiles.shift();
+      if (!file) continue;
+      const path = buildMiddleFileKey(file);
+      if (scannedKeys.has(path)) continue;
+      scannedKeys.add(path);
+
+      let content = middleFileContentCacheRef.current[path];
+      if (content === undefined) {
+        content = await file.text();
+        middleFileContentCacheRef.current[path] = content;
+      }
+
+      const classHints = new Set<string>();
+      extractReferencedTypeHints(content).forEach(hint => {
+        buildTypeHintVariants(hint).forEach(variant => classHints.add(variant));
+      });
+
+      if (classHints.size === 0) continue;
+
+      Array.from(classHints).forEach(classHint => {
+        const matchedMetas = javaClassMap[classHint] || [];
+        matchedMetas.forEach(meta => {
+          if (selectedKeys.has(meta.key)) return;
+          selectedKeys.add(meta.key);
+          selected.push(meta.file);
+          if (meta.isJava && appendedJavaCount < MIDDLE_REFERENCE_HINT_JAVA_LIMIT) {
+            pendingJavaFiles.push(meta.file);
+            appendedJavaCount += 1;
+          }
+        });
+      });
+
+      if (appendedJavaCount >= MIDDLE_REFERENCE_HINT_JAVA_LIMIT) {
+        break;
+      }
+    }
+
+    return selected;
+  };
+
+  const prepareFocusedMiddleFilesForDownstream = async (downstreamCall: string): Promise<File[]> => {
+    const initialFiles = selectMiddleFilesForDownstream(downstreamCall);
+    const withApiHints = await enrichSelectedMiddleFilesByApiHints(downstreamCall, initialFiles);
+    return enrichSelectedMiddleFilesByReferencedTypes(withApiHints);
+  };
+
+  const mergeFileEntries = (baseEntries: FileEntry[], additionalEntries: FileEntry[]): FileEntry[] => {
+    if (additionalEntries.length === 0) return baseEntries;
+    const merged = [...baseEntries];
+    const seenPaths = new Set(baseEntries.map(entry => entry.path));
+    additionalEntries.forEach(entry => {
+      if (seenPaths.has(entry.path)) return;
+      seenPaths.add(entry.path);
+      merged.push(entry);
+    });
+    return merged;
+  };
+
+  const readMiddleFilesAsEntries = async (
+    files: File[],
+    downstreamCall: string,
+    progressStart: number,
+    progressEnd: number
+  ): Promise<FileEntry[]> => {
+    if (files.length === 0) return [];
+    const entries: FileEntry[] = [];
+    let completed = 0;
+    const chunkSize = 12;
+
+    for (let i = 0; i < files.length; i += chunkSize) {
+      const chunk = files.slice(i, i + chunkSize);
+      const chunkEntries = await Promise.all(
+        chunk.map(async file => {
+          const path = buildMiddleFileKey(file);
+          let content = middleFileContentCacheRef.current[path];
+          if (content === undefined) {
+            content = await file.text();
+            middleFileContentCacheRef.current[path] = content;
+          }
+          return { name: file.name, path, content };
+        })
+      );
+      entries.push(...chunkEntries);
+      completed += chunk.length;
+      const ratio = completed / files.length;
+      const progress = Math.min(progressEnd, Math.round(progressStart + (progressEnd - progressStart) * ratio));
+      setResolvingDownstreamProgressMap(prev => ({
+        ...prev,
+        [downstreamCall]: progress
+      }));
+      // Yield to UI so progress can refresh.
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+    }
+
+    return entries;
+  };
+
+  const buildAllMiddleEntriesForUpload = async (
+    files: File[],
+    totalScannedFiles: number,
+    skippedCount: number
+  ): Promise<FileEntry[]> => {
+    if (files.length === 0) return [];
+
+    const entries: FileEntry[] = [];
+    const chunkSize = 24;
+
+    for (let i = 0; i < files.length; i += chunkSize) {
+      const chunk = files.slice(i, i + chunkSize);
+      const chunkEntries = await Promise.all(
+        chunk.map(async file => {
+          const path = buildMiddleFileKey(file);
+          let content = middleFileContentCacheRef.current[path];
+          if (content === undefined) {
+            content = await file.text();
+            middleFileContentCacheRef.current[path] = content;
+          }
+          return { name: file.name, path, content };
+        })
+      );
+      entries.push(...chunkEntries);
+      setMiddleUploadProgress({
+        scanned: totalScannedFiles,
+        total: totalScannedFiles,
+        accepted: entries.length,
+        skipped: skippedCount
+      });
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+    }
+
+    return entries;
+  };
+
+  const loadMiddleEntriesByServiceKey = async (
+    serviceKey: string,
+    downstreamCall: string,
+    progressStart: number,
+    progressEnd: number,
+    fileSelector: () => File[] | Promise<File[]>
+  ): Promise<FileEntry[]> => {
+    const cached = middleServiceEntriesRef.current[serviceKey];
+    if (cached) return cached;
+
+    const pending = middleServiceEntriesLoadingRef.current[serviceKey];
+    if (pending) {
+      setResolvingDownstreamProgressMap(prev => ({
+        ...prev,
+        [downstreamCall]: Math.max(prev[downstreamCall] || 1, progressStart)
+      }));
+      return pending;
+    }
+
+    const loadingPromise = (async () => {
+      const files = await fileSelector();
+      const entries = await readMiddleFilesAsEntries(files, downstreamCall, progressStart, progressEnd);
+      middleServiceEntriesRef.current[serviceKey] = entries;
+      return entries;
+    })();
+    middleServiceEntriesLoadingRef.current[serviceKey] = loadingPromise;
+
+    try {
+      return await loadingPromise;
+    } finally {
+      delete middleServiceEntriesLoadingRef.current[serviceKey];
+    }
+  };
+
+  const prepareServiceEntriesForDownstream = async (
+    downstreamCall: string
+  ): Promise<{ serviceKey: string; entries: FileEntry[] } | null> => {
+    if (middleAllEntriesRef.current.length === 0) {
+      const restored = await ensureSharedMiddleEntriesLoaded();
+      if (!restored) return null;
+    }
+
+    setResolvingDownstreamProgressMap(prev => ({
+      ...prev,
+      [downstreamCall]: Math.max(prev[downstreamCall] || 1, 72)
+    }));
+
+    return {
+      serviceKey: MIDDLE_GLOBAL_SERVICE_KEY,
+      entries: middleAllEntriesRef.current
+    };
+  };
+
+  const prepareAllEntriesForDownstream = async (
+    downstreamCall: string
+  ): Promise<{ serviceKey: string; entries: FileEntry[] } | null> => {
+    return prepareServiceEntriesForDownstream(downstreamCall);
+  };
+
+  const countChainCalls = (chain: DownstreamCallChain): number => {
+    return chain.domainServices.reduce((total, domain) => total + domain.transactionCalls.length, 0);
+  };
+
+  const collectChainCalls = (chain: DownstreamCallChain): TransactionChainCall[] => {
+    return chain.domainServices.flatMap(domain => domain.transactionCalls);
+  };
+
+  const countChainDescribedCalls = (chain: DownstreamCallChain): number => {
+    let total = 0;
+    chain.domainServices.forEach(domain => {
+      domain.transactionCalls.forEach(call => {
+        if (call.description && call.description.trim()) total += 1;
+      });
+    });
+    return total;
+  };
+
+  const countChainDownstreamCodes = (chain: DownstreamCallChain): number => {
+    return collectChainCalls(chain).filter(
+      call => call.type === 'downstream' && Boolean(call.downstreamInterfaceCode && call.downstreamInterfaceCode.trim())
+    ).length;
+  };
+
+  const chooseRicherChain = (
+    primary: DownstreamCallChain | undefined,
+    fallback: DownstreamCallChain | undefined
+  ): DownstreamCallChain | undefined => {
+    if (!primary) return fallback;
+    if (!fallback) return primary;
+
+    const primaryScore =
+      countChainCalls(primary) * 3 +
+      countChainDescribedCalls(primary) * 2 +
+      countChainDownstreamCodes(primary) * 3 +
+      (primary.apiDescription ? 2 : 0) -
+      (primary.unresolvedReason ? 8 : 0);
+    const fallbackScore =
+      countChainCalls(fallback) * 3 +
+      countChainDescribedCalls(fallback) * 2 +
+      countChainDownstreamCodes(fallback) * 3 +
+      (fallback.apiDescription ? 2 : 0) -
+      (fallback.unresolvedReason ? 8 : 0);
+    return fallbackScore > primaryScore ? fallback : primary;
+  };
+
+  const clearPendingWorkerTimeout = (requestId: string) => {
+    const timeoutId = pendingWorkerTimeoutRef.current[requestId];
+    if (timeoutId === undefined) return;
+    window.clearTimeout(timeoutId);
+    delete pendingWorkerTimeoutRef.current[requestId];
+  };
+
+  const resolveDownstreamChainInWorker = async (
+    serviceKey: string,
+    downstreamCall: string,
+    maxDepth: number,
+    entriesForInit?: FileEntry[]
+  ): Promise<DownstreamCallChain | undefined> => {
+    const worker = middleWorkerRef.current;
+    if (!worker) {
+      const fallbackEntries = entriesForInit || middleServiceEntriesRef.current[serviceKey] || [];
+      if (fallbackEntries.length === 0) return undefined;
+      const resolver = createMiddleProjectChainResolver(fallbackEntries);
+      return resolver.resolveOne(downstreamCall, { maxDepth });
+    }
+
+    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    return await new Promise<DownstreamCallChain | undefined>((resolve, reject) => {
+      pendingWorkerRequestsRef.current[requestId] = {
+        kind: 'chain',
+        downstreamCall,
+        resolve,
+        reject
+      };
+      pendingWorkerTimeoutRef.current[requestId] = window.setTimeout(() => {
+        const pending = pendingWorkerRequestsRef.current[requestId];
+        if (!pending || pending.kind !== 'chain') return;
+        delete pendingWorkerRequestsRef.current[requestId];
+        clearPendingWorkerTimeout(requestId);
+        pending.reject(new Error(`resolve chain timeout after ${MIDDLE_WORKER_CHAIN_TIMEOUT_MS}ms`));
+      }, MIDDLE_WORKER_CHAIN_TIMEOUT_MS);
+
+      const request: MiddleWorkerRequest = {
+        type: 'resolve-downstream',
+        requestId,
+        serviceKey,
+        downstreamCall,
+        maxDepth,
+        entries: entriesForInit
+      };
+      worker.postMessage(request);
+    });
+  };
+
+  const resolveCallNodeLayerInWorker = async (
+    serviceKey: string,
+    expandToken: TransactionCallExpandToken,
+    entriesForInit?: FileEntry[]
+  ): Promise<TransactionChainCall[]> => {
+    const worker = middleWorkerRef.current;
+    if (!worker) {
+      const fallbackEntries = entriesForInit || middleServiceEntriesRef.current[serviceKey] || [];
+      if (fallbackEntries.length === 0) return [];
+      const resolver = createMiddleProjectChainResolver(fallbackEntries);
+      return resolver.resolveCallLayer(expandToken);
+    }
+
+    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    return await new Promise<TransactionChainCall[]>((resolve, reject) => {
+      pendingWorkerRequestsRef.current[requestId] = {
+        kind: 'node-layer',
+        resolve,
+        reject
+      };
+      pendingWorkerTimeoutRef.current[requestId] = window.setTimeout(() => {
+        const pending = pendingWorkerRequestsRef.current[requestId];
+        if (!pending || pending.kind !== 'node-layer') return;
+        delete pendingWorkerRequestsRef.current[requestId];
+        clearPendingWorkerTimeout(requestId);
+        pending.reject(new Error(`resolve node layer timeout after ${MIDDLE_WORKER_NODE_LAYER_TIMEOUT_MS}ms`));
+      }, MIDDLE_WORKER_NODE_LAYER_TIMEOUT_MS);
+
+      const request: MiddleWorkerRequest = {
+        type: 'resolve-node-layer',
+        requestId,
+        serviceKey,
+        expandToken,
+        entries: entriesForInit
+      };
+      worker.postMessage(request);
+    });
+  };
+
+  const resetMiddleResolverState = () => {
+    sharedMiddleEntriesLoadingRef.current = null;
+    middleSourceFilesRef.current = [];
+    middleSourceMetaRef.current = [];
+    middleServiceFilePoolRef.current = {};
+    middleResolverFilesRef.current = [];
+    middleServiceResolverRef.current = {};
+    middleServiceEntriesRef.current = {};
+    middleServiceEntriesLoadingRef.current = {};
+    middleFileContentCacheRef.current = {};
+    middleAllEntriesRef.current = [];
+    middleChainMapRef.current = {};
+    resolvingDownstreamMapRef.current = {};
+    resetMiddleWorkerCacheOnly();
+    setMiddleProjectName('');
+    setMiddleChainMap({});
+    setMiddleDownstreamTotal(0);
+    setMiddleUploadProgress(null);
+    setResolvingDownstreamMap({});
+    setResolvingDownstreamProgressMap({});
+    setExpandingCallNodeMap({});
+    setExpandedCallNodeMap({});
+    setLoadedCallNodeMap({});
+    setMiddleIndexReady(false);
+    setExpandedDownstreamMap({});
+  };
+
+  const resolveDownstreamByPreparedEntries = async (
+    downstreamCall: string,
+    preparedEntries: { serviceKey: string; entries: FileEntry[] }
+  ): Promise<DownstreamCallChain | undefined> => {
+    const needInitEntries = !middleServiceResolverRef.current[preparedEntries.serviceKey];
+    const chain = await resolveDownstreamChainInWorker(
+      preparedEntries.serviceKey,
+      downstreamCall,
+      0,
+      needInitEntries ? preparedEntries.entries : undefined
+    );
+    middleServiceResolverRef.current[preparedEntries.serviceKey] = true;
+    return chain;
+  };
+
+  const ensureDownstreamChainResolved = async (
+    downstreamCall: string,
+    options?: { forceAllEntries?: boolean; forceRefresh?: boolean }
+  ): Promise<DownstreamCallChain | undefined> => {
+    const normalizedCall = downstreamCall.trim();
+    if (!normalizedCall) return undefined;
+
+    const existing = middleChainMapRef.current[normalizedCall];
+    if (existing && !options?.forceAllEntries && !options?.forceRefresh) return existing;
+
+    if (resolvingDownstreamMapRef.current[normalizedCall]) return existing;
+    if (!middleIndexReady) return undefined;
+
+    setResolvingDownstreamMap(prev => ({
+      ...prev,
+      [normalizedCall]: true
+    }));
+    setResolvingDownstreamProgressMap(prev => ({
+      ...prev,
+      [normalizedCall]: 1
+    }));
+
+    try {
+      // Yield once so the "解析中" state can render before heavy parsing.
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+
+      let resolvedChain: DownstreamCallChain | undefined;
+      if (options?.forceAllEntries) {
+        const preparedAll = await prepareAllEntriesForDownstream(normalizedCall);
+        if (!preparedAll) return existing;
+        const allChain = await resolveDownstreamByPreparedEntries(normalizedCall, preparedAll);
+        if (!allChain) return existing;
+        resolvedChain = chooseRicherChain(existing, allChain) || allChain;
+      } else {
+        const preparedService = await prepareServiceEntriesForDownstream(normalizedCall);
+        if (!preparedService) return existing;
+        const serviceChain = await resolveDownstreamByPreparedEntries(normalizedCall, preparedService);
+        if (!serviceChain) return existing;
+        resolvedChain = chooseRicherChain(existing, serviceChain) || serviceChain;
+      }
+
+      if (!resolvedChain) return undefined;
+
+      setResolvingDownstreamProgressMap(prev => ({
+        ...prev,
+        [normalizedCall]: 100
+      }));
+      setMiddleChainMap(prev => {
+        if (prev[normalizedCall]) {
+          const richer = chooseRicherChain(prev[normalizedCall], resolvedChain) || prev[normalizedCall];
+          if (richer === prev[normalizedCall]) return prev;
+          return {
+            ...prev,
+            [normalizedCall]: richer
+          };
+        }
+        return {
+          ...prev,
+          [normalizedCall]: resolvedChain
+        };
+      });
+      return resolvedChain;
+    } catch (err) {
+      console.error(`Failed to resolve downstream chain for ${normalizedCall}`, err);
+      return existing;
+    } finally {
+      setResolvingDownstreamMap(prev => {
+        if (!prev[normalizedCall]) return prev;
+        const next = { ...prev };
+        delete next[normalizedCall];
+        return next;
+      });
+      setResolvingDownstreamProgressMap(prev => {
+        if (!prev[normalizedCall]) return prev;
+        const next = { ...prev };
+        delete next[normalizedCall];
+        return next;
+      });
+    }
+  };
+
+  const mergeCallNodeChildren = (
+    downstreamCall: string,
+    beanName: string,
+    parentCall: TransactionChainCall,
+    children: TransactionChainCall[]
+  ) => {
+    if (!children || children.length === 0) return;
+    setMiddleChainMap(prev => {
+      const chain = prev[downstreamCall];
+      if (!chain) return prev;
+
+      const domainIndex = chain.domainServices.findIndex(domain => domain.beanName === beanName);
+      if (domainIndex < 0) return prev;
+
+      const targetDomain = chain.domainServices[domainIndex];
+      const existingCalls = targetDomain.transactionCalls || [];
+      const existingIdentities = new Set(existingCalls.map(item => getChainCallIdentity(item)));
+      const newChildren = children.filter(item => !existingIdentities.has(getChainCallIdentity(item)));
+      if (newChildren.length === 0) return prev;
+
+      const parentNodeKey = getChainCallNodeKey(downstreamCall, beanName, parentCall);
+      const parentIndex = existingCalls.findIndex(item => getChainCallNodeKey(downstreamCall, beanName, item) === parentNodeKey);
+      if (parentIndex < 0) return prev;
+
+      const parentFullPath = getCallFullPath(parentCall);
+      let insertAt = parentIndex + 1;
+      while (insertAt < existingCalls.length && isDescendantCall(existingCalls[insertAt], parentFullPath)) {
+        insertAt += 1;
+      }
+
+      const nextCalls = [
+        ...existingCalls.slice(0, insertAt),
+        ...newChildren,
+        ...existingCalls.slice(insertAt)
+      ];
+
+      const nextDomainServices = [...chain.domainServices];
+      nextDomainServices[domainIndex] = {
+        ...targetDomain,
+        transactionCalls: nextCalls
+      };
+
+      return {
+        ...prev,
+        [downstreamCall]: {
+          ...chain,
+          domainServices: nextDomainServices
+        }
+      };
+    });
+  };
+
+  const isCallVisibleUnderLazyTree = (
+    downstreamCall: string,
+    beanName: string,
+    call: TransactionChainCall,
+    expandableNodeKeys: Set<string>
+  ): boolean => {
+    const ancestors = getCallPathStack(call);
+    if (ancestors.length === 0) return true;
+
+    for (let i = 0; i < ancestors.length; i += 1) {
+      const ancestorPath = ancestors.slice(0, i).join('>');
+      const ancestorCall = ancestors[i];
+      const ancestorNodeKey = buildChainCallNodeKey(downstreamCall, beanName, ancestorPath, ancestorCall);
+      if (!expandableNodeKeys.has(ancestorNodeKey)) continue;
+      if (!expandedCallNodeMap[ancestorNodeKey]) return false;
+    }
+    return true;
+  };
+
+  const findCallByNodeKey = (
+    downstreamCall: string,
+    beanName: string,
+    nodeKey: string
+  ): TransactionChainCall | undefined => {
+    const chain = middleChainMapRef.current[downstreamCall];
+    if (!chain) return undefined;
+    const domain = chain.domainServices.find(item => item.beanName === beanName);
+    if (!domain) return undefined;
+    return domain.transactionCalls.find(item => getChainCallNodeKey(downstreamCall, beanName, item) === nodeKey);
+  };
+
+  const handleCallNodeToggle = async (
+    downstreamCall: string,
+    beanName: string,
+    call: TransactionChainCall
+  ) => {
+    if (!hasExpandableChildren(call)) return;
+
+    const initialNodeKey = getChainCallNodeKey(downstreamCall, beanName, call);
+    let targetCall = call;
+    let targetExpandToken = call.expandToken;
+
+    if (!targetExpandToken) {
+      await ensureDownstreamChainResolved(downstreamCall, { forceRefresh: true });
+      const refreshed = findCallByNodeKey(downstreamCall, beanName, initialNodeKey);
+      if (refreshed?.expandToken) {
+        targetCall = refreshed;
+        targetExpandToken = refreshed.expandToken;
+      } else {
+        return;
+      }
+    }
+
+    const nodeKey = getChainCallNodeKey(downstreamCall, beanName, targetCall);
+    const isExpanded = !!expandedCallNodeMap[nodeKey];
+
+    if (isExpanded) {
+      setExpandedCallNodeMap(prev => ({
+        ...prev,
+        [nodeKey]: false
+      }));
+      return;
+    }
+
+    setExpandedCallNodeMap(prev => ({
+      ...prev,
+      [nodeKey]: true
+    }));
+
+    if (loadedCallNodeMap[nodeKey] || expandingCallNodeMap[nodeKey]) {
+      return;
+    }
+
+    setExpandingCallNodeMap(prev => ({
+      ...prev,
+      [nodeKey]: true
+    }));
+
+    let mergedChildrenCount = 0;
+    try {
+      const prepared = await prepareServiceEntriesForDownstream(downstreamCall);
+      if (!prepared) return;
+
+      const needInitEntries = !middleServiceResolverRef.current[prepared.serviceKey];
+      let children = await resolveCallNodeLayerInWorker(
+        prepared.serviceKey,
+        targetExpandToken,
+        needInitEntries ? prepared.entries : undefined
+      );
+      middleServiceResolverRef.current[prepared.serviceKey] = true;
+
+      // If service-scoped layer is empty, retry once with full uploaded code.
+      if (children.length === 0 && prepared.serviceKey !== '__all__') {
+        const preparedAll = await prepareAllEntriesForDownstream(downstreamCall);
+        if (preparedAll) {
+          const needInitAll = !middleServiceResolverRef.current[preparedAll.serviceKey];
+          const allChildren = await resolveCallNodeLayerInWorker(
+            preparedAll.serviceKey,
+            targetExpandToken,
+            needInitAll ? preparedAll.entries : undefined
+          );
+          middleServiceResolverRef.current[preparedAll.serviceKey] = true;
+          if (allChildren.length > children.length) {
+            children = allChildren;
+          }
+        }
+      }
+
+      mergedChildrenCount = children.length;
+      mergeCallNodeChildren(downstreamCall, beanName, targetCall, children);
+    } catch (err) {
+      console.error(`Failed to resolve next layer for ${downstreamCall}`, err);
+    } finally {
+      setExpandingCallNodeMap(prev => {
+        if (!prev[nodeKey]) return prev;
+        const next = { ...prev };
+        delete next[nodeKey];
+        return next;
+      });
+      if (mergedChildrenCount > 0) {
+        setLoadedCallNodeMap(prev => ({
+          ...prev,
+          [nodeKey]: true
+        }));
+      }
+    }
+  };
+
+  const handleDownstreamToggle = (transaction: XmlTransaction, downstreamCall: string, scope: 'list' | 'modal') => {
+    const toggleKey = buildDownstreamToggleKey(transaction, downstreamCall, scope);
+    const expanded = isDownstreamExpanded(toggleKey);
+
+    if (expanded) {
+      toggleDownstreamExpanded(toggleKey);
+      return;
+    }
+
+    toggleDownstreamExpanded(toggleKey);
+
+    const chain = getChainForCall(transaction, downstreamCall);
+    if (!middleIndexReady) return;
+    if (!chain) {
+      void ensureDownstreamChainResolved(downstreamCall);
+    }
+  };
+
+  useEffect(() => {
+    const worker = new Worker(new URL('../../workers/middleChainWorker.ts', import.meta.url), {
+      type: 'module'
+    });
+    middleWorkerRef.current = worker;
+
+    worker.onmessage = (event: MessageEvent<MiddleWorkerResponse>) => {
+      const message = event.data;
+      if (!message || !('type' in message)) return;
+
+      if (message.type === 'progress') {
+        const pending = pendingWorkerRequestsRef.current[message.requestId];
+        if (!pending || pending.kind !== 'chain') return;
+        setResolvingDownstreamProgressMap(prev => ({
+          ...prev,
+          [pending.downstreamCall]: Math.max(prev[pending.downstreamCall] || 1, Math.min(99, message.progress))
+        }));
+        return;
+      }
+
+      if (message.type === 'result-downstream') {
+        const pending = pendingWorkerRequestsRef.current[message.requestId];
+        if (!pending || pending.kind !== 'chain') return;
+        delete pendingWorkerRequestsRef.current[message.requestId];
+        clearPendingWorkerTimeout(message.requestId);
+        pending.resolve(message.chain);
+        return;
+      }
+
+      if (message.type === 'result-node-layer') {
+        const pending = pendingWorkerRequestsRef.current[message.requestId];
+        if (!pending || pending.kind !== 'node-layer') return;
+        delete pendingWorkerRequestsRef.current[message.requestId];
+        clearPendingWorkerTimeout(message.requestId);
+        pending.resolve(message.children || []);
+        return;
+      }
+
+      if (message.type === 'error') {
+        const pending = pendingWorkerRequestsRef.current[message.requestId];
+        if (!pending) return;
+        delete pendingWorkerRequestsRef.current[message.requestId];
+        clearPendingWorkerTimeout(message.requestId);
+        pending.reject(new Error(message.message));
+      }
+    };
+
+    worker.onerror = err => {
+      console.error('Middle chain worker crashed', err);
+    };
+
+    return () => {
+      const pendingRequests = pendingWorkerRequestsRef.current;
+      Object.keys(pendingRequests).forEach(key => {
+        pendingRequests[key].reject(new Error('worker terminated'));
+        clearPendingWorkerTimeout(key);
+      });
+      pendingWorkerRequestsRef.current = {};
+      Object.keys(pendingWorkerTimeoutRef.current).forEach(clearPendingWorkerTimeout);
+      worker.terminate();
+      middleWorkerRef.current = null;
+    };
+  }, []);
   
-  // Load configuration and try to fetch data (Auto-load)
+  // Load configuration and restore shared caches without forcing a git refresh.
   const loadAndFetchData = async () => {
-    console.log('Starting auto-load sequence...');
+    console.log('Starting cached workspace restore sequence...');
     try {
       // 重新加载认证方式 - 如果数据库中没有，使用默认值 'token'
       let authType = 'token';  // 默认使用 token 方式
@@ -195,101 +1633,46 @@ export const DocManagement: React.FC = () => {
           isConnected: false,
           connectionError: undefined
         });
-        
-        // 如果有有效的仓库配置，尝试从后端 code 目录加载 (skipGitFetch=false)
-        if (repoUrl && selectedBranch) {
-          console.log('Initiating fetch from backend...');
-          setIsProcessing(true);
-          try {
-             // Fetch from backend with skipGitFetch=false (尝试同步最新代码)
-             const response = await fetch('/api/nacos-sync/fetch-git-repository', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  repoUrl: repoUrl,
-                  branch: selectedBranch,
-                  authType: finalAuthType,
-                  accessToken: finalAuthType === 'token' ? accessToken : undefined,
-                  privateKey: finalAuthType === 'ssh' ? privateKey : undefined,
-                  skipGitFetch: false // 关键修改：尝试 git pull 同步代码，后端已做降级处理（失败则使用现有代码）
-                })
-             });
-             const result = await response.json();
-             
-             if (result.success && Array.isArray(result.data) && result.data.length > 0) {
-                 const newTransactions = parseProjectFiles(result.data);
-                 setTransactions(newTransactions);
-                 setSourceMode('online');
-                 
-                 // UPDATE CACHE HERE
-                 const remoteInterfaces = newTransactions.map(t => ({
-                    id: t.id,
-                    name: t.trsName,
-                    module: t.module,
-                    description: '',
-                    inputs: t.inputs,
-                    outputs: t.outputs,
-                    downstreamCalls: t.downstreamCalls,
-                    filePath: t.filePath
-                 }));
-                 try {
-                     await apiService.configApi.save({
-                        configKey: 'doc-management-interface-cache',
-                        configValue: JSON.stringify({
-                            interfaces: remoteInterfaces,
-                            timestamp: Date.now(),
-                            repoUrl: repoUrl,
-                            branch: selectedBranch
-                        }),
-                        configType: 'DOC_MANAGEMENT',
-                        description: 'Document Management interface cache'
-                     });
-                     console.log('✓ Updated interface cache in database');
-                 } catch (cacheErr) {
-                     console.warn('Failed to update interface cache:', cacheErr);
-                 }
 
-                 recordAction('接口管理 - 文档管理', `初始化 - 从本地代码缓存加载 ${newTransactions.length} 个接口`);
-                 console.log(`✓ Loaded ${newTransactions.length} interfaces from local code cache`);
-             } else {
-                 // 如果失败（比如 code 目录不存在），回退到读取数据库缓存
-                 console.warn('Failed to load from code cache or empty, falling back to DB cache. Reason:', result.message);
-                 throw new Error(result.message || "Code cache empty or invalid");
-             }
-          } catch (e) {
-             console.warn('Error loading from code cache, trying DB cache:', e);
-             // 回退逻辑：尝试从数据库缓存加载
-             const cachedResult = await apiService.configApi.getByKey('doc-management-interface-cache');
-             if (cachedResult && cachedResult.configValue) {
-                const cacheData = JSON.parse(cachedResult.configValue);
-                if (cacheData.interfaces && Array.isArray(cacheData.interfaces)) {
-                  const transactions = cacheData.interfaces.map((iface: any) => ({
-                    id: iface.id,
-                    trsName: iface.name,
-                    module: iface.module,
-                    actionRef: '',
-                    template: 'ExecuteLogTemplate',
-                    inputs: iface.inputs || [],
-                    outputs: iface.outputs || [],
-                    filePath: iface.filePath || '',
-                    actionClass: '',
-                    downstreamCalls: iface.downstreamCalls || []
-                  }));
-                  setTransactions(transactions);
-                  setSourceMode('online');
-                  recordAction('接口管理 - 文档管理', `初始化 - 从数据库缓存加载 ${transactions.length} 个接口`);
-                  alert(`无法连接到代码仓库，已加载本地缓存的 ${transactions.length} 个接口。\n错误: ${e instanceof Error ? e.message : '未知错误'}`);
-                } else {
-                    alert(`无法连接到代码仓库，且本地没有缓存数据。\n错误: ${e instanceof Error ? e.message : '未知错误'}`);
-                }
-             } else {
-                 alert(`无法连接到代码仓库，且本地没有缓存数据。\n错误: ${e instanceof Error ? e.message : '未知错误'}`);
-             }
-          } finally {
-             setIsProcessing(false);
+        try {
+          const cachedResult = await apiService.configApi.getByKey('doc-management-interface-cache');
+          if (cachedResult?.configValue) {
+            const cacheData = JSON.parse(cachedResult.configValue);
+            if (Array.isArray(cacheData.interfaces) && cacheData.interfaces.length > 0) {
+              const cachedTransactions = buildTransactionsFromCachedInterfaces(cacheData.interfaces);
+              setTransactions(applyMiddleChains(cachedTransactions));
+              setSourceMode(cacheData.repoUrl === 'local-upload' ? 'local' : 'online');
+              recordAction('接口管理 - 文档管理', `初始化 - 从共享接口缓存加载 ${cachedTransactions.length} 个接口`);
+              console.log(`✓ Restored ${cachedTransactions.length} interfaces from shared cache`);
+            } else {
+              console.log('No cached interfaces found in doc-management-interface-cache');
+            }
+          } else {
+            console.log('No doc-management-interface-cache found');
           }
-        } else {
-            console.log('Skipping auto-load: Missing repoUrl or branch configuration');
+        } catch (cacheErr) {
+          console.warn('Failed to restore interface cache:', cacheErr);
+        }
+
+        try {
+          const sharedWorkspaceResult = await apiService.docManagementApi.getSharedWorkspace();
+          if (sharedWorkspaceResult?.success && sharedWorkspaceResult.data) {
+            applySharedWorkspaceSummary(sharedWorkspaceResult.data as SharedWorkspaceState);
+            const workspace = sharedWorkspaceResult.data as SharedWorkspaceState;
+            if (workspace.middleReady) {
+              console.log(
+                `✓ Restored shared middle workspace summary: ${workspace.middleProjectName || 'unnamed'} (${workspace.middleEntryCount} files, ${workspace.chainCount} cached chains)`
+              );
+            } else {
+              console.log('No shared middle workspace available');
+            }
+          }
+        } catch (workspaceErr) {
+          console.warn('Failed to restore shared workspace summary:', workspaceErr);
+        }
+
+        if (!repoUrl || !selectedBranch) {
+          console.log('Skipping remote refresh on load: missing repoUrl or branch configuration');
         }
       } catch (err) {
         console.warn('Failed to load saved configuration:', err);
@@ -309,6 +1692,51 @@ export const DocManagement: React.FC = () => {
     useEffect(() => {
       loadAndFetchData();
     }, []);
+
+    useEffect(() => {
+      middleChainMapRef.current = middleChainMap;
+    }, [middleChainMap]);
+
+    useEffect(() => {
+      if (!middleIndexReady || !middleProjectName.trim()) return;
+
+      const timeoutId = window.setTimeout(() => {
+        apiService.docManagementApi
+          .saveSharedChainMap({ chainMap: middleChainMapRef.current })
+          .catch(err => console.warn('Failed to persist shared chain cache:', err));
+      }, 600);
+
+      return () => {
+        window.clearTimeout(timeoutId);
+      };
+    }, [middleChainMap, middleIndexReady, middleProjectName]);
+
+  useEffect(() => {
+    resolvingDownstreamMapRef.current = resolvingDownstreamMap;
+  }, [resolvingDownstreamMap]);
+
+    useEffect(() => {
+      setTransactions(prev => (prev.length === 0 ? prev : enrichTransactionsWithChains(prev, middleChainMap)));
+    }, [middleChainMap]);
+
+    useEffect(() => {
+      if (!middleIndexReady) {
+        setMiddleDownstreamTotal(0);
+        return;
+      }
+      const downstreamCalls = Array.from(new Set(transactions.flatMap(item => item.downstreamCalls)));
+      setMiddleDownstreamTotal(downstreamCalls.length);
+    }, [transactions, middleIndexReady]);
+
+    useEffect(() => {
+      if (!selectedTransaction) return;
+      const latest = transactions.find(
+        item => item.id === selectedTransaction.id && item.module === selectedTransaction.module
+      );
+      if (latest && latest !== selectedTransaction) {
+        setSelectedTransaction(latest);
+      }
+    }, [transactions, selectedTransaction]);
 
     // Open config dialog
     const handleOpenConfig = () => {
@@ -364,11 +1792,17 @@ export const DocManagement: React.FC = () => {
     return groups;
   }, [currentTransactions]);
 
+  const resolvedDownstreamCount = Object.keys(middleChainMap).length;
+  const resolvingDownstreamCount = Object.keys(resolvingDownstreamMap).length;
+  const downstreamResolveProgress =
+    middleDownstreamTotal > 0 ? Math.min(100, Math.round((resolvedDownstreamCount / middleDownstreamTotal) * 100)) : 0;
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files;
     if (!fileList || fileList.length === 0) return;
 
     setIsProcessing(true);
+    resetMiddleResolverState();
     const files: FileEntry[] = [];
 
     // Read all files first
@@ -390,10 +1824,8 @@ export const DocManagement: React.FC = () => {
     // Process using Project Parser
     try {
         const newTransactions = parseProjectFiles(files);
-        setTransactions(prev => {
-            setCurrentPage(1); 
-            return newTransactions; 
-        });
+        setCurrentPage(1);
+        setTransactions(newTransactions);
 
         // Update cache with local files so they persist on refresh (until next online fetch)
         const localInterfaces = newTransactions.map(t => ({
@@ -429,6 +1861,181 @@ export const DocManagement: React.FC = () => {
         alert("Parsing failed. Check console for details.");
     } finally {
         setIsProcessing(false);
+    }
+  };
+
+  const handleMiddleCodeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+
+    if (transactions.length === 0) {
+      alert('请先上传网银工程，再上传中台代码进行链路展开。');
+      e.target.value = '';
+      return;
+    }
+
+    setIsMiddleProcessing(true);
+    setMiddleProjectName('');
+    setMiddleChainMap({});
+    setMiddleDownstreamTotal(0);
+    setMiddleUploadProgress({
+      scanned: 0,
+      total: fileList.length,
+      accepted: 0,
+      skipped: 0
+    });
+    setResolvingDownstreamMap({});
+    setResolvingDownstreamProgressMap({});
+    setExpandingCallNodeMap({});
+    setExpandedCallNodeMap({});
+    setLoadedCallNodeMap({});
+    setMiddleIndexReady(false);
+    setExpandedDownstreamMap({});
+    middleSourceFilesRef.current = [];
+    middleSourceMetaRef.current = [];
+    middleServiceFilePoolRef.current = {};
+    middleResolverFilesRef.current = [];
+    middleServiceResolverRef.current = {};
+    middleServiceEntriesRef.current = {};
+    middleServiceEntriesLoadingRef.current = {};
+    middleFileContentCacheRef.current = {};
+    middleAllEntriesRef.current = [];
+    middleChainMapRef.current = {};
+    resolvingDownstreamMapRef.current = {};
+    clearMiddleProjectChainParserCache();
+    const pendingRequests = pendingWorkerRequestsRef.current;
+    Object.keys(pendingRequests).forEach(key => {
+      pendingRequests[key].reject(new Error('middle resolver upload reset'));
+      clearPendingWorkerTimeout(key);
+    });
+    pendingWorkerRequestsRef.current = {};
+    Object.keys(pendingWorkerTimeoutRef.current).forEach(clearPendingWorkerTimeout);
+    if (middleWorkerRef.current) {
+      const resetMessage: MiddleWorkerRequest = { type: 'reset-cache' };
+      middleWorkerRef.current.postMessage(resetMessage);
+    }
+    const sourceFiles: File[] = [];
+    let skippedByPath = 0;
+    let skippedBySize = 0;
+    let skippedByType = 0;
+    const totalFileCount = fileList.length;
+
+    for (let offset = 0; offset < totalFileCount; offset += MIDDLE_SCAN_CHUNK_SIZE) {
+      const end = Math.min(totalFileCount, offset + MIDDLE_SCAN_CHUNK_SIZE);
+      for (let i = offset; i < end; i += 1) {
+        const file = fileList[i];
+        const key = buildMiddleFileKey(file);
+        const lowerPath = normalizeMiddlePath(key);
+        const lowerName = file.name.toLowerCase();
+
+        if (shouldIgnoreMiddlePath(lowerPath)) {
+          skippedByPath += 1;
+          continue;
+        }
+
+        if (!isMiddleSourceFileName(lowerName)) {
+          skippedByType += 1;
+          continue;
+        }
+
+        if (file.size > MIDDLE_MAX_FILE_BYTES) {
+          skippedBySize += 1;
+          continue;
+        }
+
+        sourceFiles.push(file);
+      }
+
+      setMiddleUploadProgress({
+        scanned: end,
+        total: totalFileCount,
+        accepted: sourceFiles.length,
+        skipped: skippedByPath + skippedBySize + skippedByType
+      });
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+    }
+
+    try {
+      const downstreamCalls = Array.from(new Set(transactions.flatMap(item => item.downstreamCalls)));
+      if (downstreamCalls.length === 0) {
+        alert('当前网银接口没有可解析的下游接口。');
+        return;
+      }
+
+      if (sourceFiles.length === 0) {
+        alert('未识别到可用于解析的中台代码文件（java/xml/yml/properties）。');
+        return;
+      }
+
+      const rootFolder = fileList[0].webkitRelativePath?.split('/')[0] || '';
+      const sourceMetas: MiddleSourceFileMeta[] = sourceFiles.map(file => {
+        const key = buildMiddleFileKey(file);
+        const lowerPath = normalizeMiddlePath(key);
+        const lowerName = file.name.toLowerCase();
+        return {
+          file,
+          key,
+          lowerPath,
+          lowerName,
+          isJava: lowerName.endsWith('.java'),
+          isXml: lowerName.endsWith('.xml'),
+          isYaml: lowerName.endsWith('.yml') || lowerName.endsWith('.yaml'),
+          isProperties: lowerName.endsWith('.properties')
+        };
+      });
+
+      middleSourceFilesRef.current = sourceFiles;
+      middleSourceMetaRef.current = sourceMetas;
+      middleServiceFilePoolRef.current = {};
+      middleResolverFilesRef.current = sourceMetas
+        .filter(meta => meta.isXml && meta.lowerPath.includes('resolver'))
+        .map(meta => meta.file);
+      const allEntries = await buildAllMiddleEntriesForUpload(
+        sourceFiles,
+        totalFileCount,
+        skippedByPath + skippedBySize + skippedByType
+      );
+      middleServiceResolverRef.current = {};
+      middleServiceEntriesRef.current = {
+        [MIDDLE_GLOBAL_SERVICE_KEY]: allEntries
+      };
+      middleAllEntriesRef.current = allEntries;
+      setMiddleIndexReady(true);
+      setMiddleChainMap({});
+      setMiddleProjectName(rootFolder || 'middle-project');
+      setMiddleDownstreamTotal(downstreamCalls.length);
+      setCurrentPage(1);
+
+      let sharedSaveWarning = '';
+      try {
+        await apiService.docManagementApi.saveSharedMiddleEntries({
+          projectName: rootFolder || 'middle-project',
+          entries: allEntries
+        });
+      } catch (persistErr) {
+        console.warn('Failed to persist shared middle workspace:', persistErr);
+        sharedSaveWarning = `\n注意：服务器共享缓存保存失败，其他操作员暂时还不能直接复用。\n错误: ${
+          persistErr instanceof Error ? persistErr.message : '未知错误'
+        }`;
+      }
+
+      alert(
+        `中台代码已准备完成：加载 ${allEntries.length} 个源码文件（跳过路径 ${skippedByPath}、超大文件 ${skippedBySize}、无关类型 ${skippedByType}），网银下游调用 ${downstreamCalls.length} 条。点击某个下游接口时才会懒解析该接口的内部链路。${
+          sharedSaveWarning || '\n共享缓存已保存到服务器，其他操作员可直接复用。'
+        }`
+      );
+
+      recordAction(
+        '接口管理 - 文档管理',
+        `本地上传中台代码 - 项目: ${rootFolder || 'middle-project'}, 已准备文件 ${sourceFiles.length} 个, 跳过 ${skippedByPath + skippedBySize + skippedByType} 个, 下游调用总数 ${downstreamCalls.length}`
+      );
+    } catch (err) {
+      console.error('Failed to resolve downstream chains from middle project', err);
+      alert('中台代码准备失败，请检查控制台日志。');
+    } finally {
+      setIsMiddleProcessing(false);
+      setMiddleUploadProgress(null);
+      e.target.value = '';
     }
   };
 
@@ -700,10 +2307,9 @@ export const DocManagement: React.FC = () => {
       if (result.success && result.data && Array.isArray(result.data)) {
         // 使用获取到的文件数据进行本地解析
         const newTransactions = parseProjectFiles(result.data);
-        setTransactions(prev => {
-          setCurrentPage(1);
-          return newTransactions;
-        });
+        setCurrentPage(1);
+        setTransactions(applyMiddleChains(newTransactions));
+        setSourceMode('online');
         
         // 缓存接口清单到数据库
         const remoteInterfaces = newTransactions.map(t => ({
@@ -772,6 +2378,13 @@ export const DocManagement: React.FC = () => {
       const result = await response.json();
       
       if (result.success) {
+        try {
+          await apiService.configApi.delete('doc-management-interface-cache');
+        } catch (cacheDeleteErr) {
+          console.warn('Failed to clear interface cache config:', cacheDeleteErr);
+        }
+        setTransactions([]);
+        setSelectedTransaction(null);
         alert('✅ ' + result.message);
         recordAction('接口管理 - 文档管理', '清理在线代码缓存');
       } else {
@@ -1181,15 +2794,196 @@ export const DocManagement: React.FC = () => {
       recordAction('接口管理 - 文档管理', `按钮:查看详情 - 查看接口 [${t.id}]`);
   };
 
+  const renderDownstreamChainDetails = (chain: DownstreamCallChain) => {
+    const resolveCallNestLevel = (call: TransactionChainCall): number => {
+      const pathDepth = call.pathKey
+        ? call.pathKey
+            .split('>')
+            .map(item => item.trim())
+            .filter(Boolean).length
+        : 0;
+      return typeof call.nestLevel === 'number' ? Math.max(0, call.nestLevel) : Math.max(0, pathDepth);
+    };
+
+    const renderCallItem = (
+      beanName: string,
+      index: number,
+      call: TransactionChainCall
+    ) => {
+      const commonClass =
+        'text-[11px] px-2 py-1 rounded border font-mono flex flex-wrap items-center gap-2 break-all w-full';
+      const nestLevel = resolveCallNestLevel(call);
+      const containerStyle = { marginLeft: `${nestLevel * 44}px` };
+      const nestedClass = nestLevel > 0 ? 'pl-5 border-l-[3px] border-slate-300/90' : '';
+      const nodeKey = getChainCallNodeKey(chain.downstreamCall, beanName, call);
+      const canExpandNode = hasExpandableChildren(call);
+      const isNodeExpanded = !!expandedCallNodeMap[nodeKey];
+      const isNodeLoading = !!expandingCallNodeMap[nodeKey];
+      const descriptionText = (call.description || '').trim() || '未解析到描述';
+
+      const nodeToggle = canExpandNode ? (
+        <button
+          type="button"
+          className="inline-flex items-center justify-center w-4 h-4 rounded border border-slate-300 text-slate-500 hover:bg-slate-100 transition-colors"
+          onClick={() => {
+            void handleCallNodeToggle(chain.downstreamCall, beanName, call);
+          }}
+          title={isNodeExpanded ? '收起下一层' : '展开下一层'}
+        >
+          {isNodeLoading ? (
+            <Activity size={11} className="animate-spin" />
+          ) : isNodeExpanded ? (
+            <ChevronDown size={11} />
+          ) : (
+            <ChevronRight size={11} />
+          )}
+        </button>
+      ) : null;
+
+      if (call.type === 'local-service') {
+        return (
+          <div key={`${beanName}-local-${index}`} className={nestedClass} style={containerStyle}>
+            <div className={`${commonClass} bg-sky-50 border-sky-200 text-sky-800`}>
+              {nodeToggle}
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 font-semibold">本地服务</span>
+              <span>{call.call}</span>
+              <span className="text-sky-600">({descriptionText})</span>
+            </div>
+          </div>
+        );
+      }
+
+      if (call.type === 'rpc-service') {
+        return (
+          <div key={`${beanName}-rpc-${index}`} className={nestedClass} style={containerStyle}>
+            <div className={`${commonClass} bg-indigo-50 border-indigo-200 text-indigo-800`}>
+              {nodeToggle}
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 font-semibold">RPC服务</span>
+              <span>{call.call}</span>
+              <span className="text-indigo-700">({descriptionText})</span>
+            </div>
+          </div>
+        );
+      }
+
+      if (call.type === 'database') {
+        return (
+          <div key={`${beanName}-db-${index}`} className={nestedClass} style={containerStyle}>
+            <div className={`${commonClass} bg-emerald-50 border-emerald-200 text-emerald-800`}>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-semibold">数据库</span>
+              <span>{call.call}</span>
+              {call.tableName && <span className="text-emerald-700">表: {call.tableName}</span>}
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div key={`${beanName}-down-${index}`} className={nestedClass} style={containerStyle}>
+          <div className={`${commonClass} bg-amber-50 border-amber-200 text-amber-800`}>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-semibold">下游服务</span>
+            <span>{call.call}</span>
+            <span className="text-amber-700">({descriptionText})</span>
+            <span className="text-amber-700">接口码: {(call.downstreamInterfaceCode || '').trim() || '未解析到接口码'}</span>
+          </div>
+        </div>
+      );
+    };
+
+    return (
+      <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-2 space-y-2">
+        <div className="text-[10px] text-slate-600 font-mono">
+          <span className="text-slate-500">service:</span> {chain.serviceName} |{' '}
+          <span className="text-slate-500">api:</span> {chain.apiServiceBean}.{chain.apiMethod} |{' '}
+          <span className="text-slate-500">描述:</span> {chain.apiDescription || '未解析到中文描述'}
+        </div>
+
+        {chain.unresolvedReason && (
+          <div className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+            {chain.unresolvedReason}
+          </div>
+        )}
+
+        {chain.domainServices.map((domain, idx) => (
+          <div key={`${domain.beanName}-${idx}`} className="rounded border border-slate-200 bg-white p-2 space-y-1">
+            <div className="text-[10px] text-slate-700 font-mono break-all">
+              <span className="text-slate-500">交易实现bean：</span>{domain.beanName}
+            </div>
+
+            {domain.transactionCalls.length > 0 ? (
+              <div className="overflow-x-auto pb-1">
+                {(() => {
+                  const expandableNodeKeys = new Set(
+                    domain.transactionCalls
+                      .filter(item => hasExpandableChildren(item))
+                      .map(item => getChainCallNodeKey(chain.downstreamCall, domain.beanName, item))
+                  );
+                  const visibleCalls = domain.transactionCalls.filter(item =>
+                    isCallVisibleUnderLazyTree(chain.downstreamCall, domain.beanName, item, expandableNodeKeys)
+                  );
+                  const maxNestLevel = visibleCalls.reduce((max, item) => Math.max(max, resolveCallNestLevel(item)), 0);
+                  const minWidth = Math.max(760, 760 + maxNestLevel * 88);
+
+                  return (
+                    <div className="space-y-1 min-w-max pr-1" style={{ minWidth: `${minWidth}px` }}>
+                      {visibleCalls.map((call, callIndex) => renderCallItem(domain.beanName, callIndex, call))}
+                    </div>
+                  );
+                })()}
+              </div>
+            ) : (
+              <div className="text-[10px] text-slate-400 italic">未解析到交易链路</div>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   return (
     <div className="p-6 space-y-6 h-full flex flex-col">
       <div className="flex justify-between items-center">
         <div>
            <h2 className="text-2xl font-bold text-slate-800">Interface Documentation</h2>
-           <p className="text-slate-500 text-sm flex items-center gap-1">
-             <Info size={14} className="text-blue-500" />
-             <span className="font-medium text-slate-600">支持在线获取和本地上传两种方式</span>
-           </p>
+	           <p className="text-slate-500 text-sm flex items-center gap-1">
+	             <Info size={14} className="text-blue-500" />
+	             <span className="font-medium text-slate-600">支持在线获取和本地上传两种方式</span>
+	           </p>
+	           {isMiddleProcessing && middleUploadProgress && (
+	             <div className="mt-1 space-y-1">
+	               <p className="text-xs text-amber-700 font-medium">
+	                 中台文件扫描中：{middleUploadProgress.scanned}/{middleUploadProgress.total}，已纳入{' '}
+	                 {middleUploadProgress.accepted}，已跳过 {middleUploadProgress.skipped}
+	               </p>
+	               <div className="w-64 h-1.5 rounded bg-amber-100 overflow-hidden">
+	                 <div
+	                   className="h-full bg-amber-500 transition-all duration-200"
+	                   style={{
+	                     width: `${Math.min(
+	                       100,
+	                       Math.round((middleUploadProgress.scanned / Math.max(1, middleUploadProgress.total)) * 100)
+	                     )}%`
+	                   }}
+	                 />
+	               </div>
+	             </div>
+	           )}
+	           {middleProjectName && (
+	             <div className="mt-1 space-y-1">
+	               <p className="text-xs text-amber-700 font-medium">
+	                 中台代码已准备：{middleProjectName}
+               </p>
+               <p className="text-xs text-amber-700">
+                 解析进度：{resolvedDownstreamCount}/{middleDownstreamTotal || 0}
+                 {resolvingDownstreamCount > 0 ? `（解析中 ${resolvingDownstreamCount}）` : ''}
+               </p>
+               {middleDownstreamTotal > 0 && (
+                 <div className="w-64 h-1.5 rounded bg-amber-100 overflow-hidden">
+                   <div className="h-full bg-amber-500 transition-all duration-300" style={{ width: `${downstreamResolveProgress}%` }} />
+                 </div>
+               )}
+             </div>
+           )}
         </div>
         
         <div className="flex gap-3">
@@ -1202,6 +2996,16 @@ export const DocManagement: React.FC = () => {
                 webkitdirectory="" 
                 onChange={handleFileUpload}
             />
+
+            <input
+                type="file"
+                ref={middleFileInputRef}
+                className="hidden"
+                multiple
+                // @ts-ignore
+                webkitdirectory=""
+                onChange={handleMiddleCodeUpload}
+            />
             
             <button 
                 onClick={() => fileInputRef.current?.click()}
@@ -1209,7 +3013,17 @@ export const DocManagement: React.FC = () => {
                 className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 shadow-sm transition-colors disabled:opacity-50"
             >
                 {isProcessing ? <Activity className="animate-spin" size={18}/> : <Folder size={18} />}
-                {isProcessing ? 'Processing...' : '本地上传'}
+                {isProcessing ? 'Processing...' : '上传网银代码'}
+            </button>
+
+            <button
+                onClick={() => middleFileInputRef.current?.click()}
+                disabled={isMiddleProcessing || transactions.length === 0}
+                className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 shadow-sm transition-colors disabled:opacity-50"
+                title={transactions.length === 0 ? '请先上传网银工程' : '上传中台工程并准备懒加载解析'}
+            >
+                {isMiddleProcessing ? <Activity className="animate-spin" size={18}/> : <Folder size={18} />}
+                {isMiddleProcessing ? '准备中...' : '上传中台代码'}
             </button>
 
             <button 
@@ -1286,7 +3100,7 @@ export const DocManagement: React.FC = () => {
                     <FileJson size={32} />
                 </div>
                 <h3 className="text-lg font-medium text-slate-900">No Interfaces Loaded</h3>
-                <p className="text-slate-500 mt-2 max-w-sm">Please select the <strong>online banking project root directory</strong>. We will scan XML configurations, Java files, and Properties files.</p>
+                <p className="text-slate-500 mt-2 max-w-sm">Please select the <strong>online banking project root directory</strong>. After that, upload the middle-platform project to expand downstream chains.</p>
                 <button 
                     onClick={() => fileInputRef.current?.click()}
                     className="mt-6 text-blue-600 font-medium hover:underline"
@@ -1349,11 +3163,69 @@ export const DocManagement: React.FC = () => {
                                     <td className="px-6 py-3">
                                       {t.downstreamCalls.length > 0 ? (
                                         <div className="flex flex-col gap-1">
-                                          {t.downstreamCalls.map((call, idx) => (
-                                            <div key={idx} className="text-[10px] bg-amber-50 text-amber-700 px-2 py-1 rounded border border-amber-100 font-mono">
-                                              {call}
-                                            </div>
-                                          ))}
+                                          {t.downstreamCalls.map((call, idx) => {
+                                            const chain = getChainForCall(t, call);
+                                            const toggleKey = buildDownstreamToggleKey(t, call, 'list');
+                                            const expanded = isDownstreamExpanded(toggleKey);
+                                            const resolving = !!resolvingDownstreamMap[call];
+                                            const resolvingProgress = resolvingDownstreamProgressMap[call] || 0;
+                                            const canExpand = Boolean(chain) || middleIndexReady;
+
+                                            return (
+                                              <div key={idx}>
+                                                <button
+                                                  type="button"
+                                                  className={`w-full text-left text-[10px] px-2 py-1 rounded border font-mono flex items-center gap-1 ${
+                                                    chain
+                                                      ? 'bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100'
+                                                      : canExpand
+                                                        ? 'bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100'
+                                                        : 'bg-amber-50 border-amber-100 text-amber-700'
+                                                  }`}
+                                                  onClick={() => {
+                                                    if (!canExpand) return;
+                                                    handleDownstreamToggle(t, call, 'list');
+                                                  }}
+                                                  title={
+                                                    chain
+                                                      ? '点击展开中台链路'
+                                                      : canExpand
+                                                        ? '点击按需解析并展开中台链路'
+                                                        : '请先上传中台代码'
+                                                  }
+                                                >
+                                                  {resolving ? (
+                                                    <span className="inline-flex items-center gap-1">
+                                                      <Activity size={11} className="animate-spin" />
+                                                      <span>{resolvingProgress}%</span>
+                                                    </span>
+                                                  ) : canExpand ? (
+                                                    expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />
+                                                  ) : (
+                                                    <ArrowRightLeft size={10} />
+                                                  )}
+                                                  <span className="break-all">{call}</span>
+                                                </button>
+
+                                                {expanded && (
+                                                  chain ? (
+                                                    <div className="space-y-1">
+                                                      {renderDownstreamChainDetails(chain)}
+                                                    </div>
+                                                  ) : resolving ? (
+                                                    <div className="mt-2 rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] text-blue-700 flex items-center gap-1">
+                                                      <Activity size={11} className="animate-spin" />
+                                                      正在解析中台链路... {resolvingProgress}%
+                                                    </div>
+                                                  ) : (
+                                                    <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] text-slate-500">
+                                                      {middleIndexReady ? '链路暂未解析，点击上方接口可重试。' : '请先上传中台代码。'}
+                                                    </div>
+                                                  )
+                                                )}
+                                              </div>
+                                            );
+                                          })}
                                         </div>
                                       ) : (
                                         <span className="text-[10px] text-slate-400 italic">无</span>
@@ -1470,15 +3342,69 @@ export const DocManagement: React.FC = () => {
                            <span className="w-2 h-2 bg-amber-500 rounded-full"></span>
                            Downstream Interfaces
                          </h4>
-                         <div className="bg-amber-50 rounded-lg border border-amber-100 p-3">
-                             <ul className="space-y-1">
-                                {selectedTransaction.downstreamCalls.map((call, idx) => (
-                                    <li key={idx} className="text-xs font-mono text-amber-800 flex items-center gap-2">
-                                        <ArrowRightLeft size={10} />
-                                        {call}
-                                    </li>
-                                ))}
-                             </ul>
+                         <div className="bg-amber-50 rounded-lg border border-amber-100 p-3 space-y-2">
+                             {selectedTransaction.downstreamCalls.map((call, idx) => {
+                               const chain = getChainForCall(selectedTransaction, call);
+                               const toggleKey = buildDownstreamToggleKey(selectedTransaction, call, 'modal');
+                               const expanded = isDownstreamExpanded(toggleKey);
+                               const resolving = !!resolvingDownstreamMap[call];
+                               const resolvingProgress = resolvingDownstreamProgressMap[call] || 0;
+                               const canExpand = Boolean(chain) || middleIndexReady;
+
+                               return (
+                                 <div key={idx}>
+                                   <button
+                                     type="button"
+                                     className={`w-full text-left text-xs px-2 py-1 rounded border font-mono flex items-center gap-1 ${
+                                       chain
+                                         ? 'bg-white border-amber-300 text-amber-900 hover:bg-amber-100'
+                                         : canExpand
+                                           ? 'bg-white border-amber-300 text-amber-900 hover:bg-amber-100'
+                                           : 'bg-amber-50 border-amber-200 text-amber-800'
+                                     }`}
+                                     onClick={() => {
+                                       if (!canExpand) return;
+                                       handleDownstreamToggle(selectedTransaction, call, 'modal');
+                                     }}
+                                     title={
+                                       chain
+                                         ? '点击展开中台链路'
+                                         : canExpand
+                                           ? '点击按需解析并展开中台链路'
+                                           : '请先上传中台代码'
+                                     }
+                                   >
+                                     {resolving ? (
+                                       <span className="inline-flex items-center gap-1">
+                                         <Activity size={12} className="animate-spin" />
+                                         <span>{resolvingProgress}%</span>
+                                       </span>
+                                     ) : canExpand ? (
+                                       expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />
+                                     ) : (
+                                       <ArrowRightLeft size={12} />
+                                     )}
+                                     <span className="break-all">{call}</span>
+                                   </button>
+                                   {expanded && (
+                                     chain ? (
+                                       <div className="space-y-1">
+                                         {renderDownstreamChainDetails(chain)}
+                                       </div>
+                                     ) : resolving ? (
+                                       <div className="mt-2 rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] text-blue-700 flex items-center gap-1">
+                                         <Activity size={12} className="animate-spin" />
+                                         正在解析中台链路... {resolvingProgress}%
+                                       </div>
+                                     ) : (
+                                       <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] text-slate-500">
+                                         {middleIndexReady ? '链路暂未解析，点击上方接口可重试。' : '请先上传中台代码。'}
+                                       </div>
+                                     )
+                                   )}
+                                 </div>
+                               );
+                             })}
                          </div>
                      </div>
                  )}

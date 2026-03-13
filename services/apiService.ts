@@ -323,6 +323,48 @@ export const configApi = {
   },
 };
 
+export const docManagementApi = {
+  getSharedWorkspace: async () => {
+    const res = await fetch(`${API_BASE_URL}/doc-management/shared-workspace`);
+    if (!res.ok) throw new Error('Failed to fetch shared workspace');
+    return res.json();
+  },
+
+  getSharedMiddleEntries: async () => {
+    const res = await fetch(`${API_BASE_URL}/doc-management/shared-workspace/middle-entries`);
+    if (!res.ok) throw new Error('Failed to fetch shared middle entries');
+    return res.json();
+  },
+
+  saveSharedMiddleEntries: async (data: any) => {
+    const res = await fetch(`${API_BASE_URL}/doc-management/shared-workspace/middle-entries`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to save shared middle entries');
+    return res.json();
+  },
+
+  saveSharedChainMap: async (data: any) => {
+    const res = await fetch(`${API_BASE_URL}/doc-management/shared-workspace/chain-map`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to save shared chain map');
+    return res.json();
+  },
+
+  clearSharedWorkspace: async () => {
+    const res = await fetch(`${API_BASE_URL}/doc-management/shared-workspace`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error('Failed to clear shared workspace');
+    return res.json();
+  },
+};
+
 // Database Connection API
 export const dbConnectionApi = {
   getAll: async () => {
@@ -770,6 +812,7 @@ export const apiService = {
   systemParameterApi,
   suggestionApi,
   configApi,
+  docManagementApi,
   dbConnectionApi,
   codeTemplateApi,
   documentApi,

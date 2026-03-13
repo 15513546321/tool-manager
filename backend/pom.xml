@@ -169,7 +169,31 @@
                 </executions>
             </plugin>
 
-            <!-- Copy frontend dist to static resources -->
+            <!-- Copy frontend dist to backend output resources -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>clean-frontend-static</id>
+                        <phase>prepare-package</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <!-- Prevent stale frontend bundles from being shipped in jar -->
+                                <delete includeemptydirs="true">
+                                    <fileset dir="${project.build.outputDirectory}/static/assets"/>
+                                </delete>
+                                <delete file="${project.build.outputDirectory}/static/index.html"/>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-resources-plugin</artifactId>
@@ -182,7 +206,7 @@
                             <goal>copy-resources</goal>
                         </goals>
                         <configuration>
-                            <outputDirectory>${basedir}/src/main/resources/static</outputDirectory>
+                            <outputDirectory>${project.build.outputDirectory}/static</outputDirectory>
                             <resources>
                                 <resource>
                                     <directory>${basedir}/../dist</directory>

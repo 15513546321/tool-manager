@@ -36,6 +36,47 @@ export interface XmlTransaction {
   inputs: XmlField[];
   outputs: XmlField[];
   downstreamCalls: string[]; // List of called interfaces found in Java or properties
+  downstreamChains?: DownstreamCallChain[]; // Enriched chain details from middle-platform project
+}
+
+export interface DomainServiceCallChain {
+  beanName: string; // e.g. trsAcctInfoBalanceQry
+  className?: string; // e.g. TrsAcctInfoBalanceQry
+  classPath?: string; // Source file path
+  transactionCalls: TransactionChainCall[]; // Expanded transaction chain items
+}
+
+export interface TransactionCallExpandToken {
+  ownerClassPath: string;
+  ownerMethod: string;
+  depth: number;
+  pathStack: string[];
+  visitedMethodKeys: string[];
+  serviceName: string;
+}
+
+export interface TransactionChainCall {
+  type: 'local-service' | 'rpc-service' | 'database' | 'downstream';
+  call: string;
+  description?: string; // @ApiOperation description
+  tableName?: string; // Derived from *Mapper type
+  downstreamInterfaceCode?: string; // Resolver interface code for router SERVICE_CODE
+  nestLevel?: number; // 0: direct call, >0: nested call level
+  pathKey?: string; // Internal path signature to avoid over-dedup across different branches
+  expandToken?: TransactionCallExpandToken; // Lazy-load token for next layer expansion
+}
+
+export interface DownstreamCallChain {
+  downstreamCall: string; // e.g. payment.apiTrdAcctInfoService.balanceQry
+  serviceName: string; // e.g. payment
+  apiServiceBean: string; // e.g. apiTrdAcctInfoService
+  apiMethod: string; // e.g. balanceQry
+  apiDescription?: string; // Chinese description from @ApiOperation
+  apiInterfaceClass?: string; // e.g. ApiTrdAcctInfoService
+  apiImplClass?: string; // e.g. ApiTrdAcctInfoServiceImpl
+  apiImplPath?: string; // Source file path
+  domainServices: DomainServiceCallChain[];
+  unresolvedReason?: string; // Reason when call cannot be fully resolved
 }
 
 export interface ParameterConfig {

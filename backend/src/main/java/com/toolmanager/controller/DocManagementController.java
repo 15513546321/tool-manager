@@ -3,6 +3,7 @@ package com.toolmanager.controller;
 import lombok.extern.slf4j.Slf4j;
 import com.toolmanager.entity.AuditLog;
 import com.toolmanager.repository.AuditLogRepository;
+import com.toolmanager.service.DocWorkspaceCacheService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -24,6 +25,9 @@ public class DocManagementController {
 
     @Autowired
     private AuditLogRepository auditLogRepository;
+
+    @Autowired
+    private DocWorkspaceCacheService docWorkspaceCacheService;
 
     /**
      * 本地文件上传和解析接口
@@ -206,6 +210,91 @@ public class DocManagementController {
                 request.getRepoUrl() != null ? request.getRepoUrl() : "unknown", e.getMessage()));
             return ResponseEntity.status(500)
                     .body(new ApiResponse<>(false, "Connection test failed: " + e.getMessage(), result));
+        }
+    }
+
+    @GetMapping("/shared-workspace")
+    public ResponseEntity<ApiResponse<DocWorkspaceCacheService.SharedWorkspaceState>> getSharedWorkspace(
+            @RequestParam(value = "username", defaultValue = "system") String username) {
+        try {
+            DocWorkspaceCacheService.SharedWorkspaceState state = docWorkspaceCacheService.loadWorkspace();
+            return ResponseEntity.ok(new ApiResponse<>(true, "Shared workspace loaded", state));
+        } catch (Exception e) {
+            log.error("Failed to load shared workspace", e);
+            recordAudit(username, "文档管理", "读取共享工作区失败: " + e.getMessage());
+            return ResponseEntity.status(500)
+                    .body(new ApiResponse<>(false, "加载共享工作区失败: " + e.getMessage(), null));
+        }
+    }
+
+    @GetMapping("/shared-workspace/middle-entries")
+    public ResponseEntity<ApiResponse<DocWorkspaceCacheService.MiddleEntriesPayload>> getSharedMiddleEntries(
+            @RequestParam(value = "username", defaultValue = "system") String username) {
+        try {
+            DocWorkspaceCacheService.MiddleEntriesPayload payload = docWorkspaceCacheService.loadMiddleEntries();
+            return ResponseEntity.ok(new ApiResponse<>(true, "Shared middle entries loaded", payload));
+        } catch (Exception e) {
+            log.error("Failed to load shared middle entries", e);
+            recordAudit(username, "文档管理", "读取共享中台代码失败: " + e.getMessage());
+            return ResponseEntity.status(500)
+                    .body(new ApiResponse<>(false, "加载共享中台代码失败: " + e.getMessage(), null));
+        }
+    }
+
+    @PostMapping("/shared-workspace/middle-entries")
+    public ResponseEntity<ApiResponse<DocWorkspaceCacheService.SharedWorkspaceState>> saveSharedMiddleEntries(
+            @RequestBody SharedMiddleEntriesRequest request,
+            @RequestParam(value = "username", defaultValue = "system") String username) {
+        try {
+            if (request == null || request.getEntries() == null || request.getEntries().isEmpty()) {
+                return ResponseEntity.badRequest()
+                        .body(new ApiResponse<>(false, "共享中台代码不能为空", null));
+            }
+
+            String projectName = request.getProjectName() != null ? request.getProjectName() : "";
+            DocWorkspaceCacheService.SharedWorkspaceState state =
+                    docWorkspaceCacheService.saveMiddleEntries(projectName, request.getEntries());
+            recordAudit(username, "文档管理",
+                    String.format("保存共享中台代码 - 项目: %s, 文件数: %d", projectName, request.getEntries().size()));
+            return ResponseEntity.ok(new ApiResponse<>(true, "共享中台代码已保存", state));
+        } catch (Exception e) {
+            log.error("Failed to save shared middle entries", e);
+            recordAudit(username, "文档管理", "保存共享中台代码失败: " + e.getMessage());
+            return ResponseEntity.status(500)
+                    .body(new ApiResponse<>(false, "保存共享中台代码失败: " + e.getMessage(), null));
+        }
+    }
+
+    @PostMapping("/shared-workspace/chain-map")
+    public ResponseEntity<ApiResponse<DocWorkspaceCacheService.SharedWorkspaceState>> saveSharedChainMap(
+            @RequestBody SharedChainMapRequest request,
+            @RequestParam(value = "username", defaultValue = "system") String username) {
+        try {
+            Map<String, Object> chainMap = request != null ? request.getChainMap() : new LinkedHashMap<>();
+            DocWorkspaceCacheService.SharedWorkspaceState state = docWorkspaceCacheService.saveChainMap(chainMap);
+            recordAudit(username, "文档管理",
+                    String.format("保存共享链路缓存 - 已缓存 %d 条链路", chainMap != null ? chainMap.size() : 0));
+            return ResponseEntity.ok(new ApiResponse<>(true, "共享链路缓存已保存", state));
+        } catch (Exception e) {
+            log.error("Failed to save shared chain map", e);
+            recordAudit(username, "文档管理", "保存共享链路缓存失败: " + e.getMessage());
+            return ResponseEntity.status(500)
+                    .body(new ApiResponse<>(false, "保存共享链路缓存失败: " + e.getMessage(), null));
+        }
+    }
+
+    @DeleteMapping("/shared-workspace")
+    public ResponseEntity<ApiResponse<String>> clearSharedWorkspace(
+            @RequestParam(value = "username", defaultValue = "system") String username) {
+        try {
+            docWorkspaceCacheService.clearWorkspace();
+            recordAudit(username, "文档管理", "清理共享中台工作区");
+            return ResponseEntity.ok(new ApiResponse<>(true, "共享工作区已清理", "OK"));
+        } catch (Exception e) {
+            log.error("Failed to clear shared workspace", e);
+            recordAudit(username, "文档管理", "清理共享工作区失败: " + e.getMessage());
+            return ResponseEntity.status(500)
+                    .body(new ApiResponse<>(false, "清理共享工作区失败: " + e.getMessage(), null));
         }
     }
 
@@ -421,6 +510,39 @@ public class DocManagementController {
         public void setDownstreamCalls(List<String> downstreamCalls) { this.downstreamCalls = downstreamCalls; }
     }
 
+    public static class SharedMiddleEntriesRequest {
+        private String projectName;
+        private List<DocWorkspaceCacheService.MiddleFileEntry> entries;
+
+        public String getProjectName() {
+            return projectName;
+        }
+
+        public void setProjectName(String projectName) {
+            this.projectName = projectName;
+        }
+
+        public List<DocWorkspaceCacheService.MiddleFileEntry> getEntries() {
+            return entries;
+        }
+
+        public void setEntries(List<DocWorkspaceCacheService.MiddleFileEntry> entries) {
+            this.entries = entries;
+        }
+    }
+
+    public static class SharedChainMapRequest {
+        private Map<String, Object> chainMap = new LinkedHashMap<>();
+
+        public Map<String, Object> getChainMap() {
+            return chainMap;
+        }
+
+        public void setChainMap(Map<String, Object> chainMap) {
+            this.chainMap = chainMap != null ? chainMap : new LinkedHashMap<>();
+        }
+    }
+
     public static class ApiResponse<T> {
         private boolean success;
         private String message;
@@ -442,6 +564,5 @@ public class DocManagementController {
         public void setData(T data) { this.data = data; }
     }
 }
-
 
 
