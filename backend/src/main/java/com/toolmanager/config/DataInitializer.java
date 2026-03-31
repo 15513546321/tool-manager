@@ -78,6 +78,15 @@ public class DataInitializer implements CommandLineRunner {
             menuItemRepository.save(new MenuItem(null, "5-1", "菜单管理", "/admin/menus", "settings", true, "5", 1, LocalDateTime.now(), LocalDateTime.now(), "admin"));
             menuItemRepository.save(new MenuItem(null, "5-2", "IP映射配置", "/admin/ip-config", "ip", true, "5", 2, LocalDateTime.now(), LocalDateTime.now(), "admin"));
         }
+
+        ensureMenuItem("2-3", "模拟报文生成", "/interface/mock-packet", "payload", true, "2", 3);
+    }
+
+    private void ensureMenuItem(String menuId, String name, String path, String icon, boolean visible, String parentId, int sortOrder) {
+        menuItemRepository.findByMenuId(menuId).orElseGet(() -> menuItemRepository.save(
+                new MenuItem(null, menuId, name, path, icon, visible, parentId, sortOrder,
+                        LocalDateTime.now(), LocalDateTime.now(), "admin")
+        ));
     }
 
     /**
@@ -229,4 +238,3 @@ public class DataInitializer implements CommandLineRunner {
 //        documentVersionRepository.save(v4);
     }
 }
-

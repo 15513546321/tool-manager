@@ -6,6 +6,7 @@ import { Login } from './pages/Login';
 import { MenuManagement } from './pages/MenuManagement';
 import { DocManagement } from './pages/interface/DocManagement';
 import { CodeGenerator } from './pages/interface/CodeGenerator';
+import { MockPacketGenerator } from './pages/interface/MockPacketGenerator';
 import { ParameterConfigPage } from './pages/ParameterConfig';
 import { DocRepository } from './pages/DocRepository';
 import { Announcement } from './pages/Announcement';
@@ -285,6 +286,7 @@ const App: React.FC = () => {
           {/* Interface Management */}
           <Route path="interface/docs" element={<DocManagement />} />
           <Route path="interface/code" element={<CodeGenerator />} />
+          <Route path="interface/mock-packet" element={<MockPacketGenerator />} />
           
           {/* New Format Tools */}
           <Route path="format" element={<FormatTools />} />

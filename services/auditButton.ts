@@ -17,6 +17,7 @@ export function getCurrentPageName(): string {
   if (path.includes('/repo')) return '文档库';
   if (path.includes('/interface/docs')) return '接口文档';
   if (path.includes('/interface/code')) return '代码生成';
+  if (path.includes('/interface/mock-packet')) return '模拟报文生成';
   if (path.includes('/format')) return '格式化工具';
   if (path.includes('/gitee')) return 'Gitee管理';
   if (path.includes('/gitlab-reports')) return 'GitLab报告';

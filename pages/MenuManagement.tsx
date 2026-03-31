@@ -19,6 +19,7 @@ export const initialMenuItems: MenuItem[] = [
     children: [
       { id: '2-1', name: '文档管理', path: '/interface/docs', icon: 'docs', visible: true },
       { id: '2-2', name: '代码生成', path: '/interface/code', icon: 'code', visible: true },
+      { id: '2-3', name: '模拟报文生成', path: '/interface/mock-packet', icon: 'payload', visible: true },
     ] 
   },
   { 

@@ -115,6 +115,45 @@ export interface SuggestionItem {
   timestamp: string;
 }
 
+export interface MockPacketConfig {
+  host: string;
+  port: string;
+  serviceName: string;
+  username: string;
+  password: string;
+}
+
+export interface MockPacketTransactionType {
+  transCode: string;
+  prdName: string;
+}
+
+export interface MockPacketPayload {
+  transCode: string;
+  prdName: string;
+  payloadRaw: string;
+  payloadPretty: string;
+  fallback: boolean;
+  sourceLabel: string;
+  note: string;
+  matchedRows: number;
+}
+
+export interface MockPacketTransactionTypesResponse {
+  success: boolean;
+  usingFallback: boolean;
+  message: string;
+  resolvedConfig: MockPacketConfig;
+  transactionTypes: MockPacketTransactionType[];
+}
+
+export interface MockPacketGenerateResponse {
+  success: boolean;
+  usingFallback: boolean;
+  message: string;
+  packets: MockPacketPayload[];
+}
+
 // Gitee Types
 export interface GiteeConfig {
   repoUrl: string;

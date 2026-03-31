@@ -365,6 +365,54 @@ export const docManagementApi = {
   },
 };
 
+export const mockPacketApi = {
+  getConfig: async () => {
+    const res = await fetch(`${API_BASE_URL}/mock-packet/config`);
+    if (!res.ok) throw new Error('Failed to fetch mock packet config');
+    return res.json();
+  },
+
+  saveConfig: async (config: any, username = 'system') => {
+    const res = await fetch(`${API_BASE_URL}/mock-packet/config?username=${encodeURIComponent(username)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    });
+    if (!res.ok) throw new Error('Failed to save mock packet config');
+    return res.json();
+  },
+
+  testConnection: async (config?: any) => {
+    const res = await fetch(`${API_BASE_URL}/mock-packet/test-connection`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config }),
+    });
+    if (!res.ok) throw new Error('Failed to test mock packet connection');
+    return res.json();
+  },
+
+  getTransactionTypes: async (config?: any) => {
+    const res = await fetch(`${API_BASE_URL}/mock-packet/transaction-types`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config }),
+    });
+    if (!res.ok) throw new Error('Failed to fetch mock packet transaction types');
+    return res.json();
+  },
+
+  generatePackets: async (selectedTypes: any[], config?: any) => {
+    const res = await fetch(`${API_BASE_URL}/mock-packet/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selectedTypes, config }),
+    });
+    if (!res.ok) throw new Error('Failed to generate mock packets');
+    return res.json();
+  },
+};
+
 // Database Connection API
 export const dbConnectionApi = {
   getAll: async () => {
@@ -813,6 +861,7 @@ export const apiService = {
   suggestionApi,
   configApi,
   docManagementApi,
+  mockPacketApi,
   dbConnectionApi,
   codeTemplateApi,
   documentApi,
