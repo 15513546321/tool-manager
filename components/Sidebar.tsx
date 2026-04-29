@@ -21,7 +21,8 @@ import {
   Lightbulb,
   Network,
   GitPullRequest,
-  Zap
+  Zap,
+  ClipboardList
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -46,7 +47,8 @@ const IconMap: Record<string, React.ElementType> = {
   'oracle': Database,
   'suggestions': Lightbulb,
   'ip': Network,
-  'gitee': GitPullRequest
+  'gitee': GitPullRequest,
+  'release': ClipboardList
 };
 
 export const Sidebar: React.FC<SidebarProps> = ({ menuItems }) => {

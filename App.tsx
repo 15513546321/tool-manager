@@ -14,6 +14,7 @@ import { AuditLog } from './pages/AuditLog';
 import { FormatTools } from './pages/FormatTools';
 import { GitlabReports } from './pages/GitlabReports';
 import { GiteeManagement } from './pages/GiteeManagement';
+import { ReleaseChanges } from './pages/ReleaseChanges';
 import { NacosSync } from './pages/sync/NacosSync';
 import { OracleSync } from './pages/sync/OracleSync';
 import { IpConfig } from './pages/admin/IpConfig';
@@ -294,6 +295,9 @@ const App: React.FC = () => {
           {/* New GitLab Reports */}
           <Route path="gitlab-reports" element={<GitlabReports />} />
           <Route path="gitee" element={<GiteeManagement />} />
+          <Route path="release-changes" element={<Navigate to="/release-changes/dev" replace />} />
+          <Route path="release-changes/dev" element={<ReleaseChanges mode="developer" />} />
+          <Route path="release-changes/manager" element={<ReleaseChanges mode="manager" />} />
           
           {/* Removed Diff Tool */}
 

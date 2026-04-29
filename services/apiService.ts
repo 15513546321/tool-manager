@@ -285,6 +285,96 @@ export const suggestionApi = {
   },
 };
 
+// Release Change Collection APIs
+export const releaseChangeApi = {
+  getVersions: async () => {
+    const res = await fetch(`${API_BASE_URL}/release-change/versions`);
+    if (!res.ok) throw new Error('Failed to fetch release versions');
+    return res.json();
+  },
+
+  saveVersion: async (data: any) => {
+    const res = await fetch(`${API_BASE_URL}/release-change/versions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to save release version');
+    return res.json();
+  },
+
+  deleteVersion: async (versionId: number) => {
+    const res = await fetch(`${API_BASE_URL}/release-change/versions/${versionId}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error('Failed to delete release version');
+  },
+
+  getChangeSets: async (versionId: number) => {
+    const res = await fetch(`${API_BASE_URL}/release-change/versions/${versionId}/change-sets`);
+    if (!res.ok) throw new Error('Failed to fetch change sets');
+    return res.json();
+  },
+
+  saveChangeSet: async (data: any) => {
+    const res = await fetch(`${API_BASE_URL}/release-change/change-sets`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || 'Failed to save change set');
+    }
+    return res.json();
+  },
+
+  deleteChangeSet: async (changeSetId: number) => {
+    const res = await fetch(`${API_BASE_URL}/release-change/change-sets/${changeSetId}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error('Failed to delete change set');
+  },
+
+  getPackageDiffs: async (versionId: number) => {
+    const res = await fetch(`${API_BASE_URL}/release-change/versions/${versionId}/diffs`);
+    if (!res.ok) throw new Error('Failed to fetch package diffs');
+    return res.json();
+  },
+
+  importPackageDiffs: async (versionId: number, rawText: string, replaceExisting: boolean, serviceTag?: string) => {
+    const res = await fetch(`${API_BASE_URL}/release-change/versions/${versionId}/diffs/import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rawText, replaceExisting, serviceTag }),
+    });
+    if (!res.ok) throw new Error('Failed to import package diffs');
+    return res.json();
+  },
+
+  confirmPackageDiff: async (diffId: number, data: any) => {
+    const res = await fetch(`${API_BASE_URL}/release-change/diffs/${diffId}/confirm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to confirm package diff');
+    return res.json();
+  },
+
+  searchDeclaredFiles: async (versionId: number, keyword: string) => {
+    const res = await fetch(`${API_BASE_URL}/release-change/versions/${versionId}/files/search?keyword=${encodeURIComponent(keyword)}`);
+    if (!res.ok) throw new Error('Failed to search declared files');
+    return res.json();
+  },
+
+  reconcile: async (versionId: number) => {
+    const res = await fetch(`${API_BASE_URL}/release-change/versions/${versionId}/reconcile`);
+    if (!res.ok) throw new Error('Failed to reconcile release changes');
+    return res.json();
+  },
+};
+
 // Config Setting APIs (for GitLab, Gitee, Nacos, Oracle, etc.)
 export const configApi = {
   getByKey: async (configKey: string) => {
@@ -859,6 +949,7 @@ export const apiService = {
   menuApi,
   systemParameterApi,
   suggestionApi,
+  releaseChangeApi,
   configApi,
   docManagementApi,
   mockPacketApi,

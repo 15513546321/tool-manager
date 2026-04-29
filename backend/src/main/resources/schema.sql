@@ -141,18 +141,70 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 CREATE TABLE IF NOT EXISTS suggestions (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     title VARCHAR(500) NOT NULL,
+    content TEXT,
     category VARCHAR(100),
-    description TEXT,
     status VARCHAR(50) DEFAULT 'OPEN',
-    priority VARCHAR(50) DEFAULT 'MEDIUM',
-    submitted_by VARCHAR(255),
-    assigned_to VARCHAR(255),
+    priority INT DEFAULT 1,
+    created_by VARCHAR(255),
+    ip_address VARCHAR(50),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    resolved_at TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 12. IP Mappings (IP映射)
+-- 12. Release Change Collection (上线变更集)
+CREATE TABLE IF NOT EXISTS release_versions (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    version_name VARCHAR(255) NOT NULL UNIQUE,
+    description TEXT,
+    status VARCHAR(50) DEFAULT 'OPEN',
+    created_by VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS release_change_sets (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    version_id BIGINT NOT NULL,
+    requirement_code VARCHAR(255) NOT NULL,
+    requirement_name TEXT,
+    developer VARCHAR(255) NOT NULL,
+    reviewer VARCHAR(255),
+    review_status VARCHAR(50) DEFAULT 'PENDING',
+    review_remark TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS release_change_files (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    version_id BIGINT NOT NULL,
+    change_set_id BIGINT NOT NULL,
+    file_path TEXT NOT NULL,
+    file_name VARCHAR(500),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS release_package_diffs (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    version_id BIGINT NOT NULL,
+    file_path TEXT NOT NULL,
+    file_name VARCHAR(500),
+    service_tag VARCHAR(100),
+    diff_type VARCHAR(100),
+    confirm_status VARCHAR(50) DEFAULT 'PENDING',
+    confirm_remark TEXT,
+    confirmed_by VARCHAR(255),
+    confirmed_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_release_change_sets_version_id ON release_change_sets(version_id);
+CREATE INDEX IF NOT EXISTS idx_release_change_files_version_id ON release_change_files(version_id);
+CREATE INDEX IF NOT EXISTS idx_release_change_files_change_set_id ON release_change_files(change_set_id);
+CREATE INDEX IF NOT EXISTS idx_release_package_diffs_version_id ON release_package_diffs(version_id);
+
+-- 13. IP Mappings (IP映射)
 -- Drop old table to ensure clean schema
 -- DROP TABLE IF EXISTS ip_mappings;
 

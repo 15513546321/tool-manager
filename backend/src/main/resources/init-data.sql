@@ -15,7 +15,23 @@ SELECT '10', '优化建议', '/suggestions', 'suggestions', true, NULL, 3, NOW()
 WHERE NOT EXISTS (SELECT 1 FROM menu_items WHERE menu_id = '10');
 
 INSERT INTO menu_items (menu_id, name, path, icon, visible, parent_id, sort_order, created_at, updated_at)
-SELECT '2', '接口管理', '/interface', 'interface', true, NULL, 4, NOW(), NOW()
+SELECT '13', '上线变更', '/release-changes', 'release', true, NULL, 4, NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM menu_items WHERE menu_id = '13');
+
+UPDATE menu_items
+SET name = '上线变更', path = '/release-changes', icon = 'release', visible = true, parent_id = NULL, sort_order = 4, updated_at = NOW()
+WHERE menu_id = '13';
+
+INSERT INTO menu_items (menu_id, name, path, icon, visible, parent_id, sort_order, created_at, updated_at)
+SELECT '13-1', '变更集录入', '/release-changes/dev', 'release', true, '13', 1, NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM menu_items WHERE menu_id = '13-1');
+
+INSERT INTO menu_items (menu_id, name, path, icon, visible, parent_id, sort_order, created_at, updated_at)
+SELECT '13-2', '比包对账', '/release-changes/manager', 'diff', true, '13', 2, NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM menu_items WHERE menu_id = '13-2');
+
+INSERT INTO menu_items (menu_id, name, path, icon, visible, parent_id, sort_order, created_at, updated_at)
+SELECT '2', '接口管理', '/interface', 'interface', true, NULL, 5, NOW(), NOW()
 WHERE NOT EXISTS (SELECT 1 FROM menu_items WHERE menu_id = '2');
 
 INSERT INTO menu_items (menu_id, name, path, icon, visible, parent_id, sort_order, created_at, updated_at)
@@ -27,7 +43,7 @@ SELECT '2-2', '代码生成', '/interface/code', 'code', true, '2', 2, NOW(), NO
 WHERE NOT EXISTS (SELECT 1 FROM menu_items WHERE menu_id = '2-2');
 
 INSERT INTO menu_items (menu_id, name, path, icon, visible, parent_id, sort_order, created_at, updated_at)
-SELECT '11', '数据同步', '/sync', 'sync', true, NULL, 5, NOW(), NOW()
+SELECT '11', '数据同步', '/sync', 'sync', true, NULL, 6, NOW(), NOW()
 WHERE NOT EXISTS (SELECT 1 FROM menu_items WHERE menu_id = '11');
 
 INSERT INTO menu_items (menu_id, name, path, icon, visible, parent_id, sort_order, created_at, updated_at)
@@ -39,31 +55,31 @@ SELECT '11-2', 'Oracle DDL同步', '/sync/oracle', 'oracle', true, '11', 2, NOW(
 WHERE NOT EXISTS (SELECT 1 FROM menu_items WHERE menu_id = '11-2');
 
 INSERT INTO menu_items (menu_id, name, path, icon, visible, parent_id, sort_order, created_at, updated_at)
-SELECT '9', 'GitLab 报表', '/gitlab-reports', 'gitlab', true, NULL, 6, NOW(), NOW()
+SELECT '9', 'GitLab 报表', '/gitlab-reports', 'gitlab', true, NULL, 7, NOW(), NOW()
 WHERE NOT EXISTS (SELECT 1 FROM menu_items WHERE menu_id = '9');
 
 INSERT INTO menu_items (menu_id, name, path, icon, visible, parent_id, sort_order, created_at, updated_at)
-SELECT '12', 'Gitee管理', '/gitee', 'gitee', true, NULL, 7, NOW(), NOW()
+SELECT '12', 'Gitee管理', '/gitee', 'gitee', true, NULL, 8, NOW(), NOW()
 WHERE NOT EXISTS (SELECT 1 FROM menu_items WHERE menu_id = '12');
 
 INSERT INTO menu_items (menu_id, name, path, icon, visible, parent_id, sort_order, created_at, updated_at)
-SELECT '8', '格式化工具', '/format', 'format', true, NULL, 8, NOW(), NOW()
+SELECT '8', '格式化工具', '/format', 'format', true, NULL, 9, NOW(), NOW()
 WHERE NOT EXISTS (SELECT 1 FROM menu_items WHERE menu_id = '8');
 
 INSERT INTO menu_items (menu_id, name, path, icon, visible, parent_id, sort_order, created_at, updated_at)
-SELECT '3', '参数配置', '/params', 'params', true, NULL, 9, NOW(), NOW()
+SELECT '3', '参数配置', '/params', 'params', true, NULL, 10, NOW(), NOW()
 WHERE NOT EXISTS (SELECT 1 FROM menu_items WHERE menu_id = '3');
 
 INSERT INTO menu_items (menu_id, name, path, icon, visible, parent_id, sort_order, created_at, updated_at)
-SELECT '4', '知识库', '/repo', 'repo', true, NULL, 10, NOW(), NOW()
+SELECT '4', '知识库', '/repo', 'repo', true, NULL, 11, NOW(), NOW()
 WHERE NOT EXISTS (SELECT 1 FROM menu_items WHERE menu_id = '4');
 
 INSERT INTO menu_items (menu_id, name, path, icon, visible, parent_id, sort_order, created_at, updated_at)
-SELECT '7', '审计日志', '/audit', 'settings', true, NULL, 11, NOW(), NOW()
+SELECT '7', '审计日志', '/audit', 'settings', true, NULL, 12, NOW(), NOW()
 WHERE NOT EXISTS (SELECT 1 FROM menu_items WHERE menu_id = '7');
 
 INSERT INTO menu_items (menu_id, name, path, icon, visible, parent_id, sort_order, created_at, updated_at)
-SELECT '5', '系统设置', '/admin', 'settings', true, NULL, 12, NOW(), NOW()
+SELECT '5', '系统设置', '/admin', 'settings', true, NULL, 13, NOW(), NOW()
 WHERE NOT EXISTS (SELECT 1 FROM menu_items WHERE menu_id = '5');
 
 INSERT INTO menu_items (menu_id, name, path, icon, visible, parent_id, sort_order, created_at, updated_at)
@@ -73,25 +89,3 @@ WHERE NOT EXISTS (SELECT 1 FROM menu_items WHERE menu_id = '5-1');
 INSERT INTO menu_items (menu_id, name, path, icon, visible, parent_id, sort_order, created_at, updated_at)
 SELECT '5-2', 'IP映射配置', '/admin/ip-config', 'ip', true, '5', 2, NOW(), NOW()
 WHERE NOT EXISTS (SELECT 1 FROM menu_items WHERE menu_id = '5-2');
-
--- Initialize Gitee Connections Table
-CREATE TABLE IF NOT EXISTS gitee_connections (
-  id BIGINT AUTO_INCREMENT PRIMARY KEY,
-  name VARCHAR(255) NOT NULL,
-  repo_url VARCHAR(500) NOT NULL,
-  auth_type VARCHAR(50) NOT NULL,
-  access_token VARCHAR(2000),
-  private_key LONGTEXT,
-  public_key LONGTEXT,
-  is_default BOOLEAN DEFAULT FALSE,
-  connection_status VARCHAR(50) DEFAULT 'unknown',
-  last_test_time DATETIME,
-  last_test_message TEXT,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  updated_by VARCHAR(255),
-  notes TEXT,
-  UNIQUE KEY uk_name_auth_type (name, auth_type),
-  INDEX idx_auth_type (auth_type),
-  INDEX idx_is_default (is_default)
-);
