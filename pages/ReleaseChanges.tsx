@@ -438,11 +438,6 @@ export const ReleaseChanges: React.FC<ReleaseChangesProps> = ({ mode = 'develope
     <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
       <div className="flex items-center gap-2 mb-2 min-w-0">
         <label className="text-sm font-bold text-slate-500">上线版本</label>
-        {selectedVersion?.description && (
-          <span className="text-xs text-slate-500 truncate" title={selectedVersion.description}>
-            （{selectedVersion.description}）
-          </span>
-        )}
       </div>
       <select
         className={INPUT_STYLE}
@@ -450,7 +445,9 @@ export const ReleaseChanges: React.FC<ReleaseChangesProps> = ({ mode = 'develope
         onChange={event => setSelectedVersionId(Number(event.target.value))}
       >
         {versions.map(version => (
-          <option key={version.id} value={version.id}>{version.versionName}</option>
+          <option key={version.id} value={version.id}>
+            {version.versionName}{version.description ? `（${version.description}）` : ''}
+          </option>
         ))}
       </select>
     </div>
@@ -665,7 +662,7 @@ export const ReleaseChanges: React.FC<ReleaseChangesProps> = ({ mode = 'develope
         <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
           <h3 className="font-bold text-slate-800 mb-4">创建版本</h3>
           <div className="space-y-3">
-            <input className={INPUT_STYLE} value={versionForm.versionName} onChange={event => setVersionForm({ ...versionForm, versionName: event.target.value })} placeholder="版本号，例如 2026.04.30" />
+            <input className={INPUT_STYLE} value={versionForm.versionName} onChange={event => setVersionForm({ ...versionForm, versionName: event.target.value })} placeholder="版本号，建议使用 yyyyMMdd，例如 20260423" />
             <textarea className={INPUT_STYLE} rows={3} value={versionForm.description} onChange={event => setVersionForm({ ...versionForm, description: event.target.value })} placeholder="版本说明，可选" />
             <button onClick={createVersion} className="px-4 py-2 bg-slate-800 text-white rounded-lg font-bold hover:bg-slate-900 flex items-center gap-2">
               <Plus size={16} /> 创建版本
@@ -741,11 +738,11 @@ export const ReleaseChanges: React.FC<ReleaseChangesProps> = ({ mode = 'develope
       )}
 
       <section className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-100 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="px-5 py-4 border-b border-slate-100 flex flex-col gap-3 lg:flex-row lg:items-center">
           <div className="font-bold text-slate-800">差异确认</div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-slate-500">按服务筛选</span>
-            <select className="px-3 py-2 border border-slate-200 rounded-lg bg-[#f8fafc] text-sm text-slate-700" value={serviceFilter} onChange={event => setServiceFilter(event.target.value)}>
+          <div className="inline-flex w-fit items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+            <span className="text-xs font-bold text-slate-500 whitespace-nowrap">按服务筛选</span>
+            <select className="min-w-36 bg-white border border-slate-200 rounded-md px-2 py-1.5 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-blue-100" value={serviceFilter} onChange={event => setServiceFilter(event.target.value)}>
               <option value="">全部服务</option>
               {serviceOptions.map(service => (
                 <option key={service} value={service}>{service}</option>
@@ -817,7 +814,7 @@ export const ReleaseChanges: React.FC<ReleaseChangesProps> = ({ mode = 'develope
         <div className="mt-5 bg-white border border-slate-200 rounded-xl shadow-sm p-5 max-w-lg">
           <h3 className="font-bold text-slate-800 mb-4">创建第一个版本</h3>
           <div className="space-y-3">
-            <input className={INPUT_STYLE} value={versionForm.versionName} onChange={event => setVersionForm({ ...versionForm, versionName: event.target.value })} placeholder="版本号" />
+            <input className={INPUT_STYLE} value={versionForm.versionName} onChange={event => setVersionForm({ ...versionForm, versionName: event.target.value })} placeholder="版本号，建议使用 yyyyMMdd，例如 20260423" />
             <textarea className={INPUT_STYLE} rows={3} value={versionForm.description} onChange={event => setVersionForm({ ...versionForm, description: event.target.value })} placeholder="版本说明，可选" />
             <button onClick={createVersion} className="px-4 py-2 bg-slate-800 text-white rounded-lg font-bold hover:bg-slate-900 flex items-center gap-2">
               <Plus size={16} /> 创建版本
