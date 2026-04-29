@@ -80,6 +80,9 @@ public class DataInitializer implements CommandLineRunner {
         }
 
         ensureMenuItem("2-3", "模拟报文生成", "/interface/mock-packet", "payload", true, "2", 3);
+        ensureMenuItem("13", "上线变更", "/release-changes", "release", true, null, 4);
+        ensureMenuItem("13-1", "变更集录入", "/release-changes/dev", "release", true, "13", 1);
+        ensureMenuItem("13-2", "比包对账", "/release-changes/manager", "diff", true, "13", 2);
     }
 
     private void ensureMenuItem(String menuId, String name, String path, String icon, boolean visible, String parentId, int sortOrder) {
