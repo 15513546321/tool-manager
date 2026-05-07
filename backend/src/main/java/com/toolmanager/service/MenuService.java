@@ -170,9 +170,23 @@ public class MenuService {
             }
         }
 
-        // 将菜单转换为树形结构（先按sortOrder排序确保顺序一致）
+        // 将菜单转换为树形结构（先按sortOrder排序确保顺序一致，不受角色遍历顺序影响）
         List<Menu> menuList = new ArrayList<>(userMenus);
-        menuList.sort((a, b) -> Integer.compare(a.getSortOrder(), b.getSortOrder()));
+        // 排序逻辑：先按父ID分组，再按sortOrder排序，最后按ID排序（确保sortOrder相同时顺序稳定）
+        menuList.sort((a, b) -> {
+            // 先按父ID分组，确保同级菜单在一起（parentId=0 的一级菜单优先）
+            int parentCompare = Long.compare(a.getParentId(), b.getParentId());
+            if (parentCompare != 0) {
+                return parentCompare;
+            }
+            // 同级菜单按sortOrder排序
+            int sortCompare = Integer.compare(a.getSortOrder(), b.getSortOrder());
+            if (sortCompare != 0) {
+                return sortCompare;
+            }
+            // sortOrder相同时，按ID排序确保顺序稳定（避免随机顺序）
+            return Long.compare(a.getId(), b.getId());
+        });
         return buildTree(menuList, 0L);
     }
 
@@ -338,17 +352,20 @@ public class MenuService {
             throw new RuntimeException("菜单不存在于同级列表中");
         }
         
-        Menu targetMenu = null;
+        int targetIndex = -1;
         
         if ("up".equals(direction) && currentIndex > 0) {
-            // 上移：与前一个菜单交换排序号
-            targetMenu = siblings.get(currentIndex - 1);
+            // 上移：移动到前一个位置
+            targetIndex = currentIndex - 1;
         } else if ("down".equals(direction) && currentIndex < siblings.size() - 1) {
-            // 下移：与后一个菜单交换排序号
-            targetMenu = siblings.get(currentIndex + 1);
+            // 下移：移动到后一个位置
+            targetIndex = currentIndex + 1;
         } else {
             throw new RuntimeException("已经是" + ("up".equals(direction) ? "第一个" : "最后一个") + "，无法继续" + ("up".equals(direction) ? "上移" : "下移"));
         }
+        
+        // 交换位置
+        Menu targetMenu = siblings.get(targetIndex);
         
         // 交换排序号
         int targetSortOrder = targetMenu.getSortOrder();
@@ -364,6 +381,34 @@ public class MenuService {
         }
         if (targetMenu.getIsButton() == 0) {
             syncToMenuItem(targetMenu);
+        }
+        
+        // 重新整理所有同级菜单的排序号，确保从1开始连续递增
+        reorganizeSortOrder(parentId);
+    }
+    
+    /**
+     * 重新整理同级菜单的排序号，确保从1开始连续递增
+     * @param parentId 父菜单ID
+     */
+    @Transactional
+    private void reorganizeSortOrder(Long parentId) {
+        // 获取同级菜单（按当前排序号排序）
+        List<Menu> siblings = menuRepository.findByParentIdOrderBySortOrderAsc(parentId);
+        
+        // 重新分配排序号，从1开始连续递增
+        for (int i = 0; i < siblings.size(); i++) {
+            Menu sibling = siblings.get(i);
+            int newSortOrder = i + 1;
+            if (sibling.getSortOrder() != newSortOrder) {
+                sibling.setSortOrder(newSortOrder);
+                menuRepository.save(sibling);
+                
+                // 同步更新到MenuItem表（仅非按钮菜单）
+                if (sibling.getIsButton() == 0) {
+                    syncToMenuItem(sibling);
+                }
+            }
         }
     }
 
