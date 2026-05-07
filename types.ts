@@ -12,6 +12,7 @@ export interface MenuItem {
   icon?: string;
   children?: MenuItem[];
   visible?: boolean; // Controls menu visibility (Online/Offline)
+  sortOrder?: number; // Sort order for menu items
 }
 
 // XML Interface Models

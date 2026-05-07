@@ -18,11 +18,34 @@ export interface IpMapping {
 
 const API_BASE = '/api';
 
+// 获取Token
+const getToken = () => {
+  return localStorage.getItem('accessToken');
+};
+
+// 带认证的fetch请求
+const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
+  const token = getToken();
+  const headers = new Headers(options.headers || {});
+  
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+  
+  const response = await fetch(url, {
+    ...options,
+    headers,
+    credentials: 'include',
+  });
+  
+  return response;
+};
+
 // 🔧 获取客户端真实IP地址（JAR直接部署场景）
 // 前端调用此函数获取用户IP，然后在后续API调用时传递给后端
 const getClientIp = async (): Promise<string> => {
   try {
-    const resp = await fetch(`${API_BASE}/client-ip`, { credentials: 'include' });
+    const resp = await fetchWithAuth(`${API_BASE}/client-ip`);
     if (resp.ok) {
       const data = await resp.json();
       // 返回 remoteAddr（这就是客户端真实IP）
@@ -40,10 +63,9 @@ export const recordAction = async (action: string, details: string) => {
     // 🔧 优化：前端先获取客户端真实IP，然后传递给后端
     const clientIp = await getClientIp();
     
-    await fetch(`${API_BASE}/audit/log`, {
+    await fetchWithAuth(`${API_BASE}/audit/log`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
       body: JSON.stringify({ action, details, ip: clientIp }),  // 添加 ip 参数
     });
   } catch (err) {
@@ -54,7 +76,7 @@ export const recordAction = async (action: string, details: string) => {
 // 获取全部日志
 export const getLogs = async (): Promise<LogEntry[]> => {
   try {
-    const resp = await fetch(`${API_BASE}/audit/logs`, { credentials: 'include' });
+    const resp = await fetchWithAuth(`${API_BASE}/audit/logs`);
     if (resp.ok) {
       return await resp.json();
     }
@@ -67,7 +89,7 @@ export const getLogs = async (): Promise<LogEntry[]> => {
 // 获取全部IP映射
 export const getIpMappings = async (): Promise<IpMapping[]> => {
   try {
-    const resp = await fetch(`${API_BASE}/ip-mappings`, { credentials: 'include' });
+    const resp = await fetchWithAuth(`${API_BASE}/ip-mappings`);
     if (resp.ok) {
       return await resp.json();
     }
@@ -81,10 +103,9 @@ export const getIpMappings = async (): Promise<IpMapping[]> => {
 export const saveIpMappings = async (mappings: IpMapping[]) => {
   for (const mapping of mappings) {
     try {
-      await fetch(`${API_BASE}/ip-mappings`, {
+      await fetchWithAuth(`${API_BASE}/ip-mappings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ ip: mapping.ip, name: mapping.name }),
       });
     } catch (err) {
@@ -96,9 +117,8 @@ export const saveIpMappings = async (mappings: IpMapping[]) => {
 // 删除IP映射
 export const deleteIpMapping = async (ip: string) => {
   try {
-    await fetch(`${API_BASE}/ip-mappings/${encodeURIComponent(ip)}`, {
+    await fetchWithAuth(`${API_BASE}/ip-mappings/${encodeURIComponent(ip)}`, {
       method: 'DELETE',
-      credentials: 'include',
     });
   } catch (err) {
     console.error('Failed to delete IP mapping:', err);
@@ -108,7 +128,7 @@ export const deleteIpMapping = async (ip: string) => {
 // 获取当前客户端真实IP
 export const getCurrentIp = async (): Promise<string> => {
   try {
-    const resp = await fetch(`${API_BASE}/client-ip`, { credentials: 'include' });
+    const resp = await fetchWithAuth(`${API_BASE}/client-ip`);
     if (resp.ok) {
       const data = await resp.json();
       return data.ip;

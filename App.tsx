@@ -17,6 +17,9 @@ import { GiteeManagement } from './pages/GiteeManagement';
 import { NacosSync } from './pages/sync/NacosSync';
 import { OracleSync } from './pages/sync/OracleSync';
 import { IpConfig } from './pages/admin/IpConfig';
+import { UserManagement } from './pages/admin/UserManagement';
+import { RoleManagement } from './pages/admin/RoleManagement';
+import { PermissionManagement } from './pages/admin/PermissionManagement';
 import { Suggestions } from './pages/Suggestions';
 import { Megaphone, ArrowRight, X, Clock, FileText, Download } from 'lucide-react';
 import { Database, TABLE } from './services/database';
@@ -282,6 +285,9 @@ const App: React.FC = () => {
           {/* Admin Menu Management */}
           <Route path="admin/menus" element={<MenuManagement />} />
           <Route path="admin/ip-config" element={<IpConfig />} />
+          <Route path="admin/users" element={<UserManagement />} />
+          <Route path="admin/roles" element={<RoleManagement />} />
+          <Route path="admin/permissions" element={<PermissionManagement />} />
           
           {/* Interface Management */}
           <Route path="interface/docs" element={<DocManagement />} />

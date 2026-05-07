@@ -2,8 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Outlet, Navigate, useLocation } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { MenuItem } from '../types';
-import { initialMenuItems } from '../pages/MenuManagement';
-import { menuApi } from '../services/apiService';
+import { menuApi } from '../services/authService';
 
 export const Layout: React.FC = () => {
   const user = localStorage.getItem('user');
@@ -11,45 +10,36 @@ export const Layout: React.FC = () => {
   const location = useLocation();
 
   // Load dynamic menus from backend API
-  useEffect(() => {
-    const loadMenusFromAPI = async () => {
-      try {
-        // Load from API instead of localStorage
-        const data = await menuApi.getAll();
-        
-        // Convert API response to MenuItem format
-        const converted = data
-          .map((item: any) => ({
-            id: item.menuId,
+    useEffect(() => {
+      const loadMenusFromAPI = async () => {
+        try {
+          // Load from API - backend already returns tree structure
+          const data = await menuApi.getTree();
+          
+          // Convert API response to MenuItem format while preserving tree structure
+          const convertMenu = (item: any): MenuItem => ({
+            id: String(item.id),
             name: item.name,
             path: item.path,
             icon: item.icon,
-            visible: item.visible !== false,
-            parentId: item.parentId,
-            sortOrder: item.sortOrder || 0
-          }))
-          .sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0));
-        
-        // Build hierarchy
-        const rootItems = converted.filter((m: any) => !m.parentId);
-        const buildTree = (parent: any) => {
-          const children = converted
-            .filter((m: any) => m.parentId === parent.id)
+            visible: item.status === 1,
+            sortOrder: item.sortOrder || 0,
+            children: item.children ? item.children.map((child: any) => convertMenu(child)).sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0)) : undefined
+          });
+          
+          // Filter and sort root menus (parentId is 0 or null)
+          const menus = data
+            .filter((item: any) => !item.parentId || item.parentId === 0)
+            .map((item: any) => convertMenu(item))
             .sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0));
-          if (children.length > 0) {
-            parent.children = children.map((c: any) => buildTree(c));
-          }
-          return parent;
-        };
-        
-        const menus = rootItems.map((item: any) => buildTree(item));
-        setMenuItems(menus);
-      } catch (error) {
-        console.error('Failed to load menus from API:', error);
-        // Fallback to initial menus if API fails
-        setMenuItems(initialMenuItems);
-      }
-    };
+          
+          setMenuItems(menus);
+        } catch (error) {
+          console.error('Failed to load menus from API:', error);
+          // Set empty menu if API fails
+          setMenuItems([]);
+        }
+      };
 
     loadMenusFromAPI();
     

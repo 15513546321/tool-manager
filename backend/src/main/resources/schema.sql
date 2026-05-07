@@ -234,6 +234,63 @@ CREATE TABLE IF NOT EXISTS analysis_items (
     FOREIGN KEY (connection_id) REFERENCES gitee_connections(id) ON DELETE CASCADE
 );
 
+-- 17. Users (用户表)
+CREATE TABLE IF NOT EXISTS sys_user (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(100) NOT NULL UNIQUE,
+    password VARCHAR(500) NOT NULL,
+    real_name VARCHAR(100),
+    email VARCHAR(255),
+    phone VARCHAR(50),
+    status INT DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 18. Roles (角色表)
+CREATE TABLE IF NOT EXISTS sys_role (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    role_code VARCHAR(100) NOT NULL UNIQUE,
+    role_name VARCHAR(100) NOT NULL,
+    level INT DEFAULT 1,
+    description VARCHAR(500),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 19. Menus (菜单表)
+CREATE TABLE IF NOT EXISTS sys_menu (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    path VARCHAR(500),
+    icon VARCHAR(100),
+    permission VARCHAR(200),
+    parent_id BIGINT DEFAULT 0,
+    sort_order INT DEFAULT 0,
+    is_button INT DEFAULT 0,
+    status INT DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 20. User-Role Mapping (用户角色关联表)
+CREATE TABLE IF NOT EXISTS sys_user_role (
+    user_id BIGINT NOT NULL,
+    role_id BIGINT NOT NULL,
+    PRIMARY KEY (user_id, role_id),
+    FOREIGN KEY (user_id) REFERENCES sys_user(id) ON DELETE CASCADE,
+    FOREIGN KEY (role_id) REFERENCES sys_role(id) ON DELETE CASCADE
+);
+
+-- 21. Role-Menu Mapping (角色菜单关联表)
+CREATE TABLE IF NOT EXISTS sys_role_menu (
+    role_id BIGINT NOT NULL,
+    menu_id BIGINT NOT NULL,
+    PRIMARY KEY (role_id, menu_id),
+    FOREIGN KEY (role_id) REFERENCES sys_role(id) ON DELETE CASCADE,
+    FOREIGN KEY (menu_id) REFERENCES sys_menu(id) ON DELETE CASCADE
+);
+
 -- ==================================================
 -- 创建索引以提高查询性能
 -- ==================================================
@@ -266,3 +323,20 @@ CREATE INDEX IF NOT EXISTS idx_suggestions_created_at ON suggestions(created_at)
 
 CREATE INDEX IF NOT EXISTS idx_gitee_connections_auth_type ON gitee_connections(auth_type);
 CREATE INDEX IF NOT EXISTS idx_gitee_connections_is_default ON gitee_connections(is_default);
+
+-- RBAC Indexes
+CREATE INDEX IF NOT EXISTS idx_sys_user_username ON sys_user(username);
+CREATE INDEX IF NOT EXISTS idx_sys_user_status ON sys_user(status);
+
+CREATE INDEX IF NOT EXISTS idx_sys_role_role_code ON sys_role(role_code);
+CREATE INDEX IF NOT EXISTS idx_sys_role_level ON sys_role(level);
+
+CREATE INDEX IF NOT EXISTS idx_sys_menu_parent_id ON sys_menu(parent_id);
+CREATE INDEX IF NOT EXISTS idx_sys_menu_permission ON sys_menu(permission);
+CREATE INDEX IF NOT EXISTS idx_sys_menu_status ON sys_menu(status);
+
+CREATE INDEX IF NOT EXISTS idx_sys_user_role_user_id ON sys_user_role(user_id);
+CREATE INDEX IF NOT EXISTS idx_sys_user_role_role_id ON sys_user_role(role_id);
+
+CREATE INDEX IF NOT EXISTS idx_sys_role_menu_role_id ON sys_role_menu(role_id);
+CREATE INDEX IF NOT EXISTS idx_sys_role_menu_menu_id ON sys_role_menu(menu_id);

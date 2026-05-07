@@ -52,41 +52,11 @@ public class DataInitializer implements CommandLineRunner {
     }
 
     /**
-     * 初始化菜单项 - 添加系统所有菜单和子菜单
+     * 初始化菜单项 - MenuItem由SecurityDataInitializer统一管理
+     * 此方法保留为空以避免重复初始化
      */
     private void initializeMenuItems() {
-        if (menuItemRepository.count() == 0) {
-            // 初始化根级菜单
-            menuItemRepository.save(new MenuItem(null, "1", "首页", "/dashboard", "dashboard", true, null, 1, LocalDateTime.now(), LocalDateTime.now(), "admin"));
-            menuItemRepository.save(new MenuItem(null, "6", "公告通知", "/announcement", "docs", true, null, 2, LocalDateTime.now(), LocalDateTime.now(), "admin"));
-            menuItemRepository.save(new MenuItem(null, "10", "优化建议", "/suggestions", "suggestions", true, null, 3, LocalDateTime.now(), LocalDateTime.now(), "admin"));
-            menuItemRepository.save(new MenuItem(null, "2", "接口管理", "/interface", "api", true, null, 4, LocalDateTime.now(), LocalDateTime.now(), "admin"));
-            menuItemRepository.save(new MenuItem(null, "11", "数据同步", "/sync", "sync", true, null, 5, LocalDateTime.now(), LocalDateTime.now(), "admin"));
-            menuItemRepository.save(new MenuItem(null, "9", "GitLab 报表", "/gitlab-reports", "gitlab", true, null, 6, LocalDateTime.now(), LocalDateTime.now(), "admin"));
-            menuItemRepository.save(new MenuItem(null, "12", "Gitee管理", "/gitee", "gitee", true, null, 7, LocalDateTime.now(), LocalDateTime.now(), "admin"));
-            menuItemRepository.save(new MenuItem(null, "8", "格式化工具", "/format", "format", true, null, 8, LocalDateTime.now(), LocalDateTime.now(), "admin"));
-            menuItemRepository.save(new MenuItem(null, "3", "参数配置", "/params", "params", true, null, 9, LocalDateTime.now(), LocalDateTime.now(), "admin"));
-            menuItemRepository.save(new MenuItem(null, "4", "知识库", "/repo", "repo", true, null, 10, LocalDateTime.now(), LocalDateTime.now(), "admin"));
-            menuItemRepository.save(new MenuItem(null, "7", "审计日志", "/audit", "settings", true, null, 11, LocalDateTime.now(), LocalDateTime.now(), "admin"));
-            menuItemRepository.save(new MenuItem(null, "5", "系统设置", "/admin", "settings", true, null, 12, LocalDateTime.now(), LocalDateTime.now(), "admin"));
-
-            // Child menus
-            menuItemRepository.save(new MenuItem(null, "2-1", "文档管理", "/interface/docs", "docs", true, "2", 1, LocalDateTime.now(), LocalDateTime.now(), "admin"));
-            menuItemRepository.save(new MenuItem(null, "2-2", "代码生成", "/interface/code", "code", true, "2", 2, LocalDateTime.now(), LocalDateTime.now(), "admin"));
-            menuItemRepository.save(new MenuItem(null, "11-1", "Nacos配置同步", "/sync/nacos", "nacos", true, "11", 1, LocalDateTime.now(), LocalDateTime.now(), "admin"));
-            menuItemRepository.save(new MenuItem(null, "11-2", "Oracle DDL同步", "/sync/oracle", "oracle", true, "11", 2, LocalDateTime.now(), LocalDateTime.now(), "admin"));
-            menuItemRepository.save(new MenuItem(null, "5-1", "菜单管理", "/admin/menus", "settings", true, "5", 1, LocalDateTime.now(), LocalDateTime.now(), "admin"));
-            menuItemRepository.save(new MenuItem(null, "5-2", "IP映射配置", "/admin/ip-config", "ip", true, "5", 2, LocalDateTime.now(), LocalDateTime.now(), "admin"));
-        }
-
-        ensureMenuItem("2-3", "模拟报文生成", "/interface/mock-packet", "payload", true, "2", 3);
-    }
-
-    private void ensureMenuItem(String menuId, String name, String path, String icon, boolean visible, String parentId, int sortOrder) {
-        menuItemRepository.findByMenuId(menuId).orElseGet(() -> menuItemRepository.save(
-                new MenuItem(null, menuId, name, path, icon, visible, parentId, sortOrder,
-                        LocalDateTime.now(), LocalDateTime.now(), "admin")
-        ));
+        // MenuItem数据由SecurityDataInitializer统一管理，此处不做任何操作
     }
 
     /**

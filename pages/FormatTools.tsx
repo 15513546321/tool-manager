@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FileJson, FileCode, Copy, Eraser, Check } from 'lucide-react';
 
 export const FormatTools: React.FC = () => {
@@ -9,8 +9,16 @@ export const FormatTools: React.FC = () => {
 
   const formatJson = (text: string) => {
     try {
-      const obj = JSON.parse(text);
-      return JSON.stringify(obj, null, 4);
+      // 使用reviver函数检测重复key
+      const seenKeys = new Set<string>();
+      const obj = JSON.parse(text, (key, value) => {
+        if (key !== '' && seenKeys.has(key)) {
+          console.warn(`Warning: Duplicate key "${key}" detected, only the last value will be preserved`);
+        }
+        seenKeys.add(key);
+        return value;
+      });
+      return JSON.stringify(obj, null, 2);
     } catch (e) {
       return `Error: Invalid JSON\n${(e as Error).message}`;
     }
@@ -18,18 +26,28 @@ export const FormatTools: React.FC = () => {
 
   const formatXml = (xml: string) => {
     try {
+      // 移除多余的空白和换行
+      let cleaned = xml.replace(/>\s+</g, '><');
+      cleaned = cleaned.replace(/^\s+|\s+$/g, '');
+      
       let formatted = '';
       const reg = /(>)(<)(\/*)/g;
-      const spacedXml = xml.replace(reg, '$1\r\n$2$3');
+      const spacedXml = cleaned.replace(reg, '$1\n$2$3');
       let pad = 0;
       
-      spacedXml.split('\r\n').forEach((node) => {
+      spacedXml.split('\n').forEach((node) => {
+        // 跳过空行
+        if (!node.trim()) return;
+        
         let indent = 0;
         if (node.match(/.+<\/\w[^>]*>$/)) {
+          // 自闭合标签或单行标签对 <tag>content</tag>
           indent = 0;
         } else if (node.match(/^<\/\w/)) {
+          // 结束标签 </tag>
           if (pad !== 0) pad -= 1;
         } else if (node.match(/^<\w[^>]*[^\/]>.*$/)) {
+          // 开始标签 <tag> 但没有在同一行结束
           indent = 1;
         } else {
           indent = 0;
@@ -37,10 +55,10 @@ export const FormatTools: React.FC = () => {
 
         let padding = '';
         for (let i = 0; i < pad; i++) {
-          padding += '    ';
+          padding += '  '; // 使用2个空格缩进
         }
 
-        formatted += padding + node + '\r\n';
+        formatted += padding + node.trim() + '\n';
         pad += indent;
       });
       return formatted.trim();
@@ -59,10 +77,42 @@ export const FormatTools: React.FC = () => {
     }
   };
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(outputContent);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  // 切换标签时自动重新格式化
+  useEffect(() => {
+    if (inputContent.trim()) {
+      handleFormat();
+    }
+  }, [activeTab]);
+
+  const handleCopy = async () => {
+    if (!outputContent.trim()) {
+      return;
+    }
+    
+    try {
+      await navigator.clipboard.writeText(outputContent);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      const textArea = document.createElement('textarea');
+      textArea.value = outputContent;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-9999px';
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch (e) {
+        console.error('Failed to copy:', e);
+      }
+      document.body.removeChild(textArea);
+    }
+  };
+
+  const handleTabChange = (tab: 'json' | 'xml') => {
+    setActiveTab(tab);
   };
 
   return (
@@ -76,7 +126,7 @@ export const FormatTools: React.FC = () => {
         {/* Tabs */}
         <div className="flex border-b border-slate-200">
           <button
-            onClick={() => { setActiveTab('json'); setOutputContent(''); }}
+            onClick={() => handleTabChange('json')}
             className={`flex items-center gap-2 px-6 py-4 text-sm font-medium transition-colors border-b-2 ${
               activeTab === 'json'
                 ? 'border-blue-600 text-blue-600 bg-blue-50/50'
@@ -87,7 +137,7 @@ export const FormatTools: React.FC = () => {
             JSON 格式化
           </button>
           <button
-            onClick={() => { setActiveTab('xml'); setOutputContent(''); }}
+            onClick={() => handleTabChange('xml')}
             className={`flex items-center gap-2 px-6 py-4 text-sm font-medium transition-colors border-b-2 ${
               activeTab === 'xml'
                 ? 'border-orange-600 text-orange-600 bg-orange-50/50'
@@ -120,7 +170,7 @@ export const FormatTools: React.FC = () => {
             />
           </div>
 
-          {/* Controls (Mobile: Horizontal, Desktop: Vertical center) */}
+          {/* Controls */}
           <div className="p-4 bg-white flex md:flex-col justify-center items-center gap-4 border-t md:border-t-0 md:border-l border-slate-200 z-10">
              <button 
                onClick={handleFormat}
@@ -142,7 +192,7 @@ export const FormatTools: React.FC = () => {
                 {copied ? 'Copied!' : 'Copy Result'}
               </button>
             </div>
-            <pre className="flex-1 w-full p-4 border border-slate-200 rounded-lg font-mono text-sm bg-slate-800 text-blue-100 overflow-auto whitespace-pre-wrap leading-relaxed">
+            <pre className="flex-1 w-full p-4 border border-slate-200 rounded-lg font-mono text-sm bg-slate-800 text-blue-100 overflow-auto whitespace-pre leading-relaxed">
               {outputContent || <span className="text-slate-600 italic">// Formatted result will appear here</span>}
             </pre>
           </div>

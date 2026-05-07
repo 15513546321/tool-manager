@@ -43,28 +43,55 @@ export interface ApiResponse<T> {
   error?: string;
 }
 
+/**
+ * Get JWT token from localStorage
+ */
+const getToken = () => {
+  return localStorage.getItem('accessToken');
+};
+
+/**
+ * Fetch wrapper with Authorization header
+ */
+const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
+  const token = getToken();
+  const headers = new Headers(options.headers || {});
+  
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+  
+  const response = await fetch(url, {
+    ...options,
+    headers,
+    credentials: 'include',
+  });
+  
+  return response;
+};
+
 // Announcement APIs
 export const announcementApi = {
   getLatest: async () => {
-    const res = await fetch(`${API_BASE_URL}/announcement/latest`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/announcement/latest`);
     if (!res.ok) throw new Error('Failed to fetch latest announcement');
     return res.json();
   },
 
   getByVersion: async (version: string) => {
-    const res = await fetch(`${API_BASE_URL}/announcement/${version}`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/announcement/${version}`);
     if (!res.ok) throw new Error('Failed to fetch announcement');
     return res.json();
   },
 
   getAll: async () => {
-    const res = await fetch(`${API_BASE_URL}/announcement/list/all`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/announcement/list/all`);
     if (!res.ok) throw new Error('Failed to fetch announcements');
     return res.json();
   },
 
   create: async (data: any) => {
-    const res = await fetch(`${API_BASE_URL}/announcement`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/announcement`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -74,7 +101,7 @@ export const announcementApi = {
   },
 
   update: async (id: number, data: any) => {
-    const res = await fetch(`${API_BASE_URL}/announcement/${id}`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/announcement/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -84,20 +111,20 @@ export const announcementApi = {
   },
 
   delete: async (id: number) => {
-    const res = await fetch(`${API_BASE_URL}/announcement/${id}`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/announcement/${id}`, {
       method: 'DELETE',
     });
     if (!res.ok) throw new Error('Failed to delete announcement');
   },
 
   checkStatus: async () => {
-    const res = await fetch(`${API_BASE_URL}/announcement/status/check`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/announcement/status/check`);
     if (!res.ok) throw new Error('Failed to check announcement status');
     return res.json();
   },
 
   recordView: async () => {
-    const res = await fetch(`${API_BASE_URL}/announcement/record-view`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/announcement/record-view`, {
       method: 'POST',
     });
     if (!res.ok) throw new Error('Failed to record announcement view');
@@ -105,28 +132,34 @@ export const announcementApi = {
   },
 };
 
-// Menu APIs
+// Menu APIs (for system menu configuration)
 export const menuApi = {
   getAll: async () => {
-    const res = await fetch(`${API_BASE_URL}/menu/all`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/menus`);
     if (!res.ok) throw new Error('Failed to fetch menus');
     return res.json();
   },
 
+  getTree: async () => {
+    const res = await fetchWithAuth(`${API_BASE_URL}/menus/tree`);
+    if (!res.ok) throw new Error('Failed to fetch menu tree');
+    return res.json();
+  },
+
   getById: async (menuId: string) => {
-    const res = await fetch(`${API_BASE_URL}/menu/${menuId}`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/menus/${menuId}`);
     if (!res.ok) throw new Error('Failed to fetch menu');
     return res.json();
   },
 
   getChildren: async (parentId: string) => {
-    const res = await fetch(`${API_BASE_URL}/menu/children/${parentId}`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/menus/children/${parentId}`);
     if (!res.ok) throw new Error('Failed to fetch menu children');
     return res.json();
   },
 
   create: async (data: any) => {
-    const res = await fetch(`${API_BASE_URL}/menu`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/menus`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -136,7 +169,7 @@ export const menuApi = {
   },
 
   update: async (menuId: string, data: any) => {
-    const res = await fetch(`${API_BASE_URL}/menu/${menuId}`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/menus/${menuId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -146,35 +179,53 @@ export const menuApi = {
   },
 
   delete: async (menuId: string) => {
-    const res = await fetch(`${API_BASE_URL}/menu/${menuId}`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/menus/${menuId}`, {
       method: 'DELETE',
     });
     if (!res.ok) throw new Error('Failed to delete menu');
+  },
+
+  reorder: async (menuId: string, direction: 'up' | 'down') => {
+    const res = await fetchWithAuth(`${API_BASE_URL}/menus/${menuId}/reorder?direction=${direction}`, {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error('Failed to reorder menu');
+    return res.json();
+  },
+
+  toggleStatus: async (menuId: string, status: number) => {
+    const res = await fetchWithAuth(`${API_BASE_URL}/menus/${menuId}/status`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+    if (!res.ok) throw new Error('Failed to toggle menu status');
+    return res.json();
   },
 };
 
 // System Parameter APIs
 export const systemParameterApi = {
   getByKey: async (paramKey: string) => {
-    const res = await fetch(`${API_BASE_URL}/system-param/${paramKey}`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/system-param/${paramKey}`);
     if (!res.ok) throw new Error('Failed to fetch parameter');
     return res.json();
   },
 
   getByCategory: async (category: string) => {
-    const res = await fetch(`${API_BASE_URL}/system-param/category/${category}`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/system-param/category/${category}`);
     if (!res.ok) throw new Error('Failed to fetch parameters');
     return res.json();
   },
 
   getAll: async () => {
-    const res = await fetch(`${API_BASE_URL}/system-param/all`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/system-param/all`);
     if (!res.ok) throw new Error('Failed to fetch all parameters');
     return res.json();
   },
 
   save: async (data: any) => {
-    const res = await fetch(`${API_BASE_URL}/system-param`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/system-param`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -184,7 +235,7 @@ export const systemParameterApi = {
   },
 
   delete: async (paramKey: string) => {
-    const res = await fetch(`${API_BASE_URL}/system-param/${paramKey}`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/system-param/${paramKey}`, {
       method: 'DELETE',
     });
     if (!res.ok) throw new Error('Failed to delete parameter');
@@ -192,13 +243,13 @@ export const systemParameterApi = {
 
   // Parameter Category APIs
   getCategories: async () => {
-    const res = await fetch(`${API_BASE_URL}/system-param/categories/all`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/system-param/categories/all`);
     if (!res.ok) throw new Error('Failed to fetch parameter categories');
     return res.json();
   },
 
   saveCategories: async (categories: Record<string, string[]>) => {
-    const res = await fetch(`${API_BASE_URL}/system-param/categories`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/system-param/categories`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(categories),
@@ -209,7 +260,7 @@ export const systemParameterApi = {
 
   // Batch operations
   batchSave: async (params: any[]) => {
-    const res = await fetch(`${API_BASE_URL}/system-param/batch`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/system-param/batch`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
@@ -219,7 +270,7 @@ export const systemParameterApi = {
   },
 
   exportToExcel: async () => {
-    const res = await fetch(`${API_BASE_URL}/system-param/export`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/system-param/export`);
     if (!res.ok) throw new Error('Failed to export parameters');
     return res.blob();
   },
@@ -228,7 +279,7 @@ export const systemParameterApi = {
     const formData = new FormData();
     formData.append('file', file);
     
-    const res = await fetch(`${API_BASE_URL}/system-param/import`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/system-param/import`, {
       method: 'POST',
       body: formData,
     });
@@ -240,25 +291,25 @@ export const systemParameterApi = {
 // Suggestion APIs
 export const suggestionApi = {
   getAll: async () => {
-    const res = await fetch(`${API_BASE_URL}/suggestion/all`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/suggestion/all`);
     if (!res.ok) throw new Error('Failed to fetch suggestions');
     return res.json();
   },
 
   getByStatus: async (status: string) => {
-    const res = await fetch(`${API_BASE_URL}/suggestion/status/${status}`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/suggestion/status/${status}`);
     if (!res.ok) throw new Error('Failed to fetch suggestions');
     return res.json();
   },
 
   getByCategory: async (category: string) => {
-    const res = await fetch(`${API_BASE_URL}/suggestion/category/${category}`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/suggestion/category/${category}`);
     if (!res.ok) throw new Error('Failed to fetch suggestions');
     return res.json();
   },
 
   create: async (data: any) => {
-    const res = await fetch(`${API_BASE_URL}/suggestion`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/suggestion`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -268,7 +319,7 @@ export const suggestionApi = {
   },
 
   update: async (id: number, data: any) => {
-    const res = await fetch(`${API_BASE_URL}/suggestion/${id}`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/suggestion/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -278,7 +329,7 @@ export const suggestionApi = {
   },
 
   delete: async (id: number) => {
-    const res = await fetch(`${API_BASE_URL}/suggestion/${id}`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/suggestion/${id}`, {
       method: 'DELETE',
     });
     if (!res.ok) throw new Error('Failed to delete suggestion');
@@ -288,25 +339,25 @@ export const suggestionApi = {
 // Config Setting APIs (for GitLab, Gitee, Nacos, Oracle, etc.)
 export const configApi = {
   getByKey: async (configKey: string) => {
-    const res = await fetch(`${API_BASE_URL}/config/${configKey}`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/config/${configKey}`);
     if (!res.ok) throw new Error('Failed to fetch config');
     return res.json();
   },
 
   getByType: async (configType: string) => {
-    const res = await fetch(`${API_BASE_URL}/config/type/${configType}`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/config/type/${configType}`);
     if (!res.ok) throw new Error('Failed to fetch configs');
     return res.json();
   },
 
   getAll: async () => {
-    const res = await fetch(`${API_BASE_URL}/config/all`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/config/all`);
     if (!res.ok) throw new Error('Failed to fetch all configs');
     return res.json();
   },
 
   save: async (data: any) => {
-    const res = await fetch(`${API_BASE_URL}/config`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/config`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -316,7 +367,7 @@ export const configApi = {
   },
 
   delete: async (configKey: string) => {
-    const res = await fetch(`${API_BASE_URL}/config/${configKey}`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/config/${configKey}`, {
       method: 'DELETE',
     });
     if (!res.ok) throw new Error('Failed to delete config');
@@ -325,19 +376,19 @@ export const configApi = {
 
 export const docManagementApi = {
   getSharedWorkspace: async () => {
-    const res = await fetch(`${API_BASE_URL}/doc-management/shared-workspace`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/doc-management/shared-workspace`);
     if (!res.ok) throw new Error('Failed to fetch shared workspace');
     return res.json();
   },
 
   getSharedMiddleEntries: async () => {
-    const res = await fetch(`${API_BASE_URL}/doc-management/shared-workspace/middle-entries`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/doc-management/shared-workspace/middle-entries`);
     if (!res.ok) throw new Error('Failed to fetch shared middle entries');
     return res.json();
   },
 
   saveSharedMiddleEntries: async (data: any) => {
-    const res = await fetch(`${API_BASE_URL}/doc-management/shared-workspace/middle-entries`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/doc-management/shared-workspace/middle-entries`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -347,7 +398,7 @@ export const docManagementApi = {
   },
 
   saveSharedChainMap: async (data: any) => {
-    const res = await fetch(`${API_BASE_URL}/doc-management/shared-workspace/chain-map`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/doc-management/shared-workspace/chain-map`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -357,7 +408,7 @@ export const docManagementApi = {
   },
 
   clearSharedWorkspace: async () => {
-    const res = await fetch(`${API_BASE_URL}/doc-management/shared-workspace`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/doc-management/shared-workspace`, {
       method: 'DELETE',
     });
     if (!res.ok) throw new Error('Failed to clear shared workspace');
@@ -367,13 +418,13 @@ export const docManagementApi = {
 
 export const mockPacketApi = {
   getConfig: async () => {
-    const res = await fetch(`${API_BASE_URL}/mock-packet/config`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/mock-packet/config`);
     if (!res.ok) throw new Error('Failed to fetch mock packet config');
     return res.json();
   },
 
   saveConfig: async (config: any, username = 'system') => {
-    const res = await fetch(`${API_BASE_URL}/mock-packet/config?username=${encodeURIComponent(username)}`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/mock-packet/config?username=${encodeURIComponent(username)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(config),
@@ -383,7 +434,7 @@ export const mockPacketApi = {
   },
 
   testConnection: async (config?: any) => {
-    const res = await fetch(`${API_BASE_URL}/mock-packet/test-connection`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/mock-packet/test-connection`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ config }),
@@ -393,7 +444,7 @@ export const mockPacketApi = {
   },
 
   getTransactionTypes: async (config?: any) => {
-    const res = await fetch(`${API_BASE_URL}/mock-packet/transaction-types`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/mock-packet/transaction-types`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ config }),
@@ -403,7 +454,7 @@ export const mockPacketApi = {
   },
 
   generatePackets: async (selectedTypes: any[], config?: any) => {
-    const res = await fetch(`${API_BASE_URL}/mock-packet/generate`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/mock-packet/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ selectedTypes, config }),
@@ -416,25 +467,25 @@ export const mockPacketApi = {
 // Database Connection API
 export const dbConnectionApi = {
   getAll: async () => {
-    const res = await fetch(`${API_BASE_URL}/db-connection/all`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/db-connection/all`);
     if (!res.ok) throw new Error('Failed to fetch database connections');
     return res.json();
   },
 
   getByType: async (type: string) => {
-    const res = await fetch(`${API_BASE_URL}/db-connection/type/${type}`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/db-connection/type/${type}`);
     if (!res.ok) throw new Error('Failed to fetch connections by type');
     return res.json();
   },
 
   getById: async (id: number) => {
-    const res = await fetch(`${API_BASE_URL}/db-connection/${id}`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/db-connection/${id}`);
     if (!res.ok) throw new Error('Failed to fetch database connection');
     return res.json();
   },
 
   create: async (data: any) => {
-    const res = await fetch(`${API_BASE_URL}/db-connection`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/db-connection`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -444,7 +495,7 @@ export const dbConnectionApi = {
   },
 
   update: async (id: number, data: any) => {
-    const res = await fetch(`${API_BASE_URL}/db-connection/${id}`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/db-connection/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -454,7 +505,7 @@ export const dbConnectionApi = {
   },
 
   delete: async (id: number) => {
-    const res = await fetch(`${API_BASE_URL}/db-connection/${id}`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/db-connection/${id}`, {
       method: 'DELETE',
     });
     if (!res.ok) throw new Error('Failed to delete database connection');
@@ -467,7 +518,7 @@ export const dbConnectionApi = {
   },
 
   testConnection: async (connectionString: string, username: string, password: string) => {
-    const res = await fetch(`${API_BASE_URL}/db-connection/test-connection`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/db-connection/test-connection`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ connectionString, username, password }),
@@ -480,31 +531,31 @@ export const dbConnectionApi = {
 // Code Template API
 export const codeTemplateApi = {
   getAll: async () => {
-    const res = await fetch(`${API_BASE_URL}/code-template/all`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/code-template/all`);
     if (!res.ok) throw new Error('Failed to fetch code templates');
     return res.json();
   },
 
   getByType: async (type: string) => {
-    const res = await fetch(`${API_BASE_URL}/code-template/type/${type}`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/code-template/type/${type}`);
     if (!res.ok) throw new Error('Failed to fetch templates by type');
     return res.json();
   },
 
   getById: async (id: number) => {
-    const res = await fetch(`${API_BASE_URL}/code-template/${id}`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/code-template/${id}`);
     if (!res.ok) throw new Error('Failed to fetch code template');
     return res.json();
   },
 
   getByName: async (name: string) => {
-    const res = await fetch(`${API_BASE_URL}/code-template/name/${name}`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/code-template/name/${name}`);
     if (!res.ok) throw new Error('Failed to fetch code template by name');
     return res.json();
   },
 
   create: async (data: any) => {
-    const res = await fetch(`${API_BASE_URL}/code-template`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/code-template`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -514,7 +565,7 @@ export const codeTemplateApi = {
   },
 
   update: async (id: number, data: any) => {
-    const res = await fetch(`${API_BASE_URL}/code-template/${id}`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/code-template/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -524,7 +575,7 @@ export const codeTemplateApi = {
   },
 
   delete: async (id: number) => {
-    const res = await fetch(`${API_BASE_URL}/code-template/${id}`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/code-template/${id}`, {
       method: 'DELETE',
     });
     if (!res.ok) throw new Error('Failed to delete code template');
@@ -535,37 +586,37 @@ export const codeTemplateApi = {
 export const documentApi = {
   // Document Management
   getAll: async () => {
-    const res = await fetch(`${API_BASE_URL}/documents/all`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/documents/all`);
     if (!res.ok) throw new Error('Failed to fetch documents');
     return res.json();
   },
 
   getByCategory: async (category: string) => {
-    const res = await fetch(`${API_BASE_URL}/documents/category/${category}`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/documents/category/${category}`);
     if (!res.ok) throw new Error('Failed to fetch documents by category');
     return res.json();
   },
 
   getBySubCategory: async (category: string, subCategory: string) => {
-    const res = await fetch(`${API_BASE_URL}/documents/category/${category}/sub/${subCategory}`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/documents/category/${category}/sub/${subCategory}`);
     if (!res.ok) throw new Error('Failed to fetch documents by subcategory');
     return res.json();
   },
 
   search: async (title: string) => {
-    const res = await fetch(`${API_BASE_URL}/documents/search?title=${encodeURIComponent(title)}`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/documents/search?title=${encodeURIComponent(title)}`);
     if (!res.ok) throw new Error('Failed to search documents');
     return res.json();
   },
 
   getById: async (id: number) => {
-    const res = await fetch(`${API_BASE_URL}/documents/${id}`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/documents/${id}`);
     if (!res.ok) throw new Error('Failed to fetch document');
     return res.json();
   },
 
   create: async (data: any) => {
-    const res = await fetch(`${API_BASE_URL}/documents`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/documents`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -575,7 +626,7 @@ export const documentApi = {
   },
 
   update: async (id: number, data: any) => {
-    const res = await fetch(`${API_BASE_URL}/documents/${id}`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/documents/${id}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -585,7 +636,7 @@ export const documentApi = {
   },
 
   delete: async (id: number) => {
-    const res = await fetch(`${API_BASE_URL}/documents/${id}`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/documents/${id}`, {
       method: 'DELETE',
     });
     if (!res.ok) throw new Error('Failed to delete document');
@@ -593,19 +644,19 @@ export const documentApi = {
 
   // Document Version Management
   getVersions: async (documentId: number) => {
-    const res = await fetch(`${API_BASE_URL}/documents/${documentId}/versions`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/documents/${documentId}/versions`);
     if (!res.ok) throw new Error('Failed to fetch versions');
     return res.json();
   },
 
   getVersion: async (documentId: number, versionNumber: string) => {
-    const res = await fetch(`${API_BASE_URL}/documents/${documentId}/versions/${versionNumber}`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/documents/${documentId}/versions/${versionNumber}`);
     if (!res.ok) throw new Error('Failed to fetch version');
     return res.json();
   },
 
   saveVersion: async (documentId: number, versionData: any) => {
-    const res = await fetch(`${API_BASE_URL}/documents/${documentId}/versions`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/documents/${documentId}/versions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(versionData),
@@ -615,7 +666,7 @@ export const documentApi = {
   },
 
   deleteVersion: async (versionId: number) => {
-    const res = await fetch(`${API_BASE_URL}/documents/versions/${versionId}`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/documents/versions/${versionId}`, {
       method: 'DELETE',
     });
     if (!res.ok) throw new Error('Failed to delete version');
@@ -625,19 +676,19 @@ export const documentApi = {
 // Document Category APIs
 export const documentCategoryApi = {
   getAll: async () => {
-    const res = await fetch(`${API_BASE_URL}/document-category/all`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/document-category/all`);
     if (!res.ok) throw new Error('Failed to fetch categories');
     return res.json();
   },
 
   getByName: async (categoryName: string) => {
-    const res = await fetch(`${API_BASE_URL}/document-category/${encodeURIComponent(categoryName)}`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/document-category/${encodeURIComponent(categoryName)}`);
     if (!res.ok) throw new Error('Failed to fetch category');
     return res.json();
   },
 
   create: async (data: any) => {
-    const res = await fetch(`${API_BASE_URL}/document-category`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/document-category`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -647,7 +698,7 @@ export const documentCategoryApi = {
   },
 
   delete: async (categoryName: string) => {
-    const res = await fetch(`${API_BASE_URL}/document-category/${encodeURIComponent(categoryName)}`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/document-category/${encodeURIComponent(categoryName)}`, {
       method: 'DELETE',
     });
     if (!res.ok) throw new Error('Failed to delete category');
@@ -655,7 +706,7 @@ export const documentCategoryApi = {
   },
 
   rename: async (oldName: string, newName: string) => {
-    const res = await fetch(`${API_BASE_URL}/document-category/${encodeURIComponent(oldName)}/rename?newName=${encodeURIComponent(newName)}`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/document-category/${encodeURIComponent(oldName)}/rename?newName=${encodeURIComponent(newName)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
     });
@@ -664,7 +715,7 @@ export const documentCategoryApi = {
   },
 
   addSubCategory: async (categoryName: string, subCategoryName: string) => {
-    const res = await fetch(`${API_BASE_URL}/document-category/${encodeURIComponent(categoryName)}/sub-categories?subCategoryName=${encodeURIComponent(subCategoryName)}`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/document-category/${encodeURIComponent(categoryName)}/sub-categories?subCategoryName=${encodeURIComponent(subCategoryName)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     });
@@ -673,7 +724,7 @@ export const documentCategoryApi = {
   },
 
   deleteSubCategory: async (categoryName: string, subCategoryName: string) => {
-    const res = await fetch(`${API_BASE_URL}/document-category/${encodeURIComponent(categoryName)}/sub-categories/${encodeURIComponent(subCategoryName)}`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/document-category/${encodeURIComponent(categoryName)}/sub-categories/${encodeURIComponent(subCategoryName)}`, {
       method: 'DELETE',
     });
     if (!res.ok) throw new Error('Failed to delete sub-category');
@@ -681,7 +732,7 @@ export const documentCategoryApi = {
   },
 
   renameSubCategory: async (categoryName: string, oldSubName: string, newSubName: string) => {
-    const res = await fetch(`${API_BASE_URL}/document-category/${encodeURIComponent(categoryName)}/sub-categories/${encodeURIComponent(oldSubName)}/rename?newSubName=${encodeURIComponent(newSubName)}`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/document-category/${encodeURIComponent(categoryName)}/sub-categories/${encodeURIComponent(oldSubName)}/rename?newSubName=${encodeURIComponent(newSubName)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
     });
@@ -693,7 +744,7 @@ export const documentCategoryApi = {
 // Generic HTTP methods for custom API calls
 const httpMethods = {
   get: async (url: string) => {
-    const res = await fetch(`${API_BASE_URL}${url}`);
+    const res = await fetchWithAuth(`${API_BASE_URL}${url}`);
     if (!res.ok) {
       const errorText = await res.text();
       console.error(`GET ${url} failed:`, res.status, errorText);
@@ -704,7 +755,7 @@ const httpMethods = {
 
   post: async (url: string, data?: any) => {
     try {
-      const res = await fetch(`${API_BASE_URL}${url}`, {
+      const res = await fetchWithAuth(`${API_BASE_URL}${url}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data || {}),
@@ -729,7 +780,7 @@ const httpMethods = {
 
   put: async (url: string, data: any) => {
     try {
-      const res = await fetch(`${API_BASE_URL}${url}`, {
+      const res = await fetchWithAuth(`${API_BASE_URL}${url}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
@@ -752,7 +803,7 @@ const httpMethods = {
   },
 
   delete: async (url: string) => {
-    const res = await fetch(`${API_BASE_URL}${url}`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}${url}`, {
       method: 'DELETE',
     });
     
@@ -774,7 +825,7 @@ const httpMethods = {
 // Nacos Sync API
 export const nacosApi = {
   testConnection: async (data: any) => {
-    const res = await fetch(`${API_BASE_URL}/nacos-sync/test-connection`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/nacos-sync/test-connection`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -784,7 +835,7 @@ export const nacosApi = {
   },
 
   queryConfigs: async () => {
-    const res = await fetch(`${API_BASE_URL}/nacos-sync/configs`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/nacos-sync/configs`, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
     });
@@ -793,7 +844,7 @@ export const nacosApi = {
   },
 
   saveConfig: async (data: any) => {
-    const res = await fetch(`${API_BASE_URL}/nacos-sync/configs`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/nacos-sync/configs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -803,7 +854,7 @@ export const nacosApi = {
   },
 
   updateConfig: async (id: string, data: any) => {
-    const res = await fetch(`${API_BASE_URL}/nacos-sync/configs/${id}`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/nacos-sync/configs/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -813,7 +864,7 @@ export const nacosApi = {
   },
 
   deleteConfig: async (id: string, data: any) => {
-    const res = await fetch(`${API_BASE_URL}/nacos-sync/configs/${id}`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/nacos-sync/configs/${id}`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -823,7 +874,7 @@ export const nacosApi = {
   },
 
   getConfig: async (data: any) => {
-    const res = await fetch(`${API_BASE_URL}/nacos-sync/get-config`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/nacos-sync/get-config`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -833,7 +884,7 @@ export const nacosApi = {
   },
 
   compare: async (data: any) => {
-    const res = await fetch(`${API_BASE_URL}/nacos-sync/compare`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/nacos-sync/compare`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -843,7 +894,7 @@ export const nacosApi = {
   },
 
   compareDetailed: async (data: any) => {
-    const res = await fetch(`${API_BASE_URL}/nacos-sync/compare-detailed`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/nacos-sync/compare-detailed`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
