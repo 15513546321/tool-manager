@@ -12,6 +12,7 @@ import { DocRepository } from './pages/DocRepository';
 import { Announcement } from './pages/Announcement';
 import { AuditLog } from './pages/AuditLog';
 import { FormatTools } from './pages/FormatTools';
+import { FieldConfigTool } from './pages/FieldConfigTool';
 import { GitlabReports } from './pages/GitlabReports';
 import { GiteeManagement } from './pages/GiteeManagement';
 import { NacosSync } from './pages/sync/NacosSync';
@@ -296,7 +297,9 @@ const App: React.FC = () => {
           
           {/* New Format Tools */}
           <Route path="format" element={<FormatTools />} />
-          
+
+          <Route path="field" element={<FieldConfigTool />} />
+
           {/* New GitLab Reports */}
           <Route path="gitlab-reports" element={<GitlabReports />} />
           <Route path="gitee" element={<GiteeManagement />} />

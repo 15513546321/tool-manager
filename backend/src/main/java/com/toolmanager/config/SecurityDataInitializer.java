@@ -97,7 +97,8 @@ public class SecurityDataInitializer implements CommandLineRunner {
         Menu docMenu = createMenuIfNotExists("文档管理", "/interface/docs", "docs", "interface:docs", interfaceMenu.getId(), 1, 0, 1);
         Menu codeMenu = createMenuIfNotExists("代码生成", "/interface/code", "code", "interface:code", interfaceMenu.getId(), 2, 0, 1);
         Menu mockMenu = createMenuIfNotExists("模拟报文生成", "/interface/mock-packet", "payload", "interface:mock", interfaceMenu.getId(), 3, 0, 1);
-        
+        Menu filedMenu = createMenuIfNotExists("xml报文生成", "/field", "code", "field::view",0L, 4, 0, 1);
+
         // 接口管理子权限（按钮级）
         createMenuIfNotExists("文档新增", null, null, "interface:docs:add", docMenu.getId(), 1, 1, 1);
         createMenuIfNotExists("文档编辑", null, null, "interface:docs:edit", docMenu.getId(), 2, 1, 1);
@@ -179,7 +180,9 @@ public class SecurityDataInitializer implements CommandLineRunner {
         // Gitee管理
         createMenuItem("7", "Gitee管理", "/gitee", "gitee", null, 6);
         // 格式化工具
-        createMenuItem("8", "格式化工具", "/format", "format", null, 7);
+        createMenuItem("8", "格式化工具", "/field", "field", null, 7);
+        // xml报文生成工具
+        createMenuItem("13", "xml报文生成工具", "/format", "format", null, 7);
         // 参数配置
         createMenuItem("9", "参数配置", "/params", "params", null, 8);
         // 知识库
