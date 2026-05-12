@@ -1,23 +1,32 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lock, User as UserIcon } from 'lucide-react';
+import { Lock, User as UserIcon, Loader2 } from 'lucide-react';
+import { authApi } from '../services/authService';
 
 export const Login: React.FC = () => {
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('123456');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const navigate = useNavigate();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Simulate Login
-    if (username && password) {
-      const user = {
-        username,
-        role: username === 'admin' ? 'ADMIN' : 'USER',
-        token: 'mock-jwt-token'
-      };
-      localStorage.setItem('user', JSON.stringify(user));
+    setError('');
+    
+    if (!username.trim() || !password.trim()) {
+      setError('请输入用户名和密码');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await authApi.login({ username, password });
       navigate('/dashboard');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '登录失败，请检查用户名和密码');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -60,17 +69,27 @@ export const Login: React.FC = () => {
             </div>
           </div>
 
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-2 rounded-lg text-sm">
+              {error}
+            </div>
+          )}
+
           <button
             type="submit"
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition-colors shadow-lg shadow-blue-500/30"
+            disabled={loading}
+            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg transition-colors shadow-lg shadow-blue-500/30 flex items-center justify-center gap-2"
           >
-            Sign In
+            {loading ? (
+              <>
+                <Loader2 size={18} className="animate-spin" />
+                <span>登录中...</span>
+              </>
+            ) : (
+              <span>Sign In</span>
+            )}
           </button>
         </form>
-        
-        <div className="mt-6 text-center text-xs text-slate-400">
-          Hint: Use admin / 123456
-        </div>
       </div>
     </div>
   );

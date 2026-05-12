@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import {GitBranch, Search, Download, Settings, RefreshCw, Save, Plus, Trash2, ExternalLink, ShieldCheck, LayoutTemplate, Filter, User, Tag, Flag, CheckCircle, ChevronLeft, ChevronRight, ArrowUp, ArrowDown } from 'lucide-react';
+import {GitBranch, Search, Download, Settings, RefreshCw, Save, Plus, Trash2, ExternalLink, ShieldCheck, LayoutTemplate, Filter, User, Tag, Flag, CheckCircle, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ChevronDown, FileText, Database } from 'lucide-react';
 import { apiService } from '../services/apiService';
 import { recordAction } from '../services/auditService';
 import * as XLSX from 'xlsx';
@@ -139,6 +139,13 @@ export const GitlabReports: React.FC = () => {
     totalPages: 0,
     isTotalUnknown: false
   });
+
+  // GitLab API max per_page is 100
+  const PER_PAGE_OPTIONS = [10, 20, 50, 100];
+  
+  // --- All Data for Export ---
+  const [allData, setAllData] = useState<any[]>([]);
+  const [exportingAll, setExportingAll] = useState(false);
 
   // --- Dynamic Options State ---
   const [options, setOptions] = useState<{
@@ -454,22 +461,95 @@ export const GitlabReports: React.FC = () => {
 
   // --- Export ---
   
-  const handleExport = () => {
-    if (data.length === 0) return alert("无数据");
+  const prepareExportData = (exportData: any[]) => {
     const currentCols = columnsMap[reportType];
-    const exportData = data.map(row => {
+    return exportData.map(row => {
       const map: any = {};
-      // 按字段配置的顺序添加数据
       currentCols.filter(c => c.visible).forEach(c => {
         map[c.title] = getNestedValue(row, c.field);
       });
       return map;
     });
+  };
+
+  const exportToExcel = (exportData: any[], filename: string) => {
     const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(exportData);
+    const ws = XLSX.utils.json_to_sheet(prepareExportData(exportData));
     XLSX.utils.book_append_sheet(wb, ws, "Report");
-    XLSX.writeFile(wb, `gitlab_${reportType}_${new Date().toISOString().slice(0,10)}.xlsx`);
-    recordAction('GitLab报表', `导出数据 - ${reportType} (${data.length} 条)`);
+    XLSX.writeFile(wb, filename);
+  };
+
+  const handleExportCurrentPage = () => {
+    if (data.length === 0) return alert("无数据");
+    const filename = `gitlab_${reportType}_page${pagination.page}_${new Date().toISOString().slice(0,10)}.xlsx`;
+    exportToExcel(data, filename);
+    recordAction('GitLab报表', `导出本页数据 - ${reportType} (${data.length} 条)`);
+  };
+
+  const fetchAllDataAndExport = async () => {
+    if (!settings.token) return alert("请先配置 Access Token");
+    if (!targetProjectId) return alert("请先选择项目");
+    if (pagination.total === 0) return alert("请先执行查询");
+    
+    setExportingAll(true);
+    setAllData([]);
+    
+    try {
+      const allResults: any[] = [];
+      let currentPage = 1;
+      const totalPages = pagination.isTotalUnknown ? 100 : pagination.totalPages;
+      const fetchSize = Math.min(pagination.perPage, 100); // Use max 100 per request for efficiency
+      
+      while (currentPage <= totalPages) {
+        const endpoint = buildEndpoint(currentPage, fetchSize);
+        const { data } = await apiFetch(`${endpoint}`, true);
+        
+        if (!Array.isArray(data) || data.length === 0) break;
+        
+        allResults.push(...data);
+        currentPage++;
+        
+        // Early exit if we've fetched all available data
+        if (data.length < fetchSize) break;
+      }
+      
+      setAllData(allResults);
+      const filename = `gitlab_${reportType}_all_${new Date().toISOString().slice(0,10)}.xlsx`;
+      exportToExcel(allResults, filename);
+      recordAction('GitLab报表', `导出全部数据 - ${reportType} (${allResults.length} 条)`);
+    } catch (err: any) {
+      console.error('Failed to fetch all data:', err);
+      alert(`导出全部数据失败: ${err.message}`);
+    } finally {
+      setExportingAll(false);
+    }
+  };
+
+  const buildEndpoint = (page: number, perPage: number) => {
+    let endpoint = '';
+    const params = new URLSearchParams();
+    params.append('page', page.toString());
+    params.append('per_page', perPage.toString());
+
+    if (reportType === 'projects') {
+      endpoint = '/projects';
+      params.append('membership', 'true');
+      params.append('simple', 'false');
+      if (filters.search) params.append('search', filters.search);
+    } else {
+      const resource = reportType === 'issues' ? 'issues' : 'merge_requests';
+      endpoint = targetProjectId ? `/projects/${targetProjectId}/${resource}` : `/${resource}`;
+      if (!targetProjectId) params.append('scope', 'all');
+      
+      if (filters.state && filters.state !== 'all') params.append('state', filters.state);
+      if (filters.assignee_id) params.append('assignee_id', filters.assignee_id);
+      if (filters.author_id) params.append('author_id', filters.author_id);
+      if (filters.milestone) params.append('milestone', filters.milestone);
+      if (filters.labels) params.append('labels', filters.labels);
+      if (filters.search) params.append('search', filters.search);
+    }
+    
+    return `${endpoint}?${params.toString()}`;
   };
 
   // --- UI Components ---
@@ -633,11 +713,31 @@ export const GitlabReports: React.FC = () => {
             {renderFilterBar()}
 
             {/* Action Bar */}
-            <div className="flex justify-between items-center mb-4">
-               <div className="text-sm text-slate-500 font-mono">
-                  {loading ? '加载中...' : `本页 ${data.length} 条数据`} 
-                  {targetProjectId && !optionsLoading && !loading && ' (Context Loaded)'}
-                  {optionsLoading && ' (Loading Options...)'}
+            <div className="flex justify-between items-center mb-4 flex-wrap gap-4">
+               <div className="flex items-center gap-4">
+                  <div className="text-sm text-slate-500 font-mono">
+                     {loading ? '加载中...' : `本页 ${data.length} 条数据`} 
+                     {targetProjectId && !optionsLoading && !loading && ' (Context Loaded)'}
+                     {optionsLoading && ' (Loading Options...)'}
+                  </div>
+                  {/* Per Page Selector */}
+                  <div className="flex items-center gap-2">
+                     <span className="text-xs font-bold text-slate-500 uppercase">每页:</span>
+                     <select 
+                        value={pagination.perPage}
+                        onChange={(e) => {
+                          const newPerPage = parseInt(e.target.value, 10);
+                          setPagination(prev => ({ ...prev, perPage: newPerPage, page: 1 }));
+                          setData([]);
+                        }}
+                        className="px-3 py-1.5 border border-slate-200 rounded-lg bg-white text-sm font-medium text-slate-700 focus:ring-2 focus:ring-blue-100 focus:border-blue-300 outline-none"
+                     >
+                        {PER_PAGE_OPTIONS.map(opt => (
+                          <option key={opt} value={opt}>{opt} 条</option>
+                        ))}
+                     </select>
+                     <span className="text-xs text-slate-400">(GitLab最大支持100条/页)</span>
+                  </div>
                </div>
                <div className="flex gap-3">
                   <button 
@@ -648,14 +748,32 @@ export const GitlabReports: React.FC = () => {
                     <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
                     执行查询
                   </button>
-                  <button 
-                    onClick={handleExport}
-                    disabled={data.length === 0}
-                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-bold transition-colors shadow-sm disabled:opacity-50"
-                  >
-                    <Download size={16} />
-                    导出 Excel
-                  </button>
+                  {/* Export Dropdown */}
+                  <div className="relative group">
+                    <button 
+                      disabled={data.length === 0}
+                      className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-bold transition-colors shadow-sm disabled:opacity-50"
+                    >
+                      <Download size={16} />
+                      导出 {exportingAll ? '...' : ''}
+                      <ChevronDown size={14} />
+                    </button>
+                    <div className="absolute right-0 mt-2 w-40 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all">
+                      <button 
+                        onClick={handleExportCurrentPage}
+                        className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-green-50 hover:text-green-700 flex items-center gap-2"
+                      >
+                        <FileText size={14} /> 导出本页
+                      </button>
+                      <button 
+                        onClick={fetchAllDataAndExport}
+                        disabled={exportingAll || pagination.total === 0}
+                        className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-green-50 hover:text-green-700 flex items-center gap-2 disabled:opacity-50"
+                      >
+                        <Database size={14} /> 导出全部 ({pagination.total > 0 ? pagination.total : '?'} 条)
+                      </button>
+                    </div>
+                  </div>
                </div>
             </div>
 

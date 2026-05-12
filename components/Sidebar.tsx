@@ -22,7 +22,11 @@ import {
   Network,
   GitPullRequest,
   Zap,
-  ClipboardList
+  ClipboardList,
+  Shield,
+  Menu,
+  Bell,
+  FileCheck
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -48,7 +52,14 @@ const IconMap: Record<string, React.ElementType> = {
   'suggestions': Lightbulb,
   'ip': Network,
   'gitee': GitPullRequest,
-  'release': ClipboardList
+  'release': ClipboardList,
+  'users': ArrowLeftRight,
+  'roles': Settings,
+  'permissions': Shield,
+  'audit': FileCheck,
+  'menu': Menu,
+  'announcement': Bell,
+  'system': Settings
 };
 
 export const Sidebar: React.FC<SidebarProps> = ({ menuItems }) => {
@@ -73,7 +84,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ menuItems }) => {
       // 1. Filter out hidden (Offline) menus
       if (item.visible === false) return null;
 
-      const Icon = item.icon ? IconMap[item.icon] : null;
+      const Icon = item.icon ? IconMap[item.icon] || Settings : null;
       const hasChildren = item.children && item.children.length > 0;
       const isExpanded = expandedMenus.includes(item.id);
       
