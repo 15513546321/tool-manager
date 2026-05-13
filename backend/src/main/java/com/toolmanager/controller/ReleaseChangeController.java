@@ -55,6 +55,12 @@ public class ReleaseChangeController {
         return ResponseEntity.ok().build();
     }
 
+    @DeleteMapping("/change-files/{fileId}")
+    public ResponseEntity<Void> deleteChangeFile(@PathVariable Long fileId) {
+        releaseChangeService.deleteChangeFile(fileId);
+        return ResponseEntity.ok().build();
+    }
+
     @GetMapping("/versions/{versionId}/diffs")
     public ResponseEntity<List<PackageDiffDto>> getPackageDiffs(@PathVariable Long versionId) {
         return ResponseEntity.ok(releaseChangeService.getPackageDiffs(versionId));
@@ -68,6 +74,12 @@ public class ReleaseChangeController {
     @PostMapping("/diffs/{diffId}/confirm")
     public ResponseEntity<PackageDiffDto> confirmPackageDiff(@PathVariable Long diffId, @RequestBody ConfirmDiffRequest request) {
         return ResponseEntity.ok(releaseChangeService.confirmPackageDiff(diffId, request));
+    }
+
+    @DeleteMapping("/diffs/{diffId}")
+    public ResponseEntity<Void> deletePackageDiff(@PathVariable Long diffId) {
+        releaseChangeService.deletePackageDiff(diffId);
+        return ResponseEntity.ok().build();
     }
 
     @GetMapping("/versions/{versionId}/files/search")

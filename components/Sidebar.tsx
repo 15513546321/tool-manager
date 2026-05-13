@@ -44,6 +44,7 @@ const IconMap: Record<string, React.ElementType> = {
   'repo': BookOpen,
   'format': FileJson,
   'payload': FileJson,
+  'field': FileJson,
   'gitlab': GitBranch,
   'diff': Split,
   'sync': RefreshCw,

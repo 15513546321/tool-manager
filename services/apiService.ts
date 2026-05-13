@@ -387,6 +387,13 @@ export const releaseChangeApi = {
     if (!res.ok) throw new Error('Failed to delete change set');
   },
 
+  deleteChangeFile: async (fileId: number) => {
+    const res = await fetchWithAuth(`${API_BASE_URL}/release-change/change-files/${fileId}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error('Failed to delete change file');
+  },
+
   getPackageDiffs: async (versionId: number) => {
     const res = await fetchWithAuth(`${API_BASE_URL}/release-change/versions/${versionId}/diffs`);
     if (!res.ok) throw new Error('Failed to fetch package diffs');
@@ -411,6 +418,13 @@ export const releaseChangeApi = {
     });
     if (!res.ok) throw new Error('Failed to confirm package diff');
     return res.json();
+  },
+
+  deletePackageDiff: async (diffId: number) => {
+    const res = await fetchWithAuth(`${API_BASE_URL}/release-change/diffs/${diffId}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error('Failed to delete package diff');
   },
 
   searchDeclaredFiles: async (versionId: number, keyword: string) => {

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ClipboardList, FileSearch, Plus, Save, Upload } from 'lucide-react';
+import { AlertTriangle, ClipboardList, FileSearch, Plus, Save, Trash2, Upload } from 'lucide-react';
 import { releaseChangeApi } from '../services/apiService';
 
 const INPUT_STYLE = "w-full px-3 py-2 border border-slate-200 rounded-lg bg-[#f8fafc] focus:bg-white focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm text-slate-700 placeholder:text-slate-400";
@@ -79,7 +79,7 @@ interface RequirementGroup {
   reviewStatus: string;
   reviewRemark: string;
   sets: ChangeSetItem[];
-  rows: Array<{ id: string; fileName: string; filePath: string; developer: string }>;
+  rows: Array<{ id: string; fileId: number; fileName: string; filePath: string; developer: string }>;
   developerCount: number;
   fileCount: number;
 }
@@ -217,6 +217,7 @@ export const ReleaseChanges: React.FC<ReleaseChangesProps> = ({ mode = 'develope
       files.forEach((file, index) => {
         group.rows.push({
           id: `${set.id}-${file.id || index}-${file.filePath}`,
+          fileId: file.id,
           fileName: file.fileName || displayFileName(file.filePath),
           filePath: file.filePath,
           developer: set.developer
@@ -391,6 +392,31 @@ export const ReleaseChanges: React.FC<ReleaseChangesProps> = ({ mode = 'develope
     setDiffText('');
     await reload();
     await loadVersions();
+  };
+
+  const deleteDeclaredFile = async (row: RequirementGroup['rows'][number]) => {
+    if (!row.fileId) return;
+    if (!window.confirm(`确认删除已录入文件？\n${row.filePath}`)) return;
+    try {
+      await releaseChangeApi.deleteChangeFile(row.fileId);
+      await reload();
+      await loadVersions();
+    } catch (err) {
+      console.error(err);
+      alert('删除文件失败，请稍后重试');
+    }
+  };
+
+  const deletePackageDiff = async (item: PackageDiffItem) => {
+    if (!window.confirm(`确认删除比包差异文件？\n${item.filePath}`)) return;
+    try {
+      await releaseChangeApi.deletePackageDiff(item.id);
+      await reload();
+      await loadVersions();
+    } catch (err) {
+      console.error(err);
+      alert('删除比包差异失败，请稍后重试');
+    }
   };
 
   const searchFiles = async () => {
@@ -593,6 +619,7 @@ export const ReleaseChanges: React.FC<ReleaseChangesProps> = ({ mode = 'develope
                         <th className="px-4 py-3 font-semibold text-slate-700 w-56">文件名</th>
                         <th className="px-4 py-3 font-semibold text-slate-700">录入文件全名</th>
                         <th className="px-4 py-3 font-semibold text-slate-700 w-40">开发人员</th>
+                        <th className="px-4 py-3 font-semibold text-slate-700 w-24">操作</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -601,6 +628,15 @@ export const ReleaseChanges: React.FC<ReleaseChangesProps> = ({ mode = 'develope
                           <td className="px-4 py-3 font-mono text-xs text-slate-800 break-all">{row.fileName}</td>
                           <td className="px-4 py-3 font-mono text-xs text-slate-600 break-all">{row.filePath}</td>
                           <td className="px-4 py-3 text-slate-700">{row.developer}</td>
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() => deleteDeclaredFile(row)}
+                              className="inline-flex items-center gap-1 rounded-md border border-red-200 px-2 py-1 text-xs font-bold text-red-600 hover:bg-red-50"
+                              title="删除该文件"
+                            >
+                              <Trash2 size={13} /> 删除
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -759,6 +795,7 @@ export const ReleaseChanges: React.FC<ReleaseChangesProps> = ({ mode = 'develope
                 <th className="px-4 py-3 font-semibold text-slate-700">关联人</th>
                 <th className="px-4 py-3 font-semibold text-slate-700">录入文件全名</th>
                 <th className="px-4 py-3 font-semibold text-slate-700 w-44">确认状态</th>
+                <th className="px-4 py-3 font-semibold text-slate-700 w-24">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -781,9 +818,18 @@ export const ReleaseChanges: React.FC<ReleaseChangesProps> = ({ mode = 'develope
                       <option value="WRONG">{diffConfirmText.WRONG}</option>
                     </select>
                   </td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => deletePackageDiff(item)}
+                      className="inline-flex items-center gap-1 rounded-md border border-red-200 px-2 py-1 text-xs font-bold text-red-600 hover:bg-red-50"
+                      title="删除该差异"
+                    >
+                      <Trash2 size={13} /> 删除
+                    </button>
+                  </td>
                 </tr>
               ))}
-              {filteredDiffs.length === 0 && <tr><td colSpan={5} className="text-center py-10 text-slate-400">暂无比包差异</td></tr>}
+              {filteredDiffs.length === 0 && <tr><td colSpan={6} className="text-center py-10 text-slate-400">暂无比包差异</td></tr>}
             </tbody>
           </table>
         </div>

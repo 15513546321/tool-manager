@@ -16,6 +16,8 @@ public interface ReleaseChangeFileRepository extends JpaRepository<ReleaseChange
 
     Long countByVersionId(Long versionId);
 
+    Long countByChangeSetId(Long changeSetId);
+
     void deleteByChangeSetId(Long changeSetId);
 
     void deleteByVersionId(Long versionId);

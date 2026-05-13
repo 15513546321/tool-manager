@@ -118,6 +118,19 @@ public class ReleaseChangeService {
         changeSetRepository.deleteById(changeSetId);
     }
 
+    @Transactional
+    public void deleteChangeFile(Long fileId) {
+        ReleaseChangeFile file = changeFileRepository.findById(fileId)
+                .orElseThrow(() -> new IllegalArgumentException("Change file not found: " + fileId));
+        Long changeSetId = file.getChangeSetId();
+        changeFileRepository.deleteById(fileId);
+        changeFileRepository.flush();
+
+        if (changeFileRepository.countByChangeSetId(changeSetId) == 0) {
+            changeSetRepository.deleteById(changeSetId);
+        }
+    }
+
     public List<PackageDiffDto> getPackageDiffs(Long versionId) {
         List<ChangeFileDto> declaredFiles = declaredFiles(versionId);
         return packageDiffRepository.findByVersionIdOrderByFilePathAsc(versionId)
@@ -173,6 +186,14 @@ public class ReleaseChangeService {
         }
         ReleasePackageDiff saved = packageDiffRepository.save(diff);
         return toPackageDiffDto(saved, findOwners(declaredFiles(saved.getVersionId()), saved.getFileName()));
+    }
+
+    @Transactional
+    public void deletePackageDiff(Long diffId) {
+        if (!packageDiffRepository.existsById(diffId)) {
+            throw new IllegalArgumentException("Package diff not found: " + diffId);
+        }
+        packageDiffRepository.deleteById(diffId);
     }
 
     public List<ChangeFileDto> searchDeclaredFiles(Long versionId, String keyword) {

@@ -100,7 +100,8 @@ public class SecurityDataInitializer implements CommandLineRunner {
         Menu docMenu = createMenuIfNotExists("文档管理", "/interface/docs", "docs", "interface:docs", interfaceMenu.getId(), 1, 0, 1);
         Menu codeMenu = createMenuIfNotExists("代码生成", "/interface/code", "code", "interface:code", interfaceMenu.getId(), 2, 0, 1);
         Menu mockMenu = createMenuIfNotExists("模拟报文生成", "/interface/mock-packet", "payload", "interface:mock", interfaceMenu.getId(), 3, 0, 1);
-        
+        Menu filedMenu = createMenuIfNotExists("xml报文生成", "/field", "code", "field::view",0L, 4, 0, 1);
+
         // 接口管理子权限（按钮级）
         createMenuIfNotExists("文档新增", null, null, "interface:docs:add", docMenu.getId(), 1, 1, 1);
         createMenuIfNotExists("文档编辑", null, null, "interface:docs:edit", docMenu.getId(), 2, 1, 1);
@@ -186,22 +187,24 @@ public class SecurityDataInitializer implements CommandLineRunner {
         createMenuItem("6", "GitLab报表", "/gitlab-reports", "gitlab", null, 5);
         // Gitee管理
         createMenuItem("7", "Gitee管理", "/gitee", "gitee", null, 6);
+        // xml报文生成工具
+        createMenuItem("8", "xml报文生成工具", "/field", "field", null, 7);
+        // 格式化工具
+        createMenuItem("14", "格式化工具", "/format", "format", null, 8);
         // 上线变更（父菜单）
-        createMenuItem("13", "上线变更", "/release-changes/dev", "release", null, 7);
+        createMenuItem("13", "上线变更", "/release-changes/dev", "release", null, 9);
         // 变更集录入（子菜单）
         createMenuItem("13-1", "变更集录入", "/release-changes/dev", "release", "13", 1);
         // 比包对账（子菜单）
         createMenuItem("13-2", "比包对账", "/release-changes/manager", "diff", "13", 2);
-        // 格式化工具
-        createMenuItem("8", "格式化工具", "/format", "format", null, 8);
         // 参数配置
-        createMenuItem("9", "参数配置", "/params", "params", null, 9);
+        createMenuItem("9", "参数配置", "/params", "params", null, 10);
         // 知识库
-        createMenuItem("4", "知识库", "/repo", "repo", null, 10);
+        createMenuItem("4", "知识库", "/repo", "repo", null, 11);
         // 审计日志
-        createMenuItem("5", "审计日志", "/audit", "audit", null, 11);
+        createMenuItem("5", "审计日志", "/audit", "audit", null, 12);
         // 系统设置（父菜单）
-        createMenuItem("12", "系统设置", "/admin/users", "system", null, 12);
+        createMenuItem("12", "系统设置", "/admin/users", "system", null, 13);
         // 用户管理（子菜单）
         createMenuItem("12-1", "用户管理", "/admin/users", "users", "12", 1);
         // 角色管理（子菜单）
