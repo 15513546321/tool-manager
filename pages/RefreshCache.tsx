@@ -37,10 +37,8 @@ export const RefreshCache: React.FC = () => {
   const [cacheList, setCacheList] = useState<CacheItem[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
 
-  // ✅ 获取 token（正确写法）
+  // token
   const getToken = () => localStorage.getItem('accessToken') || '';
-
-  // ✅ 带认证的请求（放在组件内，能拿到最新 token）
   const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
     const token = getToken();
     const headers = new Headers(options.headers || {});
