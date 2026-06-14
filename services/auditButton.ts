@@ -25,6 +25,7 @@ export function getCurrentPageName(): string {
   if (path.includes('/sync/nacos')) return 'Nacos同步';
   if (path.includes('/sync/oracle')) return 'Oracle同步';
   if (path.includes('/params')) return '参数配置';
+  if (path.includes('/refresh')) return '刷新缓存';
   if (path.includes('/suggestions')) return '优化建议';
   if (path.includes('/admin/ip')) return 'IP配置';
   if (path.includes('/admin/menus')) return '菜单管理';

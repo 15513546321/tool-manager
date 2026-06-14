@@ -82,18 +82,21 @@ public class SecurityDataInitializer implements CommandLineRunner {
 
         // 参数配置 (sortOrder=8)
         Menu paramsMenu = createMenuIfNotExists("参数配置", "/params", "params", "params:view", 0L, 8, 0, 1);
-        
+
+        //刷新缓存
+        Menu refreshMenu = createMenuIfNotExists("刷新缓存", "/refresh", "refresh", "refresh:view", 0L, 9, 0, 1);
+
         // 审计日志 (sortOrder=9)
-        Menu auditMenu = createMenuIfNotExists("审计日志", "/audit", "audit", "audit:view", 0L, 9, 0, 1);
+        Menu auditMenu = createMenuIfNotExists("审计日志", "/audit", "audit", "audit:view", 0L, 10, 0, 1);
         
         // 公告通知 (sortOrder=10)
-        Menu announcementMenu = createMenuIfNotExists("公告通知", "/announcement", "announcement", "announcement:view", 0L, 10, 0, 1);
+        Menu announcementMenu = createMenuIfNotExists("公告通知", "/announcement", "announcement", "announcement:view", 0L, 11, 0, 1);
         
         // 优化建议 (sortOrder=11)
-        Menu suggestionsMenu = createMenuIfNotExists("优化建议", "/suggestions", "suggestions", "suggestions:view", 0L, 11, 0, 1);
-        
+        Menu suggestionsMenu = createMenuIfNotExists("优化建议", "/suggestions", "suggestions", "suggestions:view", 0L, 12, 0, 1);
+
         // 系统设置 (sortOrder=12) - 父菜单，无权限标识，无路径
-        Menu systemMenu = createMenuIfNotExists("系统设置", null, "system", null, 0L, 12, 0, 1);
+        Menu systemMenu = createMenuIfNotExists("系统设置", null, "system", null, 0L, 13, 0, 1);
 
         // ============= 接口管理子菜单 (sortOrder=1,2,3)=============
         
@@ -199,12 +202,14 @@ public class SecurityDataInitializer implements CommandLineRunner {
         createMenuItem("13-2", "比包对账", "/release-changes/manager", "diff", "13", 2);
         // 参数配置
         createMenuItem("9", "参数配置", "/params", "params", null, 10);
+        //刷新缓存
+        createMenuItem("15", "刷新缓存", "/refresh", "refresh", null, 9);
         // 知识库
-        createMenuItem("4", "知识库", "/repo", "repo", null, 11);
+        createMenuItem("4", "知识库", "/repo", "repo", null, 12);
         // 审计日志
-        createMenuItem("5", "审计日志", "/audit", "audit", null, 12);
+        createMenuItem("5", "审计日志", "/audit", "audit", null, 13);
         // 系统设置（父菜单）
-        createMenuItem("12", "系统设置", "/admin/users", "system", null, 13);
+        createMenuItem("12", "系统设置", "/admin/users", "system", null, 14);
         // 用户管理（子菜单）
         createMenuItem("12-1", "用户管理", "/admin/users", "users", "12", 1);
         // 角色管理（子菜单）

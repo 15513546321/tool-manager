@@ -12,6 +12,7 @@ import { DocRepository } from './pages/DocRepository';
 import { Announcement } from './pages/Announcement';
 import { AuditLog } from './pages/AuditLog';
 import { FormatTools } from './pages/FormatTools';
+import { RefreshCache } from './pages/RefreshCache'
 import { FieldConfigTool } from './pages/FieldConfigTool';
 import { GitlabReports } from './pages/GitlabReports';
 import { GiteeManagement } from './pages/GiteeManagement';
@@ -316,14 +317,16 @@ const App: React.FC = () => {
 
           {/* Parameter Config */}
           <Route path="params" element={<ParameterConfigPage />} />
-          
+
+          {/* refresh Config */}
+          <Route path="/refresh" element={<RefreshCache />} />
+
           {/* Doc Repo */}
           <Route path="repo" element={<DocRepository />} />
 
           {/* New Features */}
           <Route path="announcement" element={<Announcement />} />
           <Route path="audit" element={<AuditLog />} />
-          
           {/* Suggestions */}
           <Route path="suggestions" element={<Suggestions />} />
         </Route>
