@@ -123,13 +123,13 @@ export const FormatTools: React.FC = () => {
   };
 
   return (
-    <div className="p-6 h-full flex flex-col bg-slate-50">
+    <div className="mx-auto flex h-full min-h-[calc(100vh-7rem)] w-full max-w-[1440px] flex-col p-6 lg:p-8">
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-slate-800">数据格式化工具</h2>
         <p className="text-slate-500 text-sm mt-1">支持 JSON / XML / Java 对象转 JSON 的格式化与验证</p>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col flex-1 overflow-hidden">
+      <div className="bg-white rounded-lg shadow-sm border border-slate-200 flex flex-col flex-1 overflow-hidden">
         {/* Tabs */}
         <div className="flex border-b border-slate-200">
           <button
@@ -172,7 +172,7 @@ export const FormatTools: React.FC = () => {
           {/* Input */}
           <div className="flex-1 flex flex-col p-4 bg-slate-50/30">
             <div className="flex justify-between items-center mb-2">
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">原始数据 (Raw)</span>
+              <span className="text-xs font-semibold text-slate-500">原始数据</span>
               <button 
                 onClick={() => { setInputContent(''); setOutputContent(''); }}
                 className="text-slate-400 hover:text-red-500 flex items-center gap-1 text-xs"
@@ -182,7 +182,7 @@ export const FormatTools: React.FC = () => {
             </div>
             <textarea
               className="flex-1 w-full p-4 border border-slate-200 rounded-lg font-mono text-sm focus:ring-2 focus:ring-blue-100 focus:border-blue-300 outline-none resize-none bg-white text-slate-700 leading-relaxed"
-              placeholder={activeTab === 'json' ? 'Paste your JSON here...' : activeTab === 'xml' ? 'Paste your XML here...' : '粘贴 Java 对象字符串...\n\n例: User(name=John, age=30, addr=Address(city=NY))\n支持 Lombok / Guava / Commons Lang3 / IDEA Debugger 格式'}
+              placeholder={activeTab === 'json' ? '在此粘贴 JSON 数据...' : activeTab === 'xml' ? '在此粘贴 XML 数据...' : '粘贴 Java 对象字符串...\n\n例: User(name=John, age=30, addr=Address(city=NY))\n支持 Lombok / Guava / Commons Lang3 / IDEA Debugger 格式'}
               value={inputContent}
               onChange={(e) => setInputContent(e.target.value)}
             />
@@ -192,7 +192,7 @@ export const FormatTools: React.FC = () => {
           <div className="p-4 bg-white flex md:flex-col justify-center items-center gap-4 border-t md:border-t-0 md:border-l border-slate-200 z-10">
              <button 
                onClick={handleFormat}
-               className={`px-6 py-2 rounded-lg font-bold text-white shadow-lg transition-transform active:scale-95 ${activeTab === 'json' ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-200' : activeTab === 'xml' ? 'bg-orange-500 hover:bg-orange-600 shadow-orange-200' : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200'}`}
+               className="rounded-md bg-blue-700 px-6 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-800"
              >
                格式化 &rarr;
              </button>
@@ -201,17 +201,17 @@ export const FormatTools: React.FC = () => {
           {/* Output */}
           <div className="flex-1 flex flex-col p-4 bg-slate-50/30">
              <div className="flex justify-between items-center mb-2">
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">结果 (Result)</span>
+              <span className="text-xs font-semibold text-slate-500">格式化结果</span>
               <button 
                 onClick={handleCopy}
                 className={`flex items-center gap-1 text-xs font-medium transition-colors ${copied ? 'text-green-600' : 'text-slate-500 hover:text-blue-600'}`}
               >
                 {copied ? <Check size={12}/> : <Copy size={12} />}
-                {copied ? 'Copied!' : 'Copy Result'}
+                {copied ? '已复制' : '复制结果'}
               </button>
             </div>
-            <pre className="flex-1 w-full p-4 border border-slate-200 rounded-lg font-mono text-sm bg-slate-800 text-blue-100 overflow-auto whitespace-pre leading-relaxed">
-              {outputContent || <span className="text-slate-600 italic">// Formatted result will appear here</span>}
+            <pre className="flex-1 w-full overflow-auto whitespace-pre rounded-lg border border-blue-100 bg-[#f7faff] p-4 font-mono text-sm leading-relaxed text-slate-700">
+              {outputContent || <span className="italic text-slate-400">// 格式化结果将在这里显示</span>}
             </pre>
           </div>
         </div>

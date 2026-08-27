@@ -21,7 +21,7 @@ export const Layout: React.FC = () => {
           const convertMenu = (item: any): MenuItem => ({
             id: String(item.id),
             name: item.name,
-            path: item.path,
+            path: item.path || '',
             icon: item.icon,
             visible: item.status === 1,
             sortOrder: item.sortOrder || 0,
@@ -72,12 +72,10 @@ export const Layout: React.FC = () => {
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-[#f5f8fd] text-slate-950">
       <Sidebar menuItems={menuItems} />
-      <main className="flex-1 ml-64 p-0">
-        <div className="h-full">
-          <Outlet />
-        </div>
+      <main className="app-main relative min-h-[calc(100vh-7rem)]">
+        <Outlet />
       </main>
     </div>
   );

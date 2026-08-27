@@ -360,8 +360,8 @@ export const Announcement: React.FC = () => {
   };
 
   const renderPreview = () => {
-    if (isPreviewLoading) return <div className="text-center p-10 text-slate-400">Loading preview...</div>;
-    if (!previewContent) return <div className="text-center p-10 text-slate-400">No content</div>;
+    if (isPreviewLoading) return <div className="text-center p-10 text-slate-400">正在加载预览...</div>;
+    if (!previewContent) return <div className="text-center p-10 text-slate-400">暂无内容</div>;
 
     if (previewContent.type === 'word') {
          return (
@@ -371,7 +371,7 @@ export const Announcement: React.FC = () => {
                  </div>
                  {wordOutline.length > 0 && (
                      <div className="w-56 shrink-0 border-l border-slate-200 pl-4 overflow-y-auto bg-slate-50 p-2 absolute right-0 top-0 bottom-0 shadow-lg">
-                         <div className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-1"><List size={14}/> Nav</div>
+                         <div className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-1"><List size={14}/> 目录</div>
                          <ul className="space-y-1">{wordOutline.map((item, idx) => (
                              <li key={idx}><button onClick={() => handleWordNavClick(item.id)} className="text-left w-full text-xs hover:text-blue-600 truncate py-0.5" style={{ paddingLeft: `${(item.level - 1) * 8}px` }}>{item.text}</button></li>
                          ))}</ul>
@@ -465,12 +465,12 @@ export const Announcement: React.FC = () => {
                     {/* Preview Area */}
                     <div className="flex-1 bg-slate-100 p-6 overflow-hidden flex flex-col">
                         {selectedItem.description && (
-                            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-4 text-slate-700">
+                            <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 mb-4 text-slate-700">
                                 <h4 className="text-xs font-bold text-slate-400 uppercase mb-2">公告内容 / 描述</h4>
                                 <p>{selectedItem.description}</p>
                             </div>
                         )}
-                        <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex-1 overflow-hidden relative flex flex-col">
+                        <div className="bg-white rounded-lg shadow-sm border border-slate-200 flex-1 overflow-hidden relative flex flex-col">
                              <div className="p-3 border-b border-slate-100 bg-slate-50 text-xs font-bold text-slate-500 uppercase">附件预览</div>
                              <div className="flex-1 overflow-auto">
                                 {renderPreview()}
@@ -506,11 +506,11 @@ export const Announcement: React.FC = () => {
       {/* Create/Update Modal */}
       {isModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-              <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 animate-in fade-in zoom-in duration-200">
+              <div className="bg-white rounded-lg shadow-md w-full max-w-md p-6 animate-in fade-in zoom-in duration-200">
                   <h3 className="text-lg font-bold mb-4">{selectedItem ? '更新公告' : '发布新公告'}</h3>
                   <div className="space-y-4">
                       <div><label className={LABEL_STYLE}>标题</label><input className={INPUT_STYLE} value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} placeholder="请输入标题" /></div>
-                      <div><label className={LABEL_STYLE}>版本号</label><input className={INPUT_STYLE} value={formData.versionNumber} onChange={e => setFormData({...formData, versionNumber: e.target.value})} placeholder="e.g. 1.0" /></div>
+                      <div><label className={LABEL_STYLE}>版本号</label><input className={INPUT_STYLE} value={formData.versionNumber} onChange={e => setFormData({...formData, versionNumber: e.target.value})} placeholder="例如 1.0" /></div>
                       <div><label className={LABEL_STYLE}>描述 / 内容</label><textarea className={INPUT_STYLE} rows={4} value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} placeholder="请输入公告详细内容..." /></div>
                       <div>
                           <label className={LABEL_STYLE}>附件 (可选)</label>

@@ -147,7 +147,7 @@ export const DiffTool: React.FC = () => {
   return (
     <div className="h-full flex flex-col p-4 bg-slate-50 overflow-hidden">
        {/* Top Bar */}
-       <div className="mb-4 flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+       <div className="mb-4 flex justify-between items-center bg-white p-4 rounded-lg shadow-sm border border-slate-200">
           <div>
             <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                <Split className="text-blue-600"/> 代码比对工具 (Beyond Compare 风格)
@@ -167,14 +167,14 @@ export const DiffTool: React.FC = () => {
        {/* Main Workspace */}
        <div className="flex-1 flex gap-4 overflow-hidden">
            {/* Sidebar: File Tree */}
-           <div className="w-80 flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+           <div className="w-80 flex flex-col bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
                {/* Drop Zones Setup */}
                {mergedTree.length === 0 ? (
                    <div className="flex-1 flex flex-col gap-4 p-4">
                        <div 
                          onDragOver={e => e.preventDefault()}
                          onDrop={e => handleDrop(e, 'left')}
-                         className="flex-1 border-2 border-dashed border-blue-200 rounded-xl bg-blue-50 flex flex-col items-center justify-center text-center p-4 transition-colors hover:bg-blue-100 hover:border-blue-400"
+                         className="flex-1 border-2 border-dashed border-blue-200 rounded-lg bg-blue-50 flex flex-col items-center justify-center text-center p-4 transition-colors hover:bg-blue-100 hover:border-blue-400"
                        >
                            <FolderOpen className="text-blue-400 mb-2" size={32}/>
                            <div className="font-bold text-blue-800">左侧代码包</div>
@@ -187,11 +187,11 @@ export const DiffTool: React.FC = () => {
                        <div 
                          onDragOver={e => e.preventDefault()}
                          onDrop={e => handleDrop(e, 'right')}
-                         className="flex-1 border-2 border-dashed border-purple-200 rounded-xl bg-purple-50 flex flex-col items-center justify-center text-center p-4 transition-colors hover:bg-purple-100 hover:border-purple-400"
+                         className="flex-1 border-2 border-dashed border-amber-200 rounded-lg bg-amber-50 flex flex-col items-center justify-center text-center p-4 transition-colors hover:bg-amber-100 hover:border-amber-400"
                        >
-                           <FolderOpen className="text-purple-400 mb-2" size={32}/>
-                           <div className="font-bold text-purple-800">右侧代码包</div>
-                           <div className="text-xs text-purple-600 mt-1">拖入 Zip, Jar 或文件夹</div>
+                           <FolderOpen className="text-amber-400 mb-2" size={32}/>
+                           <div className="font-bold text-amber-800">右侧代码包</div>
+                           <div className="text-xs text-amber-600 mt-1">拖入 Zip, Jar 或文件夹</div>
                            <div className="mt-2 text-xs text-slate-400">{rightTree.length > 0 ? `${rightTree.length} files loaded` : 'No files'}</div>
                        </div>
                    </div>
@@ -202,7 +202,7 @@ export const DiffTool: React.FC = () => {
                                <Filter className="absolute left-2 top-2 text-slate-400" size={12}/>
                                <input 
                                  className="w-full pl-6 pr-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs outline-none focus:border-blue-300"
-                                 placeholder="Filter files..."
+                                 placeholder="筛选文件..."
                                  value={filterText}
                                  onChange={e => setFilterText(e.target.value)}
                                />
@@ -231,7 +231,7 @@ export const DiffTool: React.FC = () => {
            </div>
 
            {/* Diff View Area */}
-           <div className="flex-1 flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+           <div className="flex-1 flex flex-col bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
                {selectedFile ? (
                    <div className="flex-1 flex flex-col">
                        <div className="bg-slate-50 p-2 border-b border-slate-200 flex justify-between items-center text-xs font-mono text-slate-600">
@@ -240,7 +240,7 @@ export const DiffTool: React.FC = () => {
                                <span className="truncate">{selectedFile.name} (Left)</span>
                            </div>
                            <div className="flex items-center gap-2 w-1/2 overflow-hidden px-2">
-                               <FileCode size={14} className="text-purple-500"/>
+                               <FileCode size={14} className="text-amber-500"/>
                                <span className="truncate">{selectedFile.name} (Right)</span>
                            </div>
                        </div>
@@ -275,7 +275,7 @@ export const DiffTool: React.FC = () => {
                ) : (
                    <div className="flex-1 flex flex-col items-center justify-center text-slate-300">
                        <Split size={48} className="mb-4 opacity-50"/>
-                       <p className="text-lg font-medium">Select a file to compare</p>
+                       <p className="text-lg font-medium">请选择文件进行对比</p>
                    </div>
                )}
            </div>

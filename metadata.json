@@ -1,4 +1,4 @@
 {
-  "name": "Java XML Interface Manager",
-  "description": "A management system for banking interface XML configurations, documentation, and code generation."
+  "name": "公金开发辅助平台",
+  "description": "面向公金业务研发的接口资产、配置同步、交付变更与治理辅助平台。"
 }

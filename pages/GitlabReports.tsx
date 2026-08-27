@@ -33,50 +33,50 @@ type ReportType = 'projects' | 'issues' | 'merge_requests';
 const FIELD_DEFINITIONS: Record<ReportType, { value: string; label: string }[]> = {
   projects: [
     { value: 'id', label: 'ID' },
-    { value: 'name', label: 'Project Name' },
-    { value: 'path_with_namespace', label: 'Full Path' },
-    { value: 'description', label: 'Description' },
-    { value: 'star_count', label: 'Stars' },
-    { value: 'forks_count', label: 'Forks' },
-    { value: 'last_activity_at', label: 'Last Activity' },
-    { value: 'web_url', label: 'Web URL' }
+    { value: 'name', label: '项目名称' },
+    { value: 'path_with_namespace', label: '完整路径' },
+    { value: 'description', label: '项目描述' },
+    { value: 'star_count', label: '收藏数' },
+    { value: 'forks_count', label: '派生数' },
+    { value: 'last_activity_at', label: '最近活动时间' },
+    { value: 'web_url', label: '访问地址' }
   ],
   issues: [
     { value: 'iid', label: 'Issue ID' },
-    { value: 'title', label: 'Title' },
-    { value: 'description', label: 'Description (议题描述)' },
-    { value: 'state', label: 'State' },
-    { value: 'author.name', label: 'Author' },
-    { value: 'assignee.name', label: 'Assignee' },
-    { value: 'milestone.title', label: 'Milestone' },
-    { value: 'labels', label: 'Labels' },
-    { value: 'due_date', label: 'Due Date' },
-    { value: 'created_at', label: 'Created At' },
-    { value: 'updated_at', label: 'Updated At' },
-    { value: 'closed_at', label: 'Closed At' },
-    { value: 'time_stats.time_estimate', label: 'Time Estimate' },
-    { value: 'time_stats.total_time_spent', label: 'Time Spent' },
-    { value: 'weight', label: 'Weight' },
-    { value: 'confidential', label: 'Confidential' },
-    { value: 'web_url', label: 'Web URL' }
+    { value: 'title', label: '标题' },
+    { value: 'description', label: '议题描述' },
+    { value: 'state', label: '状态' },
+    { value: 'author.name', label: '创建人' },
+    { value: 'assignee.name', label: '指派给' },
+    { value: 'milestone.title', label: '里程碑' },
+    { value: 'labels', label: '标签' },
+    { value: 'due_date', label: '截止日期' },
+    { value: 'created_at', label: '创建时间' },
+    { value: 'updated_at', label: '更新时间' },
+    { value: 'closed_at', label: '关闭时间' },
+    { value: 'time_stats.time_estimate', label: '预计耗时' },
+    { value: 'time_stats.total_time_spent', label: '实际耗时' },
+    { value: 'weight', label: '权重' },
+    { value: 'confidential', label: '保密标记' },
+    { value: 'web_url', label: '访问地址' }
   ],
   merge_requests: [
     { value: 'iid', label: 'MR ID' },
-    { value: 'title', label: 'Title' },
-    { value: 'description', label: 'Description (合并请求描述)' },
-    { value: 'state', label: 'State' },
-    { value: 'author.name', label: 'Author' },
-    { value: 'assignee.name', label: 'Assignee' },
-    { value: 'source_branch', label: 'Source Branch' },
-    { value: 'target_branch', label: 'Target Branch' },
-    { value: 'draft', label: 'Draft' },
-    { value: 'merged_by.name', label: 'Merged By' },
-    { value: 'merged_at', label: 'Merged At' },
-    { value: 'created_at', label: 'Created At' },
-    { value: 'updated_at', label: 'Updated At' },
-    { value: 'closed_at', label: 'Closed At' },
-    { value: 'squash_commit_sha', label: 'Squash Commit SHA' },
-    { value: 'web_url', label: 'Web URL' }
+    { value: 'title', label: '标题' },
+    { value: 'description', label: '合并请求描述' },
+    { value: 'state', label: '状态' },
+    { value: 'author.name', label: '创建人' },
+    { value: 'assignee.name', label: '指派给' },
+    { value: 'source_branch', label: '源分支' },
+    { value: 'target_branch', label: '目标分支' },
+    { value: 'draft', label: '草稿标记' },
+    { value: 'merged_by.name', label: '合并人' },
+    { value: 'merged_at', label: '合并时间' },
+    { value: 'created_at', label: '创建时间' },
+    { value: 'updated_at', label: '更新时间' },
+    { value: 'closed_at', label: '关闭时间' },
+    { value: 'squash_commit_sha', label: '合并提交 SHA' },
+    { value: 'web_url', label: '访问地址' }
   ]
 };
 
@@ -558,7 +558,7 @@ export const GitlabReports: React.FC = () => {
     // Projects report has fewer filters
     if (reportType === 'projects') {
       return (
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-4 flex gap-4">
+        <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 mb-4 flex gap-4">
            <div className="flex-1">
               <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">关键词搜索</label>
               <div className="relative">
@@ -577,7 +577,7 @@ export const GitlabReports: React.FC = () => {
 
     // Issues & MRs Filters
     return (
-      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-4 grid grid-cols-1 md:grid-cols-4 lg:grid-cols-6 gap-4">
+      <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 mb-4 grid grid-cols-1 md:grid-cols-4 lg:grid-cols-6 gap-4">
           {/* Target Project (Context) */}
           <div className="md:col-span-2">
              <label className="text-xs font-bold text-blue-600 uppercase mb-1 flex items-center gap-1">
@@ -604,22 +604,22 @@ export const GitlabReports: React.FC = () => {
           </div>
 
           <div>
-             <label className="text-xs font-bold text-slate-500 uppercase mb-1">状态 (STATE)</label>
+             <label className="text-xs font-bold text-slate-500 uppercase mb-1">状态</label>
              <select 
                 className={SELECT_STYLE}
                 value={filters.state}
                 onChange={e => setFilters({...filters, state: e.target.value})}
              >
-                <option value="opened">开启 (Opened)</option>
-                <option value="closed">关闭 (Closed)</option>
-                <option value="merged">已合并 (Merged)</option>
-                <option value="all">全部 (All)</option>
+                <option value="opened">开启</option>
+                <option value="closed">关闭</option>
+                <option value="merged">已合并</option>
+                <option value="all">全部</option>
              </select>
           </div>
 
           <div>
              <label className="text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
-                <User size={12}/> 指派给 (ASSIGNEE)
+                <User size={12}/> 指派给
              </label>
              <select 
                 className={SELECT_STYLE}
@@ -627,14 +627,14 @@ export const GitlabReports: React.FC = () => {
                 onChange={e => setFilters({...filters, assignee_id: e.target.value})}
                 disabled={!targetProjectId}
              >
-                <option value="">{optionsLoading ? 'Loading...' : '所有'}</option>
+                <option value="">{optionsLoading ? '加载中...' : '所有'}</option>
                 {options.users.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
              </select>
           </div>
 
           <div>
              <label className="text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
-                <Flag size={12}/> 里程碑 (MILESTONE)
+                <Flag size={12}/> 里程碑
              </label>
              <select 
                 className={SELECT_STYLE}
@@ -642,14 +642,14 @@ export const GitlabReports: React.FC = () => {
                 onChange={e => setFilters({...filters, milestone: e.target.value})}
                 disabled={!targetProjectId}
              >
-                <option value="">{optionsLoading ? 'Loading...' : '所有'}</option>
+                <option value="">{optionsLoading ? '加载中...' : '所有'}</option>
                 {options.milestones.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
              </select>
           </div>
 
           <div>
              <label className="text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
-                <Tag size={12}/> 标记 (LABEL)
+                <Tag size={12}/> 标签
              </label>
              <select 
                 className={SELECT_STYLE}
@@ -657,7 +657,7 @@ export const GitlabReports: React.FC = () => {
                 onChange={e => setFilters({...filters, labels: e.target.value})}
                 disabled={!targetProjectId}
              >
-                <option value="">{optionsLoading ? 'Loading...' : '所有'}</option>
+                <option value="">{optionsLoading ? '加载中...' : '所有'}</option>
                 {options.labels.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
              </select>
           </div>
@@ -704,7 +704,7 @@ export const GitlabReports: React.FC = () => {
                       onClick={() => { setReportType(type); setData([]); setPagination(p => ({...p, page: 1, total: 0})); }}
                       className={`px-3 py-1.5 text-xs font-bold rounded capitalize transition-colors ${reportType === type ? 'bg-orange-100 text-orange-700' : 'text-slate-500 hover:bg-slate-50'}`}
                     >
-                      {type.replace('_', ' ')}
+                      {type === 'projects' ? '项目' : type === 'issues' ? '议题' : '合并请求'}
                     </button>
                   ))}
                </div>
@@ -780,13 +780,13 @@ export const GitlabReports: React.FC = () => {
             {/* Error */}
             {error && (
                 <div className="bg-red-50 text-red-700 p-3 rounded-lg border border-red-200 text-sm mb-4 flex justify-between">
-                    <span>Error: {error}</span>
+                    <span>错误：{error}</span>
                     <button onClick={() => setError(null)}><Filter size={14}/></button>
                 </div>
             )}
 
             {/* Table */}
-            <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+            <div className="flex-1 bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden flex flex-col">
                <div className="overflow-auto flex-1">
                  <table className="w-full text-left text-sm whitespace-nowrap">
                    <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
@@ -796,7 +796,7 @@ export const GitlabReports: React.FC = () => {
                             {col.title}
                          </th>
                        ))}
-                       <th className="px-6 py-4 font-semibold text-slate-700 bg-slate-50 text-right">Link</th>
+                       <th className="px-6 py-4 font-semibold text-slate-700 bg-slate-50 text-right">链接</th>
                      </tr>
                    </thead>
                    <tbody className="divide-y divide-slate-100">
@@ -869,13 +869,13 @@ export const GitlabReports: React.FC = () => {
         <div className="flex-1 overflow-y-auto">
             <div className="max-w-4xl mx-auto space-y-8">
                 {/* Connection Settings */}
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <div className="bg-white p-6 rounded-lg shadow-sm border border-slate-200">
                     <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
                         <ShieldCheck className="text-blue-600" size={20}/> 连接设置
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">GitLab Host</label>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">GitLab 地址</label>
                             <input 
                                 className={INPUT_STYLE} 
                                 value={settings.host}
@@ -884,22 +884,22 @@ export const GitlabReports: React.FC = () => {
                             />
                         </div>
                         <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Access Token</label>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">访问令牌</label>
                             <input 
                                 className={INPUT_STYLE} 
                                 type="password"
                                 value={settings.token}
                                 onChange={e => setSettings({...settings, token: e.target.value})}
-                                placeholder="Leave empty for public projects"
+                                placeholder="公开项目可留空"
                             />
                         </div>
                     </div>
                 </div>
 
                 {/* Column Config */}
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <div className="bg-white p-6 rounded-lg shadow-sm border border-slate-200">
                     <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-lg font-bold text-slate-800">列配置 ({reportType})</h3>
+                        <h3 className="text-lg font-bold text-slate-800">列配置（{reportType === 'projects' ? '项目' : reportType === 'issues' ? '议题' : '合并请求'}）</h3>
                         <div className="flex bg-slate-100 rounded p-1">
                              {(['projects', 'issues', 'merge_requests'] as ReportType[]).map(t => (
                                <button 
@@ -907,7 +907,7 @@ export const GitlabReports: React.FC = () => {
                                  onClick={() => setReportType(t)}
                                  className={`px-3 py-1 text-xs font-bold rounded capitalize ${reportType === t ? 'bg-white shadow text-blue-600' : 'text-slate-400'}`}
                                >
-                                 {t.replace('_', ' ')}
+                                 {t === 'projects' ? '项目' : t === 'issues' ? '议题' : '合并请求'}
                                </button>
                              ))}
                         </div>
@@ -1017,7 +1017,7 @@ export const GitlabReports: React.FC = () => {
                 </div>
 
                 <div className="flex justify-end">
-                   <button onClick={saveConfig} className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-500/30 flex items-center gap-2">
+                   <button onClick={saveConfig} className="bg-blue-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-blue-700 shadow-lg shadow-blue-500/30 flex items-center gap-2">
                       <Save size={18}/> 保存配置
                    </button>
                 </div>

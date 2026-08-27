@@ -461,7 +461,7 @@ export const ReleaseChanges: React.FC<ReleaseChangesProps> = ({ mode = 'develope
   };
 
   const renderVersionPicker = () => (
-    <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+    <div className="bg-white border border-slate-200 rounded-lg p-4 shadow-sm">
       <div className="flex items-center gap-2 mb-2 min-w-0">
         <label className="text-sm font-bold text-slate-500">上线版本</label>
       </div>
@@ -480,7 +480,7 @@ export const ReleaseChanges: React.FC<ReleaseChangesProps> = ({ mode = 'develope
   );
 
   const renderEmptyVersion = () => (
-    <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-500">
+    <div className="bg-white border border-slate-200 rounded-lg p-8 text-center text-slate-500">
       {mode === 'manager' ? '暂无版本，请先创建一个上线版本。' : '暂无可录入的上线版本，请联系版本管理员创建。'}
     </div>
   );
@@ -502,7 +502,7 @@ export const ReleaseChanges: React.FC<ReleaseChangesProps> = ({ mode = 'develope
 
   const renderDeveloperView = () => (
     <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,520px)_1fr] gap-5">
-      <section className="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
+      <section className="bg-white border border-slate-200 rounded-lg shadow-sm p-5">
         <h3 className="font-bold text-slate-800 mb-4">提交我的变更集</h3>
         <div className="space-y-4">
           <div>
@@ -552,7 +552,7 @@ export const ReleaseChanges: React.FC<ReleaseChangesProps> = ({ mode = 'develope
             reviewRemark: group.reviewRemark
           };
           return (
-            <details key={group.code} className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden" open>
+            <details key={group.code} className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden" open>
               <summary className="px-5 py-4 cursor-pointer hover:bg-slate-50">
                 <div className="inline-flex flex-wrap items-center gap-3">
                   <span className="font-bold text-slate-800">{group.code}</span>
@@ -579,7 +579,7 @@ export const ReleaseChanges: React.FC<ReleaseChangesProps> = ({ mode = 'develope
                     <label className={LABEL_STYLE}>评审人</label>
                     <input className={INPUT_STYLE} value={draft.reviewer} onChange={event => updateDraft(group.code, { reviewer: event.target.value })} placeholder="多人用逗号分隔" />
                   </div>
-                  <button onClick={() => saveRequirementReview(group)} className="px-4 py-2 bg-slate-800 text-white rounded-lg font-bold hover:bg-slate-900">保存评审</button>
+                  <button onClick={() => saveRequirementReview(group)} className="rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white hover:bg-blue-800">保存评审</button>
                 </div>
 
                 <div>
@@ -647,7 +647,7 @@ export const ReleaseChanges: React.FC<ReleaseChangesProps> = ({ mode = 'develope
           );
         })}
         {requirementGroups.length === 0 && (
-          <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 text-center text-slate-400">还没有人提交变更集</div>
+          <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-10 text-center text-slate-400">还没有人提交变更集</div>
         )}
       </section>
     </div>
@@ -672,7 +672,7 @@ export const ReleaseChanges: React.FC<ReleaseChangesProps> = ({ mode = 'develope
   const renderManagerView = () => (
     <div className="space-y-5">
       <section className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_420px] gap-5">
-        <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
+        <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-5">
           <h3 className="font-bold text-slate-800 mb-4">导入比包差异</h3>
           <div className="mb-3">
             <label className={LABEL_STYLE}>微服务标签</label>
@@ -695,12 +695,12 @@ export const ReleaseChanges: React.FC<ReleaseChangesProps> = ({ mode = 'develope
           </button>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
+        <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-5">
           <h3 className="font-bold text-slate-800 mb-4">创建版本</h3>
           <div className="space-y-3">
             <input className={INPUT_STYLE} value={versionForm.versionName} onChange={event => setVersionForm({ ...versionForm, versionName: event.target.value })} placeholder="版本号，建议使用 yyyyMMdd，例如 20260423" />
             <textarea className={INPUT_STYLE} rows={3} value={versionForm.description} onChange={event => setVersionForm({ ...versionForm, description: event.target.value })} placeholder="版本说明，可选" />
-            <button onClick={createVersion} className="px-4 py-2 bg-slate-800 text-white rounded-lg font-bold hover:bg-slate-900 flex items-center gap-2">
+            <button onClick={createVersion} className="flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white hover:bg-blue-800">
               <Plus size={16} /> 创建版本
             </button>
           </div>
@@ -716,7 +716,7 @@ export const ReleaseChanges: React.FC<ReleaseChangesProps> = ({ mode = 'develope
             ['入包未声明', reconcile.summary.undeclaredDiffCount],
             ['声明未入包', reconcile.summary.declaredNotInPackageCount]
           ].map(([label, value]) => (
-            <div key={label} className="bg-white border border-slate-200 rounded-xl p-4">
+            <div key={label} className="bg-white border border-slate-200 rounded-lg p-4">
               <div className="text-2xl font-bold text-slate-800">{value}</div>
               <div className="text-xs text-slate-500 mt-1">{label}</div>
             </div>
@@ -724,11 +724,11 @@ export const ReleaseChanges: React.FC<ReleaseChangesProps> = ({ mode = 'develope
         </section>
       )}
 
-      <section className="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
+      <section className="bg-white border border-slate-200 rounded-lg shadow-sm p-5">
         <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><FileSearch size={17} /> 查文件责任人</h3>
         <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3">
           <input className={INPUT_STYLE} value={searchKeyword} onChange={event => setSearchKeyword(event.target.value)} onKeyDown={event => event.key === 'Enter' && searchFiles()} placeholder="可输入 AccountService、AccountService.class 或完整路径" />
-          <button onClick={searchFiles} className="px-4 py-2 rounded-lg bg-slate-800 text-white text-sm font-bold">搜索</button>
+          <button onClick={searchFiles} className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800">搜索</button>
         </div>
         {searchResults.length > 0 && (
           <div className="mt-4 divide-y divide-slate-100 border border-slate-200 rounded-lg overflow-hidden">
@@ -744,7 +744,7 @@ export const ReleaseChanges: React.FC<ReleaseChangesProps> = ({ mode = 'develope
 
       {reconcile && (
         <section className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-          <div className="bg-white border border-amber-200 rounded-xl shadow-sm overflow-hidden">
+          <div className="bg-white border border-amber-200 rounded-lg shadow-sm overflow-hidden">
             <div className="px-5 py-4 bg-amber-50 border-b border-amber-100 font-bold text-amber-800 flex items-center gap-2">
               <AlertTriangle size={16} /> 入包未声明
             </div>
@@ -756,7 +756,7 @@ export const ReleaseChanges: React.FC<ReleaseChangesProps> = ({ mode = 'develope
             </div>
           </div>
 
-          <div className="bg-white border border-blue-200 rounded-xl shadow-sm overflow-hidden">
+          <div className="bg-white border border-blue-200 rounded-lg shadow-sm overflow-hidden">
             <div className="px-5 py-4 bg-blue-50 border-b border-blue-100 font-bold text-blue-800 flex items-center gap-2">
               <AlertTriangle size={16} /> 声明未入包
             </div>
@@ -773,7 +773,7 @@ export const ReleaseChanges: React.FC<ReleaseChangesProps> = ({ mode = 'develope
         </section>
       )}
 
-      <section className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+      <section className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-100 flex flex-col gap-3 lg:flex-row lg:items-center">
           <div className="font-bold text-slate-800">差异确认</div>
           <div className="inline-flex w-fit items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
@@ -857,12 +857,12 @@ export const ReleaseChanges: React.FC<ReleaseChangesProps> = ({ mode = 'develope
 
       {versions.length > 0 && (mode === 'developer' ? renderDeveloperView() : renderManagerView())}
       {versions.length === 0 && mode === 'manager' && (
-        <div className="mt-5 bg-white border border-slate-200 rounded-xl shadow-sm p-5 max-w-lg">
+        <div className="mt-5 bg-white border border-slate-200 rounded-lg shadow-sm p-5 max-w-lg">
           <h3 className="font-bold text-slate-800 mb-4">创建第一个版本</h3>
           <div className="space-y-3">
             <input className={INPUT_STYLE} value={versionForm.versionName} onChange={event => setVersionForm({ ...versionForm, versionName: event.target.value })} placeholder="版本号，建议使用 yyyyMMdd，例如 20260423" />
             <textarea className={INPUT_STYLE} rows={3} value={versionForm.description} onChange={event => setVersionForm({ ...versionForm, description: event.target.value })} placeholder="版本说明，可选" />
-            <button onClick={createVersion} className="px-4 py-2 bg-slate-800 text-white rounded-lg font-bold hover:bg-slate-900 flex items-center gap-2">
+            <button onClick={createVersion} className="flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white hover:bg-blue-800">
               <Plus size={16} /> 创建版本
             </button>
           </div>

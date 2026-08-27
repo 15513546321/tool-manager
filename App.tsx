@@ -24,7 +24,20 @@ import { UserManagement } from './pages/admin/UserManagement';
 import { RoleManagement } from './pages/admin/RoleManagement';
 import { PermissionManagement } from './pages/admin/PermissionManagement';
 import { Suggestions } from './pages/Suggestions';
-import { Megaphone, ArrowRight, X, Clock, FileText, Download } from 'lucide-react';
+import {
+  Megaphone,
+  ArrowRight,
+  X,
+  Clock,
+  FileText,
+  Download,
+  FileCode,
+  BookOpen,
+  GitPullRequest,
+  RefreshCw,
+  FileCheck,
+  Database as DatabaseIcon,
+} from 'lucide-react';
 import { Database, TABLE } from './services/database';
 import { announcementApi } from './services/apiService';
 import { initializeAuditButtonTracking } from './services/auditButton';
@@ -41,6 +54,43 @@ const Dashboard = () => {
   const [announcement, setAnnouncement] = useState<any>(null);
   const [showAnnouncementModal, setShowAnnouncementModal] = useState(false);
   const navigate = useNavigate();
+
+  const quickActions = [
+    {
+      title: '接口资产',
+      caption: '文档、代码生成、模拟报文',
+      path: '/interface/docs',
+      icon: FileCode,
+      tone: 'text-blue-700 bg-blue-50 border-blue-100',
+    },
+    {
+      title: '交付变更',
+      caption: '变更集录入与比包对账',
+      path: '/release-changes/dev',
+      icon: GitPullRequest,
+      tone: 'text-amber-700 bg-amber-50 border-amber-100',
+    },
+    {
+      title: '运维配置',
+      caption: '同步、参数与缓存刷新',
+      path: '/sync/nacos',
+      icon: RefreshCw,
+      tone: 'text-emerald-700 bg-emerald-50 border-emerald-100',
+    },
+    {
+      title: '治理审计',
+      caption: '日志、权限、菜单与 IP 映射',
+      path: '/audit',
+      icon: FileCheck,
+      tone: 'text-sky-700 bg-sky-50 border-sky-100',
+    },
+  ];
+
+  const focusItems = [
+    { label: '知识库', value: '规范与业务文档', path: '/repo', icon: BookOpen },
+    { label: '参数配置', value: '系统参数维护', path: '/params', icon: DatabaseIcon },
+    { label: '公告通知', value: '平台发布记录', path: '/announcement', icon: Megaphone },
+  ];
 
   useEffect(() => {
     // Check announcement status from backend API
@@ -113,106 +163,100 @@ const Dashboard = () => {
   };
 
   return (
-    <div className="p-8 max-w-6xl mx-auto animate-in fade-in duration-500 relative">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-slate-800">工作台 (Dashboard)</h1>
-        <p className="text-slate-600 mt-2">欢迎回来，开始您高效的一天。</p>
-      </div>
-
-      {/* Elegant Announcement Card */}
-      {announcement ? (
-        <div 
-            onClick={() => navigate('/announcement')}
-            className="relative mb-10 group cursor-pointer overflow-hidden rounded-2xl transition-all duration-500 hover:shadow-xl"
-        >
-          {/* Light Blue Background - Professional and Eye-catching */}
-          <div className="absolute inset-0 bg-gradient-to-br from-blue-50 via-cyan-50 to-blue-100 group-hover:from-blue-100 group-hover:via-cyan-100 group-hover:to-blue-200 transition-all duration-500"></div>
-          
-          {/* Top Accent Bar */}
-          <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-blue-400 via-cyan-400 to-blue-400"></div>
-          
-          {/* Decorative Elements */}
-          <div className="absolute -right-40 -top-40 w-80 h-80 bg-blue-200/30 rounded-full blur-3xl group-hover:scale-110 transition-transform duration-700"></div>
-          <div className="absolute -left-40 -bottom-40 w-96 h-96 bg-cyan-200/20 rounded-full blur-3xl group-hover:scale-105 transition-transform duration-700"></div>
-          
-          {/* Main Content Container */}
-          <div className="relative z-10 p-8 flex items-start gap-6">
-            {/* Icon Container */}
-            <div className="bg-white/70 backdrop-blur-sm p-4 rounded-xl shadow-md shrink-0 border border-blue-200 group-hover:bg-white/90 group-hover:shadow-lg transition-all duration-300">
-              <Megaphone className="w-8 h-8 text-blue-600" />
-            </div>
-
-            {/* Text Content */}
-            <div className="flex-1">
-              {/* Badges Row */}
-              <div className="flex items-center gap-3 mb-4 flex-wrap">
-                <span className="bg-white/80 backdrop-blur-sm text-blue-600 text-[11px] font-bold px-4 py-1.5 rounded-full uppercase tracking-wider border border-blue-300 shadow-sm group-hover:bg-white transition-all duration-300">
-                  📢 最新公告
-                </span>
-                <span className="text-blue-700 text-xs font-mono bg-white/70 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-blue-200">
-                  {announcement.versions?.[0]?.updatedAt?.split(' ')[0]}
-                </span>
-              </div>
-
-              {/* Title */}
-              <h3 className="text-2xl font-bold mb-3 leading-tight text-blue-900 group-hover:text-blue-800 transition-all duration-300">
-                {announcement.title}
-              </h3>
-
-              {/* Description */}
-              <p className="text-blue-800 text-base leading-relaxed max-w-3xl line-clamp-2 mb-4">
-                {announcement.description || '点击查看完整内容...'}
+    <div className="mx-auto max-w-7xl px-8 py-8 animate-in fade-in duration-500">
+      <section className="mb-6 grid gap-6 md:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="relative overflow-hidden rounded-lg border border-blue-100 bg-white p-6 shadow-sm">
+          <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-blue-700 via-amber-400 to-emerald-500" />
+          <div className="flex flex-col gap-6">
+            <div>
+              <p className="mb-3 text-xs font-semibold text-blue-700">工作概览</p>
+              <h2 className="text-3xl font-semibold tracking-normal text-blue-950">工作台</h2>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
+                接口资产、交付变更、运维配置与系统治理集中处理。
               </p>
-
-              {/* Action Hint */}
-              <div className="flex items-center gap-2 text-blue-700 text-sm group-hover:text-blue-900 transition-all duration-300 font-medium">
-                <ArrowRight size={16} className="group-hover:translate-x-2 transition-transform duration-300" />
-                <span>点击进入公告详情</span>
-              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              {focusItems.map(item => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.path}
+                    onClick={() => navigate(item.path)}
+                    className="rounded-md border border-blue-100 bg-blue-50/50 px-3 py-3 text-left transition-all hover:border-blue-200 hover:bg-white hover:shadow-sm"
+                  >
+                    <Icon size={16} className="mb-2 text-blue-700" />
+                    <div className="text-sm font-semibold text-blue-950">{item.label}</div>
+                    <div className="mt-1 text-xs text-slate-500">{item.value}</div>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
-      ) : (
-         <div className="bg-blue-50 rounded-xl p-8 text-center border border-blue-200 mb-10">
-            <Megaphone className="mx-auto text-blue-400 mb-2" size={32} />
-            <p className="text-blue-600 font-medium">暂无最新公告</p>
-         </div>
-      )}
 
-      {/* Quick Stats / Placeholders */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
-            <h3 className="font-bold text-slate-700 mb-2">接口管理</h3>
-            <p className="text-sm text-slate-500 mb-4">快速访问文档与代码生成工具。</p>
-            <button onClick={() => navigate('/interface/docs')} className="text-blue-600 text-sm font-bold hover:underline">Go to Docs &rarr;</button>
-         </div>
-         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
-            <h3 className="font-bold text-slate-700 mb-2">知识库</h3>
-            <p className="text-sm text-slate-500 mb-4">浏览最新的技术规范与业务文档。</p>
-            <button onClick={() => navigate('/repo')} className="text-blue-600 text-sm font-bold hover:underline">Browse Repo &rarr;</button>
-         </div>
-         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
-            <h3 className="font-bold text-slate-700 mb-2">审计日志</h3>
-            <p className="text-sm text-slate-500 mb-4">查看系统操作记录与安全监控。</p>
-            <button onClick={() => navigate('/audit')} className="text-blue-600 text-sm font-bold hover:underline">View Logs &rarr;</button>
-         </div>
-      </div>
+        <button
+          onClick={() => navigate('/announcement')}
+          className="group flex min-h-[190px] flex-col justify-between rounded-lg border border-blue-100 bg-gradient-to-br from-blue-50 via-white to-amber-50 p-6 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-lg"
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div className="rounded-md bg-blue-700 p-3 text-white shadow-[0_10px_24px_rgba(29,78,216,0.18)]">
+              <Megaphone size={22} />
+            </div>
+            <ArrowRight size={18} className="text-blue-300 transition-transform group-hover:translate-x-1 group-hover:text-blue-700" />
+          </div>
+          <div>
+            <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase text-blue-700">
+              <span>最新公告</span>
+              {announcement?.versions?.[0]?.updatedAt && (
+                <span className="text-slate-400">/ {announcement.versions[0].updatedAt.split(' ')[0]}</span>
+              )}
+            </div>
+            <h3 className="line-clamp-2 text-xl font-semibold tracking-normal text-blue-950">
+              {announcement?.title || '暂无公告'}
+            </h3>
+            <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-600">
+              {announcement?.description || '公告发布后将在这里显示。'}
+            </p>
+          </div>
+        </button>
+      </section>
+
+      <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {quickActions.map(action => {
+          const Icon = action.icon;
+          return (
+            <button
+              key={action.path}
+              onClick={() => navigate(action.path)}
+              className="group rounded-lg border border-blue-100 bg-white p-5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md"
+            >
+              <div className={`mb-5 flex h-10 w-10 items-center justify-center rounded-md border ${action.tone}`}>
+                <Icon size={19} />
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="text-base font-semibold text-blue-950">{action.title}</h3>
+                  <p className="mt-1 text-sm leading-5 text-slate-500">{action.caption}</p>
+                </div>
+                <ArrowRight size={17} className="shrink-0 text-blue-200 transition-transform group-hover:translate-x-1 group-hover:text-blue-700" />
+              </div>
+            </button>
+          );
+        })}
+      </section>
 
       {/* Announcement Modal (First Login) */}
       {showAnnouncementModal && announcement && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-300">
-           <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-blue-950/45 backdrop-blur-sm p-4 animate-in fade-in duration-300">
+           <div className="bg-white w-full max-w-lg rounded-lg shadow-lg overflow-hidden animate-in zoom-in-95 duration-300">
                {/* Header */}
-               <div className="bg-gradient-to-r from-blue-600 to-indigo-700 px-6 py-4 flex justify-between items-center relative overflow-hidden">
-                   <div className="absolute top-0 right-0 opacity-10 transform translate-x-4 -translate-y-4">
-                       <Megaphone size={100} className="text-white"/>
-                   </div>
-                   <h2 className="text-xl font-bold text-white flex items-center gap-2 relative z-10">
-                       <Megaphone size={20} className="text-yellow-300"/> 最新公告
+               <div className="bg-blue-700 px-6 py-4 flex justify-between items-center relative overflow-hidden">
+                   <h2 className="text-lg font-semibold text-white flex items-center gap-2 relative z-10">
+                       <Megaphone size={20} className="text-amber-200"/> 最新公告
                    </h2>
                    <button 
                      onClick={handleCloseAnnouncementModal} // Use new handler
-                     className="text-white/70 hover:text-white hover:bg-white/20 p-1 rounded-full transition-colors relative z-10"
+                     className="text-white/70 hover:text-white hover:bg-white/10 p-1 rounded-md transition-colors relative z-10"
                    >
                      <X size={20} />
                    </button>
@@ -221,11 +265,11 @@ const Dashboard = () => {
                {/* Body */}
                <div className="p-6">
                    <div className="flex justify-between items-start mb-4">
-                        <h3 className="text-lg font-bold text-slate-800 leading-snug">{announcement.title}</h3>
-                        <span className="text-xs bg-slate-100 text-slate-500 px-2 py-1 rounded-full whitespace-nowrap ml-2">v{announcement.versions[0]?.versionNumber}</span>
+                        <h3 className="text-lg font-semibold text-blue-950 leading-snug">{announcement.title}</h3>
+                        <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-md whitespace-nowrap ml-2">v{announcement.versions[0]?.versionNumber}</span>
                    </div>
                    
-                   <div className="flex items-center gap-4 text-xs text-slate-400 mb-4 pb-4 border-b border-slate-100">
+                   <div className="flex items-center gap-4 text-xs text-zinc-400 mb-4 pb-4 border-b border-zinc-100">
                        <span className="flex items-center gap-1"><Clock size={12}/> {announcement.versions[0]?.updatedAt}</span>
                        {announcement.versions[0]?.fileName && (
                          <span className="flex items-center gap-1">
@@ -235,30 +279,30 @@ const Dashboard = () => {
                        )}
                    </div>
 
-                   <div className="text-slate-600 text-sm leading-relaxed max-h-60 overflow-y-auto bg-slate-50 p-4 rounded-lg border border-slate-100">
+                   <div className="text-zinc-600 text-sm leading-relaxed max-h-60 overflow-y-auto bg-zinc-50 p-4 rounded-md border border-zinc-100">
                        {announcement.description || '暂无详细内容'}
                    </div>
                </div>
                
                {/* Footer */}
-               <div className="bg-slate-50 px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
+               <div className="bg-zinc-50 px-6 py-4 border-t border-zinc-100 flex justify-end gap-3">
                    <button 
                      onClick={handleCloseAnnouncementModal} // Use new handler
-                     className="px-4 py-2 text-slate-500 hover:text-slate-700 text-sm font-medium hover:bg-slate-200 rounded-lg transition-colors"
+                     className="px-4 py-2 text-zinc-500 hover:text-zinc-700 text-sm font-medium hover:bg-zinc-200 rounded-md transition-colors"
                    >
                      关闭
                    </button>
                    {announcement.versions[0]?.fileName && announcement.versions[0]?.fileContent && (
                      <button 
                        onClick={() => handleDownloadAnnouncement(announcement.versions[0])}
-                       className="px-4 py-2 bg-slate-100 text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-200 transition-colors flex items-center gap-2"
+                       className="px-4 py-2 bg-white border border-zinc-200 text-zinc-600 text-sm font-medium rounded-md hover:bg-zinc-100 transition-colors flex items-center gap-2"
                      >
                        <Download size={14}/> 下载附件
                      </button>
                    )}
                    <button 
                      onClick={() => navigate('/announcement')}
-                     className="px-5 py-2 bg-blue-600 text-white text-sm font-bold rounded-lg shadow-lg shadow-blue-500/30 hover:bg-blue-700 transition-colors flex items-center gap-2"
+                     className="px-5 py-2 bg-blue-700 text-white text-sm font-semibold rounded-md shadow-lg shadow-blue-700/20 hover:bg-blue-800 transition-colors flex items-center gap-2"
                    >
                      前往查看 <ArrowRight size={14}/>
                    </button>

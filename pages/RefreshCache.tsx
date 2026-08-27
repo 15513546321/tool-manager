@@ -125,22 +125,23 @@ export const RefreshCache: React.FC = () => {
     <>
       <style>{`
         .app-refresh-container {
-          max-width: 900px;
-          margin: 40px auto;
-          padding: 24px;
+          max-width: 1040px;
+          margin: 0 auto;
+          padding: 32px;
         }
         .app-refresh-box {
           padding: 24px;
-          border: 1px solid #e2e8f0;
+          border: 1px solid #d7e4f6;
           border-radius: 8px;
-          background: #fff;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+          background: rgba(255,255,255,0.96);
+          box-shadow: 0 10px 28px rgba(30,64,175,0.07);
           margin-bottom: 24px;
         }
         .app-refresh-box h2 {
           margin-bottom: 20px;
-          font-size: 20px;
-          color: #1e293b;
+          font-size: 24px;
+          color: #172554;
+          font-weight: 700;
         }
         .search-row {
           display: flex;
@@ -157,35 +158,38 @@ export const RefreshCache: React.FC = () => {
         .search-form-item label {
           margin-bottom: 6px;
           font-size: 14px;
-          color: #475569;
-          font-weight: 500;
+          color: #334155;
+          font-weight: 600;
         }
         .search-form-item select {
-          padding: 8px 12px;
-          border: 1px solid #cbd5e1;
-          border-radius: 6px;
+          padding: 9px 12px;
+          border: 1px solid #cfe0f6;
+          border-radius: 8px;
           font-size: 14px;
           background: #fff;
           cursor: pointer;
-          height: 38px;
+          height: 40px;
+          color: #334155;
         }
         .search-form-item select:focus {
           outline: none;
-          border-color: #2563eb;
+          border-color: #1d4ed8;
+          box-shadow: 0 0 0 3px rgba(29,78,216,0.12);
         }
         .search-btn {
           display: flex;
           align-items: center;
           gap: 6px;
           padding: 8px 20px;
-          background: #2563eb;
+          background: #1d4ed8;
           color: #fff;
           border: none;
-          border-radius: 6px;
+          border-radius: 8px;
           font-size: 15px;
           cursor: pointer;
           transition: background 0.2s;
-          height: 38px;
+          height: 40px;
+          font-weight: 600;
         }
         .search-btn:hover:not(:disabled) {
           background: #1d4ed8;
@@ -197,7 +201,7 @@ export const RefreshCache: React.FC = () => {
         .refresh-result {
           margin-top: 16px;
           padding: 12px;
-          border-radius: 6px;
+          border-radius: 8px;
           font-size: 14px;
         }
         .refresh-result.success {
@@ -212,15 +216,16 @@ export const RefreshCache: React.FC = () => {
         }
         .cache-table-box {
           padding: 24px;
-          border: 1px solid #e2e8f0;
+          border: 1px solid #d7e4f6;
           border-radius: 8px;
-          background: #fff;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+          background: rgba(255,255,255,0.96);
+          box-shadow: 0 10px 28px rgba(30,64,175,0.07);
         }
         .cache-table-box h3 {
           margin-bottom: 16px;
-          font-size: 16px;
-          color: #1e293b;
+          font-size: 18px;
+          color: #172554;
+          font-weight: 700;
         }
         .cache-table {
           width: 100%;
@@ -228,20 +233,20 @@ export const RefreshCache: React.FC = () => {
           font-size: 14px;
         }
         .cache-table th {
-          background: #f8fafc;
-          color: #475569;
-          font-weight: 600;
+          background: #edf4ff;
+          color: #172554;
+          font-weight: 700;
           text-align: left;
           padding: 12px 16px;
-          border-bottom: 1px solid #e2e8f0;
+          border-bottom: 1px solid #d7e4f6;
         }
         .cache-table td {
           padding: 12px 16px;
-          border-bottom: 1px solid #f1f5f9;
+          border-bottom: 1px solid #e6effc;
           color: #334155;
         }
         .cache-table tr:hover td {
-          background: #f8fafc;
+          background: #f8fbff;
         }
         .cache-table .col-index {
           width: 60px;
@@ -262,13 +267,14 @@ export const RefreshCache: React.FC = () => {
           align-items: center;
           gap: 4px;
           padding: 4px 12px;
-          background: #2563eb;
+          background: #1d4ed8;
           color: #fff;
           border: none;
-          border-radius: 4px;
+          border-radius: 8px;
           font-size: 13px;
           cursor: pointer;
           transition: background 0.2s;
+          font-weight: 600;
         }
         .refresh-item-btn:hover:not(:disabled) {
           background: #1d4ed8;
@@ -280,7 +286,7 @@ export const RefreshCache: React.FC = () => {
         .empty-state {
           text-align: center;
           padding: 40px;
-          color: #94a3b8;
+          color: #64748b;
           font-size: 14px;
         }
       `}</style>

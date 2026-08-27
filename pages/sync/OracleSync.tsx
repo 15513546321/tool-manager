@@ -110,7 +110,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({ options, value, onC
       </div>
 
       {isOpen && !disabled && (
-        <div className="absolute z-20 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-auto animate-in fade-in zoom-in-95 duration-100">
+        <div className="absolute z-20 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-md max-h-60 overflow-auto animate-in fade-in zoom-in-95 duration-100">
           {filteredOptions.length > 0 ? (
             filteredOptions.map(opt => (
               <div
@@ -124,14 +124,14 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({ options, value, onC
               >
                 <div className="font-bold">{opt.name}</div>
                 <div className="text-xs text-slate-500 font-mono flex gap-3 flex-wrap">
-                  <span>👤 {opt.username}</span>
+                  <span>用户：{opt.username}</span>
                   {(() => {
                     const parsed = parseOracleConnectionString(opt.connectionString || opt.url || '');
                     return (
                       <>
-                        {parsed.host && <span>🖥️ {parsed.host}</span>}
+                        {parsed.host && <span>主机：{parsed.host}</span>}
                         {parsed.port && <span>:{parsed.port}</span>}
-                        {parsed.sid && <span>🗄️ {parsed.sid}</span>}
+                        {parsed.sid && <span>实例：{parsed.sid}</span>}
                       </>
                     );
                   })()}
@@ -139,7 +139,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({ options, value, onC
               </div>
             ))
           ) : (
-            <div className="px-4 py-3 text-sm text-slate-400 text-center">No matches found</div>
+            <div className="px-4 py-3 text-center text-sm text-slate-400">未找到匹配连接</div>
           )}
         </div>
       )}
@@ -268,7 +268,7 @@ export const OracleSync: React.FC = () => {
 
     const handleTestConnection = async (conn: DbConnection) => {
         if (!conn.connectionString && !conn.url) {
-            alert('请输入 Connection String');
+            alert('请输入连接字符串');
             return;
         }
 
@@ -608,24 +608,24 @@ export const OracleSync: React.FC = () => {
         return (
             <div className="mt-4 space-y-3 bg-slate-50 p-3 rounded-lg border border-slate-100">
                 <div>
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">Connection String</label>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase">连接字符串</label>
                     <div className="text-xs font-mono text-slate-700 truncate" title={conn.connectionString || conn.url}>{conn.connectionString || conn.url}</div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                     <div>
-                        <label className="text-[10px] font-bold text-slate-400 uppercase">Username</label>
+                        <label className="text-[10px] font-bold text-slate-400 uppercase">用户名</label>
                         <div className="text-sm font-bold text-slate-800">{conn.username}</div>
                     </div>
                     <div>
-                        <label className="text-[10px] font-bold text-slate-400 uppercase">Host</label>
+                        <label className="text-[10px] font-bold text-slate-400 uppercase">主机</label>
                         <div className="text-sm font-bold text-slate-800">{displayHost}</div>
                     </div>
                     <div>
-                        <label className="text-[10px] font-bold text-slate-400 uppercase">Port</label>
+                        <label className="text-[10px] font-bold text-slate-400 uppercase">端口</label>
                         <div className="text-sm font-bold text-slate-800">{displayPort}</div>
                     </div>
                     <div>
-                        <label className="text-[10px] font-bold text-slate-400 uppercase">SID/Service</label>
+                        <label className="text-[10px] font-bold text-slate-400 uppercase">SID / 服务名</label>
                         <div className="text-sm font-bold text-slate-800">{displaySid}</div>
                     </div>
                 </div>
@@ -649,10 +649,10 @@ export const OracleSync: React.FC = () => {
             {/* Test Connection Modal */}
             {testModalState.isOpen && (
                 <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+                    <div className="bg-white rounded-lg shadow-lg w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
                         <div className={`px-6 py-4 border-b-4 ${testModalState.success ? 'bg-green-50 border-green-400' : 'bg-red-50 border-red-400'}`}>
                             <h3 className={`text-lg font-bold flex items-center gap-2 ${testModalState.success ? 'text-green-800' : 'text-red-800'}`}>
-                                {testModalState.success ? '✅ 连接成功' : '❌ 连接失败'}
+                                {testModalState.success ? '连接成功' : '连接失败'}
                             </h3>
                         </div>
                         <div className="p-6">
@@ -663,7 +663,7 @@ export const OracleSync: React.FC = () => {
                         <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end">
                             <button 
                                 onClick={() => setTestModalState({ ...testModalState, isOpen: false })}
-                                className="px-6 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-900 text-sm font-bold transition-colors"
+                                className="rounded-lg bg-blue-700 px-6 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-800"
                             >
                                 关闭
                             </button>
@@ -737,7 +737,7 @@ export const OracleSync: React.FC = () => {
                     <div className="bg-white rounded-lg shadow-md border border-slate-200 p-6 flex flex-col gap-4">
                         <div className="flex items-center justify-between gap-2 pb-3 border-b border-slate-100">
                             <div className="flex items-center gap-2">
-                                <div className="w-3 h-3 rounded-full bg-purple-500"></div>
+                                <div className="w-3 h-3 rounded-full bg-amber-500"></div>
                                 <h3 className="text-lg font-bold text-slate-800">目标数据库</h3>
                             </div>
                             {sourceId && targetId && sourceConns.find(c => c.id === sourceId)?.username === targetConns.find(c => c.id === targetId)?.username && (
@@ -786,7 +786,7 @@ export const OracleSync: React.FC = () => {
                     <button 
                         onClick={generateDDL}
                         disabled={loading || !sourceId || !targetId}
-                        className="w-full px-6 py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg font-bold hover:from-red-700 hover:to-red-800 shadow-lg hover:shadow-xl transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        className="w-full px-6 py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg font-bold hover:from-red-700 hover:to-red-800 shadow-lg hover:shadow-md transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
                         <Play size={18} className={loading ? 'animate-spin' : ''}/> 
                         {loading ? '生成中...' : '生成同步脚本'}
@@ -812,7 +812,7 @@ export const OracleSync: React.FC = () => {
                     {/* Editor Area */}
                     <div className="flex-1 bg-white rounded-lg shadow-md border border-slate-200 overflow-hidden flex flex-col">
                         <textarea 
-                            className="flex-1 w-full p-4 bg-slate-900 text-blue-100 font-mono text-sm leading-relaxed resize-none outline-none"
+                            className="flex-1 w-full resize-none bg-[#f7faff] p-4 font-mono text-sm leading-relaxed text-slate-700 outline-none"
                             value={ddlScript || '-- 选择源和目标数据库后，点击"生成同步脚本"开始对比表结构...'}
                             readOnly
                         />
@@ -842,7 +842,7 @@ export const OracleSync: React.FC = () => {
             {/* Management Modal */}
             {isConfigOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col max-h-[85vh]">
+                    <div className="bg-white rounded-lg shadow-lg w-full max-w-6xl overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col max-h-[85vh]">
                         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                             <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                                 <Settings size={20} className="text-slate-500"/> 连接配置管理
@@ -856,32 +856,32 @@ export const OracleSync: React.FC = () => {
                                 onClick={() => setConfigTab('source')}
                                 className={`px-4 py-2 text-sm font-bold border-b-2 transition-colors ${configTab === 'source' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                              >
-                                源数据库 (Source)
+                                源数据库
                              </button>
                              <button 
                                 onClick={() => setConfigTab('target')}
-                                className={`px-4 py-2 text-sm font-bold border-b-2 transition-colors ${configTab === 'target' ? 'border-purple-600 text-purple-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                                className={`px-4 py-2 text-sm font-bold border-b-2 transition-colors ${configTab === 'target' ? 'border-amber-600 text-amber-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                              >
-                                目标数据库 (Target)
+                                目标数据库
                              </button>
                         </div>
 
                         <div className="px-6 py-6 border-b border-slate-100 bg-white">
                             {/* 说明文本 - 增强版 */}
-                            <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-lg shadow-sm">
+                            <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-amber-50 border-2 border-blue-200 rounded-lg shadow-sm">
                                 <div className="text-sm font-bold text-blue-900 mb-3 flex items-center gap-2">
-                                    <span className="text-lg">📝</span> Oracle Connection String 格式说明
+                                    Oracle 连接字符串格式说明
                                 </div>
                                 <div className="space-y-3">
                                     <div className="bg-white p-3 rounded border border-blue-100">
-                                        <div className="text-xs font-bold text-blue-700 mb-1">✅ SID 方式 (推荐用于传统实例)</div>
+                                        <div className="text-xs font-bold text-blue-700 mb-1">SID 方式 (推荐用于传统实例)</div>
                                         <div className="text-xs font-mono text-slate-700 bg-slate-50 px-3 py-2 rounded border border-slate-200">
                                             jdbc:oracle:thin:@10.20.72.168:1521<span className="text-red-600 font-bold">:</span>ECSS
                                         </div>
                                         <div className="text-[10px] text-slate-500 mt-1">格式: @host:port<span className="text-red-600 font-bold">:SID</span></div>
                                     </div>
                                     <div className="bg-white p-3 rounded border border-blue-100">
-                                        <div className="text-xs font-bold text-blue-700 mb-1">✅ Service Name 方式 (推荐用于 RAC / PDB)</div>
+                                        <div className="text-xs font-bold text-blue-700 mb-1">服务名方式（推荐用于 RAC / PDB）</div>
                                         <div className="text-xs font-mono text-slate-700 bg-slate-50 px-3 py-2 rounded border border-slate-200">
                                             jdbc:oracle:thin:@10.20.72.168:1521<span className="text-green-600 font-bold">/</span>ECSS
                                         </div>
@@ -889,7 +889,7 @@ export const OracleSync: React.FC = () => {
                                     </div>
                                 </div>
                                 <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded text-[11px] text-yellow-800">
-                                    <strong>⚠️ 重要提示：</strong> 请注意区分冒号(<span className="font-bold text-red-600">:</span>)和斜杠(<span className="font-bold text-green-600">/</span>)符号！
+                                    <strong>重要提示：</strong> 请注意区分冒号(<span className="font-bold text-red-600">:</span>)和斜杠(<span className="font-bold text-green-600">/</span>)符号！
                                     如果连接失败，请尝试切换SID和Service方式。
                                 </div>
                             </div>
@@ -958,7 +958,7 @@ export const OracleSync: React.FC = () => {
                                         className={`flex-1 px-6 py-2.5 rounded-lg flex items-center justify-center text-sm font-bold transition-colors text-white ${
                                             configTab === 'source' 
                                                 ? 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800' 
-                                                : 'bg-purple-600 hover:bg-purple-700 active:bg-purple-800'
+                                                : 'bg-amber-600 hover:bg-amber-700 active:bg-amber-800'
                                         }`}
                                         title={editingId ? '保存修改' : '添加连接'}
                                     >
@@ -1024,7 +1024,7 @@ export const OracleSync: React.FC = () => {
                                                                         className="px-3 py-1.5 text-red-600 hover:text-red-800 hover:bg-red-50 rounded text-xs font-medium transition-colors"
                                                                         title="删除连接"
                                                                     >
-                                                                        🗑 删除
+                                                                        删除
                                                                     </button>
                                                                 </div>
                                                             </td>
@@ -1036,7 +1036,7 @@ export const OracleSync: React.FC = () => {
                                     </div>
                                 ) : (
                                     <div className="text-center py-12 bg-white rounded-lg border-2 border-dashed border-slate-300">
-                                        <div className="text-4xl mb-3">📭</div>
+                                        <Database size={30} className="mx-auto mb-3 text-blue-300" />
                                         <div className="text-base font-bold text-slate-600">暂无{configTab === 'source' ? '源' : '目标'}数据库连接</div>
                                         <div className="text-sm text-slate-500 mt-2">请在上方输入连接信息并点击「+ 添加连接」</div>
                                     </div>
@@ -1045,8 +1045,8 @@ export const OracleSync: React.FC = () => {
                         </div>
                         
                         <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
-                            <div className="text-xs text-slate-600">💡 提示: 选择源和目标数据库后，点击「生成同步脚本」开始对比表结构</div>
-                            <button onClick={() => setIsConfigOpen(false)} className="px-6 py-2.5 bg-slate-800 text-white rounded-lg hover:bg-slate-900 text-sm font-bold transition-colors">关闭</button>
+                            <div className="text-xs text-slate-600">提示: 选择源和目标数据库后，点击「生成同步脚本」开始对比表结构</div>
+                            <button onClick={() => setIsConfigOpen(false)} className="px-6 py-2.5 bg-blue-700 text-white rounded-lg hover:bg-blue-800 text-sm font-bold transition-colors">关闭</button>
                         </div>
                     </div>
                 </div>

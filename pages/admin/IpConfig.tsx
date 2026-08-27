@@ -231,36 +231,36 @@ export const IpConfig: React.FC = () => {
             </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 max-w-4xl mx-auto w-full">
+        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 max-w-4xl mx-auto w-full">
             <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-                <Shield size={20} className="text-purple-600"/>
+                <Shield size={20} className="text-amber-600"/>
                 配置管理
             </h3>
             <p className="text-slate-500 text-sm mb-6">配置生效后，审计日志和优化建议中的操作人姓名将根据此表实时更新。</p>
 
             {/* Add Form */}
-            <div className="bg-purple-50 p-4 rounded-lg border border-purple-100 mb-6 flex gap-4 items-end">
+            <div className="bg-amber-50 p-4 rounded-lg border border-amber-100 mb-6 flex gap-4 items-end">
                 <div className="flex-1">
-                    <label className="text-xs font-bold text-purple-800 uppercase mb-1 block">IP 地址</label>
+                    <label className="text-xs font-bold text-amber-800 uppercase mb-1 block">IP 地址</label>
                     <input 
                         className={INPUT_STYLE} 
-                        placeholder="e.g. 192.168.1.50" 
+                        placeholder="例如 192.168.1.50"
                         value={newIp} 
                         onChange={e => setNewIp(e.target.value)}
                     />
                 </div>
                 <div className="flex-1">
-                    <label className="text-xs font-bold text-purple-800 uppercase mb-1 block">姓名 / 描述</label>
+                    <label className="text-xs font-bold text-amber-800 uppercase mb-1 block">姓名 / 描述</label>
                     <input 
                         className={INPUT_STYLE} 
-                        placeholder="e.g. 张三" 
+                        placeholder="例如 张三"
                         value={newName} 
                         onChange={e => setNewName(e.target.value)}
                     />
                 </div>
                 <button 
                     onClick={handleAddMapping}
-                    className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm transition-colors mb-[1px]"
+                    className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm transition-colors mb-[1px]"
                 >
                     <Plus size={18} /> 添加映射
                 </button>

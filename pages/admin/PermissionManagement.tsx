@@ -181,8 +181,8 @@ export const PermissionManagement: React.FC = () => {
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-purple-100 rounded-lg">
-            <Key className="text-purple-600" size={24} />
+          <div className="p-2 bg-amber-100 rounded-lg">
+            <Key className="text-amber-600" size={24} />
           </div>
           <div>
             <h2 className="text-2xl font-bold text-slate-800">权限管理</h2>
@@ -195,7 +195,7 @@ export const PermissionManagement: React.FC = () => {
           className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition-colors shadow-sm ${
             saving || !selectedRoleId
               ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
-              : 'bg-purple-600 text-white hover:bg-purple-700'
+              : 'bg-amber-600 text-white hover:bg-amber-700'
           }`}
         >
           {saving ? (
@@ -213,7 +213,7 @@ export const PermissionManagement: React.FC = () => {
       </div>
 
       {/* Role Selector */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-6">
+      <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 mb-6">
         <label className="block text-sm font-medium text-slate-700 mb-2">选择角色</label>
         <select
           value={selectedRoleId || ''}
@@ -229,7 +229,7 @@ export const PermissionManagement: React.FC = () => {
       </div>
 
       {/* Menu Tree */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
         <div className="p-4 bg-slate-50 border-b border-slate-200">
           <div className="flex items-center gap-4 text-sm text-slate-500">
             <span className="flex items-center gap-1">

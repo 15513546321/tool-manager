@@ -157,7 +157,7 @@ export const Suggestions: React.FC = () => {
 
       <div className="flex-1 flex flex-col space-y-4">
          {/* Search */}
-         <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+         <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200">
             <div className="relative">
                <Search className="absolute left-3 top-2.5 text-slate-400" size={18} />
                <input 
@@ -173,10 +173,10 @@ export const Suggestions: React.FC = () => {
          </div>
 
          {/* Table */}
-         <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+         <div className="flex-1 bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden flex flex-col">
             {error && (
                 <div className="px-6 py-3 bg-red-50 border-b border-red-200 text-red-700 text-sm">
-                    ⚠️ {error}
+                    {error}
                 </div>
             )}
             {loading && (
@@ -230,7 +230,7 @@ export const Suggestions: React.FC = () => {
         {/* Add Modal */}
         {isModalOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-                <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+                <div className="bg-white rounded-lg shadow-lg w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
                     <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                         <h3 className="text-lg font-bold text-slate-800">提交优化建议</h3>
                         <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>

@@ -30,35 +30,40 @@ export const Login: React.FC = () => {
     }
   };
 
-  const INPUT_STYLE = "w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg bg-[#f8fafc] focus:bg-white focus:ring-2 focus:ring-blue-100 focus:border-blue-300 outline-none transition-all text-slate-700 placeholder:text-slate-400";
+  const INPUT_STYLE = "w-full pl-10 pr-4 py-2.5 border border-blue-100 rounded-md bg-blue-50/40 focus:bg-white focus:ring-2 focus:ring-blue-100 focus:border-blue-300 outline-none transition-all text-slate-700 placeholder:text-slate-400";
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-100">
-      <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-md border border-slate-200">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-amber-50 px-4">
+      <div className="w-full max-w-md overflow-hidden rounded-lg border border-blue-100 bg-white shadow-[0_24px_70px_rgba(30,64,175,0.16)]">
+        <div className="h-1.5 bg-gradient-to-r from-blue-700 via-amber-400 to-emerald-500" />
+        <div className="p-8">
         <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-slate-800">Welcome Back</h1>
-          <p className="text-slate-500 text-sm mt-2">Sign in to manage interfaces</p>
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-md bg-blue-700 text-white shadow-[0_14px_28px_rgba(29,78,216,0.2)]">
+            <Lock size={22} />
+          </div>
+          <h1 className="text-2xl font-semibold tracking-normal text-blue-950">公金开发辅助平台</h1>
+          <p className="text-slate-500 text-sm mt-2">登录后进入研发效能与交付治理工作台</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-6">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Username</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">用户名</label>
             <div className="relative">
-              <UserIcon className="absolute left-3 top-2.5 text-slate-400" size={18} />
+              <UserIcon className="absolute left-3 top-3 text-blue-500" size={18} />
               <input
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className={INPUT_STYLE}
-                placeholder="Enter username"
+                placeholder="请输入用户名"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">密码</label>
             <div className="relative">
-              <Lock className="absolute left-3 top-2.5 text-slate-400" size={18} />
+              <Lock className="absolute left-3 top-3 text-blue-500" size={18} />
               <input
                 type="password"
                 value={password}
@@ -78,7 +83,7 @@ export const Login: React.FC = () => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg transition-colors shadow-lg shadow-blue-500/30 flex items-center justify-center gap-2"
+            className="w-full bg-blue-700 hover:bg-blue-800 disabled:bg-blue-400 disabled:cursor-not-allowed text-white font-semibold py-2.5 rounded-md transition-colors shadow-lg shadow-blue-700/20 flex items-center justify-center gap-2"
           >
             {loading ? (
               <>
@@ -86,10 +91,11 @@ export const Login: React.FC = () => {
                 <span>登录中...</span>
               </>
             ) : (
-              <span>Sign In</span>
+              <span>登录</span>
             )}
           </button>
         </form>
+        </div>
       </div>
     </div>
   );

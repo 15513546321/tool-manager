@@ -746,7 +746,7 @@ export const DocRepository: React.FC = () => {
   const getFileIcon = (fileName: string) => {
       if (fileName.endsWith('.xls') || fileName.endsWith('.xlsx')) return <FileSpreadsheet size={14} className="text-green-600"/>;
       if (fileName.endsWith('.doc') || fileName.endsWith('.docx')) return <FileType size={14} className="text-blue-600"/>;
-      if (fileName.endsWith('.ppt') || fileName.endsWith('.pptx')) return <FileText size={14} className="text-purple-600"/>;
+      if (fileName.endsWith('.ppt') || fileName.endsWith('.pptx')) return <FileText size={14} className="text-amber-600"/>;
       if (fileName.endsWith('.xml') || fileName.endsWith('.html')) return <FileCode size={14} className="text-orange-600"/>;
       return <FileText size={14} className="text-slate-500"/>;
   };
@@ -756,12 +756,12 @@ export const DocRepository: React.FC = () => {
           return (
             <div className="flex items-center justify-center h-64 text-slate-400 gap-2">
                 <div className="animate-spin w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full"></div>
-                Generating preview...
+                正在生成预览...
             </div>
           );
       }
       
-      if (!previewContent || !activeVersion) return <div className="text-slate-400 italic">No content available</div>;
+      if (!previewContent || !activeVersion) return <div className="text-slate-400 italic">暂无可预览内容</div>;
 
       if (previewContent.type === 'pdf') {
           return (
@@ -791,17 +791,17 @@ export const DocRepository: React.FC = () => {
           return (
             <ErrorBoundary>
               <div className="h-full flex flex-col items-center justify-center p-8">
-                <div className="bg-purple-50 border border-purple-200 p-6 rounded-lg max-w-md">
+                <div className="bg-amber-50 border border-amber-200 p-6 rounded-lg max-w-md">
                   <div className="flex items-center justify-center gap-3 mb-4">
-                    <FileText size={32} className="text-purple-600" />
+                    <FileText size={32} className="text-amber-600" />
                     <div>
-                      <h3 className="text-lg font-bold text-purple-900">PPT暂不支持预览</h3>
-                      <p className="text-sm text-purple-700 mt-2">请下载后查看</p>
+                      <h3 className="text-lg font-bold text-amber-900">PPT暂不支持预览</h3>
+                      <p className="text-sm text-amber-700 mt-2">请下载后查看</p>
                     </div>
                   </div>
                   <button 
                     onClick={() => handleDownload(activeVersion)}
-                    className="flex items-center gap-2 px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium transition-colors"
+                    className="flex items-center gap-2 px-6 py-3 bg-amber-600 text-white rounded-lg hover:bg-amber-700 font-medium transition-colors"
                   >
                     <Download size={20} /> 下载文件
                   </button>
@@ -1174,7 +1174,7 @@ export const DocRepository: React.FC = () => {
                  </button>
                  
                  {isVersionDropdownOpen && (
-                   <div className="absolute top-full left-0 mt-2 w-80 bg-white border border-slate-200 rounded-lg shadow-xl z-50 max-h-80 overflow-y-auto">
+                   <div className="absolute top-full left-0 mt-2 w-80 bg-white border border-slate-200 rounded-lg shadow-md z-50 max-h-80 overflow-y-auto">
                      {selectedDoc.versions.map((v, idx) => (
                        <div 
                          key={v.id} 
@@ -1222,7 +1222,7 @@ export const DocRepository: React.FC = () => {
 
              {/* Preview Area */}
              <div className="flex-1 overflow-y-auto p-8 bg-slate-100/50">
-               <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-8 min-h-[600px] w-full max-w-6xl mx-auto h-full flex flex-col">
+               <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-8 min-h-[600px] w-full max-w-6xl mx-auto h-full flex flex-col">
                  {renderPreview()}
                </div>
              </div>
@@ -1241,7 +1241,7 @@ export const DocRepository: React.FC = () => {
       {/* Category Manager Modal */}
       {isCatManagerOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden h-[600px] flex flex-col animate-in fade-in zoom-in duration-200">
+            <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl overflow-hidden h-[600px] flex flex-col animate-in fade-in zoom-in duration-200">
                 <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                    <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                        <Settings size={20} /> 
@@ -1253,12 +1253,12 @@ export const DocRepository: React.FC = () => {
                     {/* Big Classes */}
                     <div className="w-1/2 border-r border-slate-200 flex flex-col">
                         <div className="p-3 border-b border-slate-100 bg-slate-50/50 font-bold text-xs text-slate-500 uppercase tracking-wide">
-                            大类 (Big Class)
+                            大类
                         </div>
                         <div className="p-2 border-b border-slate-100 flex gap-2">
                             <input 
                                 className={INLINE_INPUT_STYLE} 
-                                placeholder="New Category Name"
+                                placeholder="新建大类名称"
                                 value={newCatName}
                                 onChange={e => setNewCatName(e.target.value)}
                             />
@@ -1317,14 +1317,14 @@ export const DocRepository: React.FC = () => {
                     {/* Small Classes */}
                     <div className="w-1/2 flex flex-col bg-slate-50/30">
                         <div className="p-3 border-b border-slate-100 bg-slate-50/50 font-bold text-xs text-slate-500 uppercase tracking-wide">
-                            小类 (Sub Class)
+                            小类
                         </div>
                         {selectedCatForEdit ? (
                             <>
                                 <div className="p-2 border-b border-slate-100 flex gap-2">
                                     <input 
                                         className={INLINE_INPUT_STYLE} 
-                                        placeholder={`Add to ${selectedCatForEdit}`}
+                                        placeholder={`添加到 ${selectedCatForEdit}`}
                                         value={newSubCatName}
                                         onChange={e => setNewSubCatName(e.target.value)}
                                     />
@@ -1372,13 +1372,13 @@ export const DocRepository: React.FC = () => {
                                         </div>
                                     ))}
                                     {categoryMap[selectedCatForEdit]?.length === 0 && (
-                                        <div className="text-center text-slate-400 italic text-sm mt-4">No sub-categories</div>
+                                        <div className="text-center text-slate-400 italic text-sm mt-4">暂无小类</div>
                                     )}
                                 </div>
                             </>
                         ) : (
                             <div className="flex-1 flex items-center justify-center text-slate-400 text-sm italic">
-                                Select a category to manage sub-items
+                                请选择一个大类后管理小类
                             </div>
                         )}
                     </div>
@@ -1390,7 +1390,7 @@ export const DocRepository: React.FC = () => {
       {/* Upload/Edit Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
               <h3 className="text-lg font-bold text-slate-800">
                 {modalMode === 'create' ? '上传新文档' : '更新文档'}
@@ -1428,25 +1428,25 @@ export const DocRepository: React.FC = () => {
                {/* Meta Fields */}
                <div className="grid grid-cols-2 gap-4">
                  <div>
-                   <label className={LABEL_STYLE}>大类 (Category)</label>
+                   <label className={LABEL_STYLE}>大类</label>
                    <select
                       className={INPUT_STYLE} 
                       value={formData.category} 
                       onChange={e => setFormData({...formData, category: e.target.value, subCategory: ''})}
                    >
-                       <option value="">Select Category</option>
+                       <option value="">请选择大类</option>
                        {Object.keys(categoryMap).map(c => <option key={c} value={c}>{c}</option>)}
                    </select>
                  </div>
                  <div>
-                   <label className={LABEL_STYLE}>小类 (Sub-Category)</label>
+                   <label className={LABEL_STYLE}>小类</label>
                    <select 
                       className={INPUT_STYLE} 
                       value={formData.subCategory} 
                       onChange={e => setFormData({...formData, subCategory: e.target.value})}
                       disabled={!formData.category}
                    >
-                        <option value="">Select Sub-Category</option>
+                        <option value="">请选择小类</option>
                         {formData.category && categoryMap[formData.category]?.map(c => <option key={c} value={c}>{c}</option>)}
                    </select>
                  </div>
@@ -1469,7 +1469,7 @@ export const DocRepository: React.FC = () => {
                       className={INPUT_STYLE}
                       value={formData.versionNumber} 
                       onChange={e => setFormData({...formData, versionNumber: e.target.value})}
-                      placeholder="e.g. 1.1"
+                      placeholder="例如 1.1"
                    />
                  </div>
                )}

@@ -558,7 +558,7 @@ export const NacosSync: React.FC = () => {
       currentComparison.results.forEach((result, idx) => {
         const statusText = 
           result.status === 'same' ? '✓ 一致' :
-          result.status === 'different' ? '⚠ 差异' :
+          result.status === 'different' ? '存在差异' :
           result.status === 'source-only' ? '→ 源独有' :
           '← 目标独有';
 
@@ -784,7 +784,7 @@ export const NacosSync: React.FC = () => {
         </div>
 
         {/* Configs Selection Area */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 mb-6">
+        <div className="bg-white rounded-lg shadow-sm border border-slate-200 mb-6">
           <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
             <h3 className="text-lg font-bold text-slate-700">同步任务</h3>
             <span className="text-xs text-slate-500 font-mono">{configs.length} 个配置</span>
@@ -824,9 +824,9 @@ export const NacosSync: React.FC = () => {
                       {/* Target Environment with Buttons */}
                       <div className="flex-1 flex gap-2 items-start opacity-100 group-hover:opacity-100 transition-opacity">
                         {/* Target Environment Box */}
-                        <div className="flex-1 bg-purple-50 p-4 rounded-lg border border-purple-100">
+                        <div className="flex-1 bg-amber-50 p-4 rounded-lg border border-amber-100">
                           <div className="flex items-center gap-2 mb-2">
-                            <div className="w-2.5 h-2.5 rounded-full bg-purple-500"/>
+                            <div className="w-2.5 h-2.5 rounded-full bg-amber-500"/>
                             <span className="text-base font-semibold text-slate-600">目标环境</span>
                           </div>
                           <p className="text-base font-mono text-slate-800 truncate mb-1">{config.targetUrl}</p>
@@ -872,7 +872,7 @@ export const NacosSync: React.FC = () => {
       {/* Add/Edit Config Modal */}
       {isModalVisible && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-lg shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-lg shadow-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center">
               <h3 className="text-xl font-bold text-slate-800">{editingConfig ? '编辑配置' : '新增配置'}</h3>
               <button onClick={() => setIsModalVisible(false)} className="text-slate-500 hover:text-slate-700">
@@ -966,7 +966,7 @@ export const NacosSync: React.FC = () => {
               {/* Target Environment */}
               <div className="border-t pt-4">
                 <h4 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-purple-500"/> 目标环境 (Target)
+                  <div className="w-2 h-2 rounded-full bg-amber-500"/> 目标环境 (Target)
                 </h4>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -1056,13 +1056,13 @@ export const NacosSync: React.FC = () => {
       {/* Comparison Results Modal */}
       {comparisonVisible && currentComparison && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-lg shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto flex flex-col">
+          <div className="bg-white rounded-lg shadow-lg max-w-6xl w-full max-h-[90vh] overflow-y-auto flex flex-col">
             {/* Header */}
             <div className="sticky top-0 bg-gradient-to-r from-slate-50 to-blue-50 px-6 py-6 border-b border-slate-200">
               <div className="flex justify-between items-start mb-4">
                 <div>
                   <h3 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-                    📊 {currentComparison.configName} - 比较结果
+                    {currentComparison.configName} - 比较结果
                   </h3>
                   <p className="text-sm text-slate-500 mt-1">完成时间：{currentComparison.comparisonTime}</p>
                 </div>
@@ -1083,7 +1083,7 @@ export const NacosSync: React.FC = () => {
                 </div>
                 <div className="bg-white p-3 rounded-lg border border-slate-200">
                   <p className="font-semibold text-slate-700 flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-purple-500"/> 目标环境
+                    <div className="w-2 h-2 rounded-full bg-amber-500"/> 目标环境
                   </p>
                   <p className="text-slate-600">{currentComparison.targetUrl}</p>
                   <p className="text-xs text-slate-500">{currentComparison.targetNamespace}</p>
@@ -1095,15 +1095,15 @@ export const NacosSync: React.FC = () => {
             {/* Statistics */}
             <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 grid grid-cols-5 gap-4">
               <div className="bg-white p-4 rounded-lg shadow-sm hover:shadow-md">
-                <p className="text-3xl font-bold text-slate-800">📋 {currentComparison.totalFiles}</p>
+                <p className="text-3xl font-bold text-slate-800">{currentComparison.totalFiles}</p>
                 <p className="text-sm text-slate-600">总配置数</p>
               </div>
               <div className="bg-white p-4 rounded-lg shadow-sm hover:shadow-md">
-                <p className="text-3xl font-bold text-green-600">✅ {currentComparison.sameCount}</p>
+                <p className="text-3xl font-bold text-green-600">{currentComparison.sameCount}</p>
                 <p className="text-sm text-slate-600">一致 ({((currentComparison.sameCount / currentComparison.totalFiles) * 100).toFixed(1)}%)</p>
               </div>
               <div className="bg-white p-4 rounded-lg shadow-sm hover:shadow-md">
-                <p className="text-3xl font-bold text-red-600">⚠️ {currentComparison.differentCount}</p>
+                <p className="text-3xl font-bold text-red-600">{currentComparison.differentCount}</p>
                 <p className="text-sm text-slate-600">差异 ({((currentComparison.differentCount / currentComparison.totalFiles) * 100).toFixed(1)}%)</p>
               </div>
               <div className="bg-white p-4 rounded-lg shadow-sm hover:shadow-md">
@@ -1136,7 +1136,7 @@ export const NacosSync: React.FC = () => {
                               </p>
                             )}
                             {result.targetFileName && (
-                              <p className="text-xs text-purple-600 font-mono">
+                              <p className="text-xs text-amber-600 font-mono">
                                 <span className="font-bold">目标:</span> {result.targetFileName}
                               </p>
                             )}
@@ -1154,7 +1154,7 @@ export const NacosSync: React.FC = () => {
                             : 'bg-blue-100 text-blue-700'
                         }`}
                       >
-                        {result.status === 'same' ? '✓ 一致' : result.status === 'different' ? '⚠ 差异' : result.status === 'source-only' ? '→ 源独有' : '← 目标独有'}
+                        {result.status === 'same' ? '一致' : result.status === 'different' ? '存在差异' : result.status === 'source-only' ? '仅源环境' : '仅目标环境'}
                       </span>
                     </div>
                     {result.suggestion && <p className="text-sm text-slate-600 mb-3">建议：{result.suggestion}</p>}
@@ -1193,7 +1193,7 @@ export const NacosSync: React.FC = () => {
                   onClick={downloadAllComparisons}
                   className="px-6 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 font-semibold flex items-center gap-2"
                 >
-                  📊 导出全部 Excel
+                  导出全部 Excel
                 </button>
               </div>
             </div>
@@ -1204,29 +1204,29 @@ export const NacosSync: React.FC = () => {
       {/* Detailed Diff Modal */}
       {detailedDiffVisible && currentDetailedResult && detailedDiffData && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-lg shadow-2xl w-11/12 max-h-[90vh] overflow-y-auto flex flex-col">
+          <div className="bg-white rounded-lg shadow-lg w-11/12 max-h-[90vh] overflow-y-auto flex flex-col">
             {/* Header */}
-            <div className="sticky top-0 bg-slate-800 text-white px-6 py-4 border-b border-slate-700 flex justify-between items-center">
+            <div className="sticky top-0 flex items-center justify-between border-b border-blue-100 bg-white px-6 py-4 text-blue-950">
               <div>
                 <h3 className="text-xl font-bold">详细差异对比</h3>
-                <p className="text-xs text-slate-300 mt-1">
+                <p className="mt-1 text-xs text-slate-500">
                   {currentDetailedResult.dataId} - {currentDetailedResult.group}
                 </p>
                 {(currentDetailedResult.sourceFileName || currentDetailedResult.targetFileName) && (
                   <div className="mt-2 space-y-1">
                     {currentDetailedResult.sourceFileName && (
-                      <p className="text-xs text-blue-300 font-mono">
+                      <p className="font-mono text-xs text-blue-700">
                         <span className="font-bold">源文件:</span> {currentDetailedResult.sourceFileName}
                       </p>
                     )}
                     {currentDetailedResult.targetFileName && (
-                      <p className="text-xs text-purple-300 font-mono">
+                      <p className="font-mono text-xs text-amber-700">
                         <span className="font-bold">目标文件:</span> {currentDetailedResult.targetFileName}
                       </p>
                     )}
                   </div>
                 )}
-                <p className="text-xs text-orange-300 mt-1 font-medium">
+                <p className="mt-1 text-xs font-medium text-amber-700">
                   {diffContentMode === 'all' 
                     ? '目标数据-->>源文件，改动为目标文件中，操作删除左侧数据(-)，操作添加右侧数据(+)'
                     : '在目标文件中逐条执行，单独在目标文件删除操作请谨慎操作！'
@@ -1234,11 +1234,11 @@ export const NacosSync: React.FC = () => {
                 </p>
               </div>
               <div className="flex items-center gap-4">
-                <div className="flex items-center rounded-lg bg-slate-700 p-1">
+                <div className="flex items-center rounded-lg bg-blue-50 p-1">
                     <button
                         onClick={() => setDiffContentMode('all')}
                         className={`px-3 py-1 text-xs font-bold rounded-md transition-colors ${
-                            diffContentMode === 'all' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-600'
+                            diffContentMode === 'all' ? 'bg-blue-700 text-white' : 'text-slate-600 hover:bg-white'
                         }`}
                     >
                         查看全部
@@ -1246,13 +1246,13 @@ export const NacosSync: React.FC = () => {
                     <button
                         onClick={() => setDiffContentMode('diffsOnly')}
                         className={`px-3 py-1 text-xs font-bold rounded-md transition-colors ${
-                            diffContentMode === 'diffsOnly' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-600'
+                            diffContentMode === 'diffsOnly' ? 'bg-blue-700 text-white' : 'text-slate-600 hover:bg-white'
                         }`}
                     >
                         仅展示差异
                     </button>
                 </div>
-                <button onClick={() => setDetailedDiffVisible(false)} className="text-slate-300 hover:text-white">
+                <button onClick={() => setDetailedDiffVisible(false)} className="text-slate-400 hover:text-blue-800">
                   <X size={20} />
                 </button>
               </div>
@@ -1266,7 +1266,7 @@ export const NacosSync: React.FC = () => {
             ) : (
               currentDetailedResult.sourceContent === currentDetailedResult.targetContent ? (
                 <div className="flex-1 flex items-center justify-center p-8">
-                  <p className="text-slate-600 text-lg">✅ Files are identical. No differences to show.</p>
+                  <p className="text-slate-600 text-lg">文件一致，无差异。</p>
                 </div>
               ) : (
                 diffContentMode === 'all' ? (

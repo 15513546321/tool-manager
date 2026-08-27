@@ -113,8 +113,8 @@ export const FieldConfigTool: React.FC = () => {
 
     // ====================== 行列高亮 ======================
     const highlightCol = (colIndex: number, isShow: boolean) => {
-        const ths = document.querySelectorAll(`table th:nth-child(${colIndex + 1})`);
-        const tds = document.querySelectorAll(`table tr td:nth-child(${colIndex + 1})`);
+        const ths = document.querySelectorAll(`.field-config-page table th:nth-child(${colIndex + 1})`);
+        const tds = document.querySelectorAll(`.field-config-page table tr td:nth-child(${colIndex + 1})`);
         ths.forEach(el => el.classList.toggle('highlight-col', isShow));
         tds.forEach(el => el.classList.toggle('highlight-col', isShow));
     };
@@ -125,7 +125,7 @@ export const FieldConfigTool: React.FC = () => {
     };
 
     const highlightAll = (isShow: boolean) => {
-        const table = document.querySelector('table');
+        const table = document.querySelector('.field-config-page table');
         if (table) table.classList.toggle('highlight-all', isShow);
     };
 
@@ -221,12 +221,12 @@ export const FieldConfigTool: React.FC = () => {
         if (!dom) return;
         const text = dom.textContent?.trim() || '';
         if (!text || text.includes('请填写左侧字段')) {
-            showTip(`⚠️ 暂无${type}内容可复制`);
+            showTip(`暂无${type}内容可复制`);
             return;
         }
         try {
             await navigator.clipboard.writeText(text);
-            showTip(`✅ ${type} 复制成功`);
+            showTip(`${type} 复制成功`);
         } catch {
             // 降级方案
             const textarea = document.createElement('textarea');
@@ -237,7 +237,7 @@ export const FieldConfigTool: React.FC = () => {
             textarea.select();
             document.execCommand('copy');
             document.body.removeChild(textarea);
-            showTip(`✅ ${type} 复制成功`);
+            showTip(`${type} 复制成功`);
         }
     };
 
@@ -255,62 +255,58 @@ export const FieldConfigTool: React.FC = () => {
     const colKeyList: (keyof FieldRow)[] = ['field', 'alias', 'desc'];
 
     return (
-        <div style={{ width: '100%', height: '100vh', display: 'flex', flexDirection: 'column' }}>
+        <div className="field-config-page" style={{ width: '100%', minHeight: 'calc(100vh - 7rem)', display: 'flex', flexDirection: 'column' }}>
             <style>{`
-        *{margin:0;padding:0;box-sizing:border-box;font-family: 'Microsoft YaHei', sans-serif;}
-        .container{width:100%;height:100%;display:flex;flex-direction:column;}
-        .title{text-align:center;padding:16px 0;color:#2d3748;font-size:20px;font-weight:600;background:#fff;border-bottom:1px solid #e2e8f0;box-shadow:0 1px 2px rgba(0,0,0,0.05);}
-        .main{display:flex;flex:1;overflow:hidden;}
-        .panel{width:600px;background:#fff;padding:20px;overflow-y:auto;border-right:1px solid #e2e8f0;position:relative;}
-        .scroll-to-top,.scroll-to-bottom{position:sticky;right:24px;margin-left:auto;width:44px;height:44px;border-radius:50%;background:#1d4ed8;color:#fff;display:none;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 6px 16px rgba(29,78,216,0.35);z-index:999;transition:all 0.2s ease;border:none;}
-        .scroll-to-top{top:24px;margin-bottom:10px;}
-        .scroll-to-bottom{bottom:24px;}
-        .scroll-to-top:hover,.scroll-to-bottom:hover{background:#1e40af;transform:scale(1.1);box-shadow:0 8px 20px rgba(29,78,216,0.45);}
-        .scroll-icon-top{width:10px;height:10px;border-right:2px solid #fff;border-top:2px solid #fff;transform:rotate(-45deg);transition:all 0.2s;}
-        .scroll-to-top:hover .scroll-icon-top{transform:rotate(-45deg) translateY(-2px);}
-        .scroll-icon-bottom{width:10px;height:10px;border-right:2px solid #fff;border-bottom:2px solid #fff;transform:rotate(45deg);transition:all 0.2s;}
-        .scroll-to-bottom:hover .scroll-icon-bottom{transform:rotate(45deg) translateY(2px);}
-        .tooltip{position:absolute;background:#1f2937;color:#fff;padding:5px 10px;border-radius:4px;font-size:12px;white-space:nowrap;z-index:9999;pointer-events:none;opacity:0;transition:opacity 0.2s;}
-        .tooltip.show{opacity:1;}
-        .btns{display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;position:relative;}
-        .btn{padding:10px 20px;border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:14px;font-weight:500;display:inline-flex;align-items:center;justify-content:center;gap:6px;box-shadow:0 2px 4px rgba(0,0,0,0.1);transition:all 0.2s ease;position:relative;}
-        /* 主按钮改为 #2563EB */
-        .btn-primary{background:#2563EB;}
-        .btn-primary:hover{background:#1d4ed8;transform:translateY(-1px);}
-        .btn-danger{background:#dc2626;}
-        .btn-danger:hover{background:#b91c1c;transform:translateY(-1px);}
-        .auto-tip{color:#38a169;font-size:14px;padding:10px 15px;background:#f0fff4;border-radius:6px;display:none;border:1px solid #c6f6d5;text-align:center;margin-bottom:20px;}
-        .table-box{border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:8px;box-shadow:0 2px 4px rgba(0,0,0,0.05);}
-        .add-row-tip{text-align:center;color:#64748b;font-size:13px;padding:8px 0 16px 0;}
-        table{width:100%;border-collapse:collapse;}
-        th{background:#f8f9fa;padding:12px 10px;font-weight:600;color:#2d3748;font-size:14px;text-align:center;border-right:1px solid #e2e8f0;border-bottom:2px solid #e2e8f0;white-space:nowrap;position:relative;}
-        th:last-child{border-right:none;}
-        .clear-col-btn{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:24px;height:24px;border:none;background:transparent;color:#e53e3e;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all 0.2s ease;}
-        .clear-col-btn:hover{transform:translateY(-50%) scale(1.1);}
-        .clear-col-btn::after{content:"清空本列";position:absolute;top:28px;left:50%;transform:translateX(-50%);background:#1f2937;color:#fff;padding:4px 8px;border-radius:4px;font-size:12px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity 0.2s;z-index:999;}
-        td{padding:10px;text-align:center;background:#fff;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;}
-        td:last-child{border-right:none;}
-        tr:nth-child(even) td{background:#f8f9fa;}
-        td input{width:100%;padding:8px 10px;border:1px solid #cbd5e0;border-radius:4px;outline:none;font-size:14px;transition:all 0.2s ease;}
-        td input:focus{border-color:#2563EB;box-shadow:0 0 0 2px rgba(37,99,235,0.2);}
-        td input::placeholder{color:#a0aec0;font-size:13px;font-style:italic;}
-        tr.highlight-row td, td.highlight-col, th.highlight-col, .highlight-all td, .highlight-all th{background:#fff5f5 !important;box-shadow:inset 0 0 0 1px #fc8181 !important;}
-        .del-row-btn{width:30px;height:30px;border:none;border-radius:4px;background:transparent;color:#e53e3e;cursor:pointer;font-size:14px;display:inline-flex;align-items:center;justify-content:center;position:relative;transition:all 0.2s ease;}
-        .del-row-btn:hover{transform:scale(1.1);background:#fff5f5;}
-        .tips{padding:15px;background:#f8f9fa;border-radius:8px;color:#4a5568;font-size:14px;line-height:1.8;border:1px solid #e2e8f0;margin-bottom:20px;}
-        .tips strong{font-size:15px;color:#2d3748;margin-bottom:8px;display:block;}
-        .tips p{margin:4px 0;display:flex;align-items:center;}
-        .tips span{color:#2563EB;font-weight:600;margin-right:8px;font-size:14px;width:20px;text-align:center;}
-        .code-wrap{flex:1;display:flex;flex-direction:column;gap:15px;padding:20px;height:100%;overflow:hidden;background:#f5f7fa;}
-        .code-card{height:calc(50% - 7.5px);background:#fff;padding:15px;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.05);display:flex;flex-direction:column;overflow:hidden;}
-        .code-card h4{margin-bottom:10px;color:#2d3748;font-size:15px;font-weight:600;flex-shrink:0;}
-        .code-box{flex:1;width:100%;padding:15px;border:1px solid #e2e8f0;border-radius:6px;background:#f8f9fa;font-family:Consolas,monospace;font-size:13px;line-height:1.6;white-space:pre-wrap;overflow:auto;color:#2d3748;}
-        .copy-btn{margin-top:10px;flex-shrink:0;width:fit-content;position:relative;overflow:hidden;}
-        .copy-tip{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#38a169;color:#fff;padding:8px 16px;border-radius:4px;font-size:14px;z-index:9999;opacity:0;transition:all 0.3s ease;box-shadow:0 2px 8px rgba(0,0,0,0.15);}
-        .copy-tip.show{opacity:1;top:30px;}
+        .field-config-page{padding:24px 32px;color:#172554;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}
+        .field-config-page .title{text-align:left;padding:0 0 18px;color:#172554;font-size:24px;font-weight:700;background:transparent;border:none;box-shadow:none;}
+        .field-config-page .main{display:flex;flex:1;gap:18px;overflow:hidden;}
+        .field-config-page .panel{width:600px;background:rgba(255,255,255,0.96);padding:18px;overflow-y:auto;border:1px solid #d7e4f6;border-radius:8px;position:relative;box-shadow:0 10px 28px rgba(30,64,175,0.07);}
+        .field-config-page .scroll-to-top,.field-config-page .scroll-to-bottom{position:sticky;right:18px;margin-left:auto;width:36px;height:36px;border-radius:8px;background:#1d4ed8;color:#fff;display:none;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 8px 18px rgba(29,78,216,0.2);z-index:9;transition:all 0.2s ease;border:none;}
+        .field-config-page .scroll-to-top{top:12px;margin-bottom:10px;}
+        .field-config-page .scroll-to-bottom{bottom:12px;}
+        .field-config-page .scroll-to-top:hover,.field-config-page .scroll-to-bottom:hover{background:#1e40af;}
+        .field-config-page .scroll-icon-top{width:9px;height:9px;border-right:2px solid #fff;border-top:2px solid #fff;transform:rotate(-45deg);}
+        .field-config-page .scroll-icon-bottom{width:9px;height:9px;border-right:2px solid #fff;border-bottom:2px solid #fff;transform:rotate(45deg);}
+        .field-config-page .tooltip{position:absolute;background:#172554;color:#fff;padding:6px 10px;border-radius:6px;font-size:12px;white-space:nowrap;z-index:9999;pointer-events:none;opacity:0;transition:opacity 0.2s;}
+        .field-config-page .tooltip.show{opacity:1;}
+        .field-config-page .btns{display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap;position:relative;}
+        .field-config-page .btn{padding:9px 16px;border:none;border-radius:8px;color:#fff;cursor:pointer;font-size:14px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:6px;box-shadow:0 8px 18px rgba(30,64,175,0.1);transition:all 0.2s ease;position:relative;}
+        .field-config-page .btn-primary{background:#1d4ed8;}
+        .field-config-page .btn-primary:hover{background:#1e40af;}
+        .field-config-page .btn-danger{background:#dc2626;}
+        .field-config-page .btn-danger:hover{background:#b91c1c;}
+        .field-config-page .table-box{border:1px solid #d7e4f6;border-radius:8px;overflow:hidden;margin-bottom:8px;background:#fff;}
+        .field-config-page .add-row-tip{text-align:left;color:#64748b;font-size:13px;padding:8px 0 16px;}
+        .field-config-page table{width:100%;border-collapse:collapse;}
+        .field-config-page th{background:#edf4ff;padding:12px 10px;font-weight:700;color:#172554;font-size:13px;text-align:center;border-right:1px solid #d7e4f6;border-bottom:1px solid #d7e4f6;white-space:nowrap;position:relative;}
+        .field-config-page th:last-child{border-right:none;}
+        .field-config-page .clear-col-btn{position:absolute;right:8px;top:50%;transform:translateY(-50%);height:24px;border:none;background:transparent;color:#dc2626;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all 0.2s ease;}
+        .field-config-page .clear-col-btn:hover{color:#991b1b;}
+        .field-config-page .clear-col-btn::after{content:"清空本列";position:absolute;top:28px;left:50%;transform:translateX(-50%);background:#172554;color:#fff;padding:4px 8px;border-radius:6px;font-size:12px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity 0.2s;z-index:999;}
+        .field-config-page .clear-col-btn:hover::after{opacity:1;}
+        .field-config-page td{padding:10px;text-align:center;background:#fff;border-right:1px solid #e6effc;border-bottom:1px solid #e6effc;}
+        .field-config-page td:last-child{border-right:none;}
+        .field-config-page tr:nth-child(even) td{background:#f8fbff;}
+        .field-config-page td input{width:100%;padding:8px 10px;border:1px solid #cfe0f6;border-radius:6px;outline:none;font-size:14px;transition:all 0.2s ease;background:#fff;}
+        .field-config-page td input:focus{border-color:#1d4ed8;box-shadow:0 0 0 3px rgba(29,78,216,0.12);}
+        .field-config-page td input::placeholder{color:#94a3b8;font-size:13px;}
+        .field-config-page tr.highlight-row td,.field-config-page td.highlight-col,.field-config-page th.highlight-col,.field-config-page .highlight-all td,.field-config-page .highlight-all th{background:#fff7ed !important;box-shadow:inset 0 0 0 1px #f59e0b !important;}
+        .field-config-page .del-row-btn{width:30px;height:30px;border:none;border-radius:6px;background:transparent;color:#dc2626;cursor:pointer;font-size:13px;display:inline-flex;align-items:center;justify-content:center;position:relative;transition:all 0.2s ease;}
+        .field-config-page .del-row-btn:hover{background:#fef2f2;}
+        .field-config-page .tips{padding:14px;background:#f8fbff;border-radius:8px;color:#475569;font-size:13px;line-height:1.8;border:1px solid #d7e4f6;margin-bottom:20px;}
+        .field-config-page .tips strong{font-size:14px;color:#172554;margin-bottom:8px;display:block;}
+        .field-config-page .tips p{margin:4px 0;display:flex;align-items:center;}
+        .field-config-page .tips span{color:#1d4ed8;font-weight:700;margin-right:8px;font-size:12px;width:18px;text-align:center;}
+        .field-config-page .code-wrap{flex:1;display:flex;flex-direction:column;gap:18px;height:100%;overflow:hidden;}
+        .field-config-page .code-card{height:calc(50% - 9px);background:rgba(255,255,255,0.96);padding:16px;border:1px solid #d7e4f6;border-radius:8px;box-shadow:0 10px 28px rgba(30,64,175,0.07);display:flex;flex-direction:column;overflow:hidden;}
+        .field-config-page .code-card h4{margin-bottom:10px;color:#172554;font-size:15px;font-weight:700;flex-shrink:0;}
+        .field-config-page .code-box{flex:1;width:100%;padding:15px;border:1px solid #d7e4f6;border-radius:8px;background:#f8fbff;font-family:Consolas,monospace;font-size:13px;line-height:1.6;white-space:pre-wrap;overflow:auto;color:#334155;}
+        .field-config-page .copy-btn{margin-top:10px;flex-shrink:0;width:fit-content;position:relative;overflow:hidden;}
+        .field-config-page .copy-tip{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#059669;color:#fff;padding:8px 16px;border-radius:8px;font-size:14px;z-index:9999;opacity:0;transition:all 0.3s ease;box-shadow:0 10px 24px rgba(5,150,105,0.2);}
+        .field-config-page .copy-tip.show{opacity:1;top:30px;}
       `}</style>
 
-            <h2 className="title">⚙️ 字段配置 → XML & Java 自动生成工具</h2>
+            <h2 className="title">字段配置 · XML / Java 自动生成</h2>
             <div className="main">
                 <div className="panel" ref={leftPanelRef}>
                     <button className="scroll-to-top" ref={scrollTopBtnRef} onClick={scrollToPanelTop}
@@ -322,15 +318,15 @@ export const FieldConfigTool: React.FC = () => {
                     <div className="btns">
                         <button className="btn btn-primary" onClick={addRow}
                                 onMouseEnter={(e) => showTooltip(e.currentTarget, '内容粘贴后会自动新增一行')}
-                                onMouseLeave={hideTooltip}>✨ 新增一行</button>
+                                onMouseLeave={hideTooltip}>新增一行</button>
                         <button className="btn btn-primary" onClick={genCode}
                                 onMouseEnter={(e) => showTooltip(e.currentTarget, '内容粘贴后会自动生成代码')}
-                                onMouseLeave={hideTooltip}>🚀 生成代码</button>
+                                onMouseLeave={hideTooltip}>生成代码</button>
                         <button className="btn btn-danger" onClick={clearAll}
                                 onMouseEnter={(e) => showTooltip(e.currentTarget, '重置表格内容')}
                                 onMouseLeave={hideTooltip}
                                 onMouseOver={() => highlightAll(true)}
-                                onMouseOut={() => highlightAll(false)}>🧹 清空所有内容</button>
+                                onMouseOut={() => highlightAll(false)}>清空所有内容</button>
                     </div>
 
                     <div className="table-box" ref={tableBoxRef}>
@@ -341,19 +337,19 @@ export const FieldConfigTool: React.FC = () => {
                                     <button className="clear-col-btn"
                                             onMouseOver={() => highlightCol(0, true)}
                                             onMouseOut={() => highlightCol(0, false)}
-                                            onClick={() => clearCol('field')}>🗑️</button>
+                                            onClick={() => clearCol('field')}>清</button>
                                 </th>
                                 <th>字段别名
                                     <button className="clear-col-btn"
                                             onMouseOver={() => highlightCol(1, true)}
                                             onMouseOut={() => highlightCol(1, false)}
-                                            onClick={() => clearCol('alias')}>🗑️</button>
+                                            onClick={() => clearCol('alias')}>清</button>
                                 </th>
                                 <th>描述
                                     <button className="clear-col-btn"
                                             onMouseOver={() => highlightCol(2, true)}
                                             onMouseOut={() => highlightCol(2, false)}
-                                            onClick={() => clearCol('desc')}>🗑️</button>
+                                            onClick={() => clearCol('desc')}>清</button>
                                 </th>
                                 <th>操作</th>
                             </tr>
@@ -381,7 +377,7 @@ export const FieldConfigTool: React.FC = () => {
                                                 onMouseOut={(e) => highlightRow(e.currentTarget, false)}
                                                 onClick={() => delRow(rowIdx)}
                                                 onMouseEnter={(e) => showTooltipLeft(e.currentTarget, '删除此行')}
-                                                onMouseLeave={hideTooltip}>❌</button>
+                                                onMouseLeave={hideTooltip}>删</button>
                                     </td>
                                 </tr>
                             ))}
@@ -391,19 +387,16 @@ export const FieldConfigTool: React.FC = () => {
 
                     {/* 新增：表格下方提示用户可以继续新增 */}
                     <div className="add-row-tip">
-                        💡 可点击「✨ 新增一行」按钮，继续添加更多字段
+                        可点击「新增一行」继续添加更多字段
                     </div>
 
                     <div className="tips">
-                        <strong>📋 使用说明</strong>
-                        <p><span>📌</span> 粘贴一整列 → 点击该列首行粘贴</p>
-                        <p><span>📌</span> 粘贴多行多列 → 点击左上角单元格粘贴</p>
-                        <p><span>🗑️</span> 清空本列 → 鼠标悬浮可预览，点击清空</p>
-                        <p><span>❌</span> 删除当前行 → 鼠标悬浮可预览，点击删除</p>
-                        <p><span>🧹</span> 清空所有数据 → 点击顶部清空所有按钮</p>
-                        <p><span>✅</span> 自动生成 → 填写完成自动生成XML/Java代码</p>
-                        <p><span>⬆️</span> 蓝色上箭头 → 点击快速跳转到第一行</p>
-                        <p><span>⬇️</span> 蓝色下箭头 → 点击快速跳转到最后一行</p>
+                        <strong>使用说明</strong>
+                        <p><span>1</span> 粘贴一整列：点击该列首行粘贴</p>
+                        <p><span>2</span> 粘贴多行多列：点击左上角单元格粘贴</p>
+                        <p><span>3</span> 清空本列：鼠标悬浮可预览，点击清空</p>
+                        <p><span>4</span> 删除当前行：鼠标悬浮可预览，点击删除</p>
+                        <p><span>5</span> 自动生成：填写完成自动生成 XML / Java 代码</p>
                     </div>
 
                     <button className="scroll-to-bottom" ref={scrollBottomBtnRef} onClick={scrollToPanelBottom}
@@ -415,14 +408,14 @@ export const FieldConfigTool: React.FC = () => {
 
                 <div className="code-wrap">
                     <div className="code-card">
-                        <h4>📄 XML 报文</h4>
+                        <h4>XML 报文</h4>
                         <div className="code-box" ref={xmlResRef}>请填写左侧字段，代码将自动生成</div>
-                        <button className="btn btn-primary copy-btn" onClick={() => copyCode(xmlResRef, 'XML')}>📋 复制XML</button>
+                        <button className="btn btn-primary copy-btn" onClick={() => copyCode(xmlResRef, 'XML')}>复制 XML</button>
                     </div>
                     <div className="code-card">
-                        <h4>☕ Java 实体代码</h4>
+                        <h4>Java 实体代码</h4>
                         <div className="code-box" ref={javaResRef}>请填写左侧字段，代码将自动生成</div>
-                        <button className="btn btn-primary copy-btn" onClick={() => copyCode(javaResRef, 'Java')}>📋 复制Java</button>
+                        <button className="btn btn-primary copy-btn" onClick={() => copyCode(javaResRef, 'Java')}>复制 Java</button>
                     </div>
                 </div>
             </div>

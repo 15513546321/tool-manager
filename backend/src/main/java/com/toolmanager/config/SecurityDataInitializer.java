@@ -54,79 +54,59 @@ public class SecurityDataInitializer implements CommandLineRunner {
         // 初始化普通用户角色
         Role userRole = createRoleIfNotExists("USER", "普通用户", "普通权限角色", 2);
 
-        // ============= 初始化一级菜单（按sortOrder排序）=============
-        
-        // 仪表盘 (sortOrder=0)
-        Menu dashboardMenu = createMenuIfNotExists("仪表盘", "/dashboard", "dashboard", "dashboard:view", 0L, 0, 0, 1);
-        
-        // 接口管理 (sortOrder=1) - 父菜单，无权限标识，无路径
-        Menu interfaceMenu = createMenuIfNotExists("接口管理", null, "interface", null, 0L, 1, 0, 1);
-        
-        // 数据同步 (sortOrder=2) - 父菜单，无权限标识，无路径
-        Menu syncMenu = createMenuIfNotExists("数据同步", null, "sync", null, 0L, 2, 0, 1);
-        
-        // 知识库 (sortOrder=3)
-        Menu repoMenu = createMenuIfNotExists("知识库", "/repo", "repo", "repo:view", 0L, 3, 0, 1);
-        
-        // 格式化工具 (sortOrder=4)
-        Menu formatMenu = createMenuIfNotExists("格式化工具", "/format", "format", "format:view", 0L, 4, 0, 1);
-        
-        // GitLab报表 (sortOrder=5)
-        Menu gitlabMenu = createMenuIfNotExists("GitLab报表", "/gitlab-reports", "gitlab", "gitlab:view", 0L, 5, 0, 1);
-        
-        // Gitee管理 (sortOrder=6)
-        Menu giteeMenu = createMenuIfNotExists("Gitee管理", "/gitee", "gitee", "gitee:manage", 0L, 6, 0, 1);
+        // ============= 初始化一级菜单（按业务域分组）=============
 
-        // 上线变更 (sortOrder=7) - 父菜单，无权限标识，无路径
-        Menu releaseMenu = createMenuIfNotExists("上线变更", null, "release", null, 0L, 7, 0, 1);
+        Menu workspaceMenu = createMenuIfNotExists("工作台", null, "dashboard", null, 0L, 1, 0, 1);
+        Menu devToolsMenu = createMenuIfNotExists("研发工具", null, "code", null, 0L, 2, 0, 1);
+        Menu deliveryMenu = createMenuIfNotExists("交付协同", null, "release", null, 0L, 3, 0, 1);
+        Menu opsMenu = createMenuIfNotExists("运维配置", null, "sync", null, 0L, 4, 0, 1);
+        Menu governanceMenu = createMenuIfNotExists("治理与系统", null, "system", null, 0L, 5, 0, 1);
 
-        // 参数配置 (sortOrder=8)
-        Menu paramsMenu = createMenuIfNotExists("参数配置", "/params", "params", "params:view", 0L, 8, 0, 1);
+        // ============= 工作台 =============
 
-        //刷新缓存
-        Menu refreshMenu = createMenuIfNotExists("刷新缓存", "/refresh", "refresh", "refresh:view", 0L, 9, 0, 1);
+        Menu dashboardMenu = createMenuIfNotExists("仪表盘", "/dashboard", "dashboard", "dashboard:view", workspaceMenu.getId(), 1, 0, 1);
+        Menu announcementMenu = createMenuIfNotExists("公告通知", "/announcement", "announcement", "announcement:view", workspaceMenu.getId(), 2, 0, 1);
+        Menu suggestionsMenu = createMenuIfNotExists("优化建议", "/suggestions", "suggestions", "suggestions:view", workspaceMenu.getId(), 3, 0, 1);
 
-        // 审计日志 (sortOrder=9)
-        Menu auditMenu = createMenuIfNotExists("审计日志", "/audit", "audit", "audit:view", 0L, 10, 0, 1);
-        
-        // 公告通知 (sortOrder=10)
-        Menu announcementMenu = createMenuIfNotExists("公告通知", "/announcement", "announcement", "announcement:view", 0L, 11, 0, 1);
-        
-        // 优化建议 (sortOrder=11)
-        Menu suggestionsMenu = createMenuIfNotExists("优化建议", "/suggestions", "suggestions", "suggestions:view", 0L, 12, 0, 1);
+        // ============= 研发工具 =============
 
-        // 系统设置 (sortOrder=12) - 父菜单，无权限标识，无路径
-        Menu systemMenu = createMenuIfNotExists("系统设置", null, "system", null, 0L, 13, 0, 1);
-
-        // ============= 接口管理子菜单 (sortOrder=1,2,3)=============
-        
-        Menu docMenu = createMenuIfNotExists("文档管理", "/interface/docs", "docs", "interface:docs", interfaceMenu.getId(), 1, 0, 1);
+        Menu interfaceMenu = createMenuIfNotExists("接口管理", null, "interface", null, devToolsMenu.getId(), 1, 0, 1);
+        Menu docMenu = createMenuIfNotExists("接口文档", "/interface/docs", "docs", "interface:docs", interfaceMenu.getId(), 1, 0, 1);
         Menu codeMenu = createMenuIfNotExists("代码生成", "/interface/code", "code", "interface:code", interfaceMenu.getId(), 2, 0, 1);
-        Menu mockMenu = createMenuIfNotExists("模拟报文生成", "/interface/mock-packet", "payload", "interface:mock", interfaceMenu.getId(), 3, 0, 1);
-        Menu filedMenu = createMenuIfNotExists("xml报文生成", "/field", "code", "field::view",0L, 4, 0, 1);
+        Menu mockMenu = createMenuIfNotExists("模拟报文", "/interface/mock-packet", "payload", "interface:mock", interfaceMenu.getId(), 3, 0, 1);
+        Menu filedMenu = createMenuIfNotExists("XML 报文生成", "/field", "field", "field::view", devToolsMenu.getId(), 2, 0, 1);
+        Menu formatMenu = createMenuIfNotExists("数据格式化", "/format", "format", "format:view", devToolsMenu.getId(), 3, 0, 1);
+        Menu repoMenu = createMenuIfNotExists("知识库", "/repo", "repo", "repo:view", devToolsMenu.getId(), 4, 0, 1);
 
         // 接口管理子权限（按钮级）
         createMenuIfNotExists("文档新增", null, null, "interface:docs:add", docMenu.getId(), 1, 1, 1);
         createMenuIfNotExists("文档编辑", null, null, "interface:docs:edit", docMenu.getId(), 2, 1, 1);
         createMenuIfNotExists("文档删除", null, null, "interface:docs:delete", docMenu.getId(), 3, 1, 1);
 
-        // ============= 数据同步子菜单 (sortOrder=1,2)=============
-        
+        // ============= 运维配置 =============
+
+        Menu syncMenu = createMenuIfNotExists("数据同步", null, "sync", null, opsMenu.getId(), 1, 0, 1);
         Menu nacosSyncMenu = createMenuIfNotExists("Nacos配置同步", "/sync/nacos", "nacos", "sync:nacos", syncMenu.getId(), 1, 0, 1);
         Menu oracleSyncMenu = createMenuIfNotExists("Oracle DDL同步", "/sync/oracle", "oracle", "sync:oracle", syncMenu.getId(), 2, 0, 1);
+        Menu paramsMenu = createMenuIfNotExists("参数配置", "/params", "params", "params:view", opsMenu.getId(), 2, 0, 1);
+        Menu refreshMenu = createMenuIfNotExists("刷新缓存", "/refresh", "refresh", "refresh:view", opsMenu.getId(), 3, 0, 1);
 
-        // ============= 上线变更子菜单 (sortOrder=1,2)=============
+        // ============= 交付协同 =============
 
+        Menu releaseMenu = createMenuIfNotExists("上线变更", null, "release", null, deliveryMenu.getId(), 1, 0, 1);
         Menu releaseDevMenu = createMenuIfNotExists("变更集录入", "/release-changes/dev", "release", "release:changeset", releaseMenu.getId(), 1, 0, 1);
         Menu releaseManagerMenu = createMenuIfNotExists("比包对账", "/release-changes/manager", "diff", "release:compare", releaseMenu.getId(), 2, 0, 1);
+        Menu gitlabMenu = createMenuIfNotExists("GitLab 报表", "/gitlab-reports", "gitlab", "gitlab:view", deliveryMenu.getId(), 2, 0, 1);
+        Menu giteeMenu = createMenuIfNotExists("Gitee 仓库", "/gitee", "gitee", "gitee:manage", deliveryMenu.getId(), 3, 0, 1);
 
-        // ============= 系统设置子菜单 (sortOrder=1-5)=============
-        
-        Menu userMenu = createMenuIfNotExists("用户管理", "/admin/users", "users", "user:manage", systemMenu.getId(), 1, 0, 1);
-        Menu roleMenu = createMenuIfNotExists("角色管理", "/admin/roles", "roles", "role:manage", systemMenu.getId(), 2, 0, 1);
-        Menu permissionMenu = createMenuIfNotExists("权限管理", "/admin/permissions", "permissions", "permission:manage", systemMenu.getId(), 3, 0, 1);
-        Menu menuManagementMenu = createMenuIfNotExists("菜单管理", "/admin/menus", "menu", "menu:manage", systemMenu.getId(), 4, 0, 1);
-        Menu ipConfigMenu = createMenuIfNotExists("IP映射配置", "/admin/ip-config", "ip", "ipconfig:manage", systemMenu.getId(), 5, 0, 1);
+        // ============= 治理与系统 =============
+
+        Menu auditMenu = createMenuIfNotExists("审计日志", "/audit", "audit", "audit:view", governanceMenu.getId(), 1, 0, 1);
+        Menu userMenu = createMenuIfNotExists("用户管理", "/admin/users", "users", "user:manage", governanceMenu.getId(), 2, 0, 1);
+        Menu roleMenu = createMenuIfNotExists("角色管理", "/admin/roles", "roles", "role:manage", governanceMenu.getId(), 3, 0, 1);
+        Menu permissionMenu = createMenuIfNotExists("权限管理", "/admin/permissions", "permissions", "permission:manage", governanceMenu.getId(), 4, 0, 1);
+        Menu menuManagementMenu = createMenuIfNotExists("菜单管理", "/admin/menus", "menu", "menu:manage", governanceMenu.getId(), 5, 0, 1);
+        Menu ipConfigMenu = createMenuIfNotExists("IP 映射配置", "/admin/ip-config", "ip", "ipconfig:manage", governanceMenu.getId(), 6, 0, 1);
         
         // 用户管理子权限（按钮级）
         createMenuIfNotExists("用户新增", null, null, "user:add", userMenu.getId(), 1, 1, 1);
@@ -143,6 +123,8 @@ public class SecurityDataInitializer implements CommandLineRunner {
         createMenuIfNotExists("菜单新增", null, null, "menu:add", menuManagementMenu.getId(), 1, 1, 1);
         createMenuIfNotExists("菜单编辑", null, null, "menu:edit", menuManagementMenu.getId(), 2, 1, 1);
         createMenuIfNotExists("菜单删除", null, null, "menu:delete", menuManagementMenu.getId(), 3, 1, 1);
+
+        disableLegacyRootMenus();
 
         // ============= 给管理员角色分配所有菜单权限 =============
         Set<Menu> allMenus = new LinkedHashSet<>(menuRepository.findAllByOrderBySortOrderAsc());
@@ -165,61 +147,42 @@ public class SecurityDataInitializer implements CommandLineRunner {
         for (MenuItem item : existingItems) {
             menuItemRepository.deleteById(item.getId());
         }
-        
-        // 仪表盘
-        createMenuItem("1", "仪表盘", "/dashboard", "dashboard", null, 0);
-        // 公告通知
-        createMenuItem("10", "公告通知", "/announcement", "announcement", null, 1);
-        // 优化建议
-        createMenuItem("11", "优化建议", "/suggestions", "suggestions", null, 2);
-        // 接口管理（父菜单）
-        createMenuItem("2", "接口管理", "/interface/docs", "interface", null, 3);
-        // 文档管理（子菜单）
-        createMenuItem("2-1", "文档管理", "/interface/docs", "docs", "2", 1);
-        // 代码生成（子菜单）
+
+        createMenuItem("g1", "工作台", "", "dashboard", null, 1);
+        createMenuItem("1", "仪表盘", "/dashboard", "dashboard", "g1", 1);
+        createMenuItem("10", "公告通知", "/announcement", "announcement", "g1", 2);
+        createMenuItem("11", "优化建议", "/suggestions", "suggestions", "g1", 3);
+
+        createMenuItem("g2", "研发工具", "", "code", null, 2);
+        createMenuItem("2", "接口管理", "", "interface", "g2", 1);
+        createMenuItem("2-1", "接口文档", "/interface/docs", "docs", "2", 1);
         createMenuItem("2-2", "代码生成", "/interface/code", "code", "2", 2);
-        // Mock数据包（子菜单）
-        createMenuItem("2-3", "模拟报文生成", "/interface/mock-packet", "payload", "2", 3);
-        // 数据同步（父菜单）
-        createMenuItem("3", "数据同步", "/sync/nacos", "sync", null, 4);
-        // Nacos配置同步（子菜单）
-        createMenuItem("3-1", "Nacos配置同步", "/sync/nacos", "nacos", "3", 1);
-        // Oracle DDL同步（子菜单）
-        createMenuItem("3-2", "Oracle DDL同步", "/sync/oracle", "oracle", "3", 2);
-        // GitLab报表
-        createMenuItem("6", "GitLab报表", "/gitlab-reports", "gitlab", null, 5);
-        // Gitee管理
-        createMenuItem("7", "Gitee管理", "/gitee", "gitee", null, 6);
-        // xml报文生成工具
-        createMenuItem("8", "xml报文生成工具", "/field", "field", null, 7);
-        // 格式化工具
-        createMenuItem("14", "格式化工具", "/format", "format", null, 8);
-        // 上线变更（父菜单）
-        createMenuItem("13", "上线变更", "/release-changes/dev", "release", null, 9);
-        // 变更集录入（子菜单）
+        createMenuItem("2-3", "模拟报文", "/interface/mock-packet", "payload", "2", 3);
+        createMenuItem("8", "XML 报文生成", "/field", "field", "g2", 2);
+        createMenuItem("14", "数据格式化", "/format", "format", "g2", 3);
+        createMenuItem("4", "知识库", "/repo", "repo", "g2", 4);
+
+        createMenuItem("g3", "交付协同", "", "release", null, 3);
+        createMenuItem("13", "上线变更", "", "release", "g3", 1);
         createMenuItem("13-1", "变更集录入", "/release-changes/dev", "release", "13", 1);
-        // 比包对账（子菜单）
         createMenuItem("13-2", "比包对账", "/release-changes/manager", "diff", "13", 2);
-        // 参数配置
-        createMenuItem("9", "参数配置", "/params", "params", null, 10);
-        //刷新缓存
-        createMenuItem("15", "刷新缓存", "/refresh", "refresh", null, 9);
-        // 知识库
-        createMenuItem("4", "知识库", "/repo", "repo", null, 12);
-        // 审计日志
-        createMenuItem("5", "审计日志", "/audit", "audit", null, 13);
-        // 系统设置（父菜单）
-        createMenuItem("12", "系统设置", "/admin/users", "system", null, 14);
-        // 用户管理（子菜单）
-        createMenuItem("12-1", "用户管理", "/admin/users", "users", "12", 1);
-        // 角色管理（子菜单）
-        createMenuItem("12-2", "角色管理", "/admin/roles", "roles", "12", 2);
-        // 权限管理（子菜单）
-        createMenuItem("12-3", "权限管理", "/admin/permissions", "permissions", "12", 3);
-        // 菜单管理（子菜单）
-        createMenuItem("12-4", "菜单管理", "/admin/menus", "menu", "12", 4);
-        // IP映射配置（子菜单）
-        createMenuItem("12-5", "IP映射配置", "/admin/ip-config", "ip", "12", 5);
+        createMenuItem("6", "GitLab 报表", "/gitlab-reports", "gitlab", "g3", 2);
+        createMenuItem("7", "Gitee 仓库", "/gitee", "gitee", "g3", 3);
+
+        createMenuItem("g4", "运维配置", "", "sync", null, 4);
+        createMenuItem("3", "数据同步", "", "sync", "g4", 1);
+        createMenuItem("3-1", "Nacos 配置同步", "/sync/nacos", "nacos", "3", 1);
+        createMenuItem("3-2", "Oracle DDL 同步", "/sync/oracle", "oracle", "3", 2);
+        createMenuItem("9", "参数配置", "/params", "params", "g4", 2);
+        createMenuItem("15", "刷新缓存", "/refresh", "refresh", "g4", 3);
+
+        createMenuItem("g5", "治理与系统", "", "system", null, 5);
+        createMenuItem("5", "审计日志", "/audit", "audit", "g5", 1);
+        createMenuItem("12-1", "用户管理", "/admin/users", "users", "g5", 2);
+        createMenuItem("12-2", "角色管理", "/admin/roles", "roles", "g5", 3);
+        createMenuItem("12-3", "权限管理", "/admin/permissions", "permissions", "g5", 4);
+        createMenuItem("12-4", "菜单管理", "/admin/menus", "menu", "g5", 5);
+        createMenuItem("12-5", "IP 映射配置", "/admin/ip-config", "ip", "g5", 6);
     }
 
     private void createMenuItem(String menuId, String name, String path, String icon, String parentId, Integer sortOrder) {
@@ -280,7 +243,33 @@ public class SecurityDataInitializer implements CommandLineRunner {
             existingMenu = menuRepository.findByNameAndParentId(name, parentId != null ? parentId : 0L);
         }
         
-        return existingMenu != null ? existingMenu : createMenu(name, path, icon, permission, parentId, sortOrder, isButton, status);
+        if (existingMenu != null) {
+            existingMenu.setName(name);
+            existingMenu.setPath(path);
+            existingMenu.setIcon(icon);
+            existingMenu.setPermission(permission);
+            existingMenu.setParentId(parentId != null ? parentId : 0L);
+            existingMenu.setSortOrder(sortOrder);
+            existingMenu.setIsButton(isButton);
+            existingMenu.setStatus(status);
+            existingMenu.setUpdatedBy("system");
+            return menuRepository.save(existingMenu);
+        }
+
+        return createMenu(name, path, icon, permission, parentId, sortOrder, isButton, status);
+    }
+
+    private void disableLegacyRootMenus() {
+        List<String> legacyRootNames = List.of("接口管理", "数据同步", "上线变更", "系统设置");
+        for (Menu menu : menuRepository.findAll()) {
+            if (menu.getParentId() == 0L
+                    && menu.getPermission() == null
+                    && legacyRootNames.contains(menu.getName())) {
+                menu.setStatus(0);
+                menu.setUpdatedBy("system");
+                menuRepository.save(menu);
+            }
+        }
     }
 
     private Menu createMenu(String name, String path, String icon, String permission, 

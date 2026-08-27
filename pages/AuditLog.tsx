@@ -83,7 +83,7 @@ export const AuditLog: React.FC = () => {
 
         <div className="flex-1 flex flex-col space-y-4">
            {/* Search */}
-           <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+           <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200">
               <div className="relative">
                  <Search className="absolute left-3 top-2.5 text-slate-400" size={18} />
                  <input 
@@ -99,7 +99,7 @@ export const AuditLog: React.FC = () => {
            </div>
 
            {/* Table */}
-           <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+           <div className="flex-1 bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden flex flex-col">
               <div className="overflow-auto flex-1">
                 <table className="w-full text-left text-sm">
                   <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">

@@ -8,7 +8,7 @@ export interface User {
 export interface MenuItem {
   id: string;
   name: string;
-  path: string;
+  path?: string;
   icon?: string;
   children?: MenuItem[];
   visible?: boolean; // Controls menu visibility (Online/Offline)

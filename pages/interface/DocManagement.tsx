@@ -162,7 +162,7 @@ const escapeXml = (unsafe: string | undefined | null) => {
 
 // Recursive Field Renderer for Modal
 const FieldTree: React.FC<{ fields: XmlField[]; depth?: number }> = ({ fields, depth = 0 }) => {
-  if (!fields || fields.length === 0) return <div className="text-slate-400 italic text-xs py-1">None</div>;
+  if (!fields || fields.length === 0) return <div className="text-slate-400 italic text-xs py-1">暂无</div>;
 
   return (
     <div className="space-y-1">
@@ -2856,11 +2856,11 @@ export const DocManagement: React.FC = () => {
       if (call.type === 'rpc-service') {
         return (
           <div key={`${beanName}-rpc-${index}`} className={nestedClass} style={containerStyle}>
-            <div className={`${commonClass} bg-indigo-50 border-indigo-200 text-indigo-800`}>
+            <div className={`${commonClass} bg-blue-50 border-blue-200 text-blue-800`}>
               {nodeToggle}
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 font-semibold">RPC服务</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-semibold">RPC服务</span>
               <span>{call.call}</span>
-              <span className="text-indigo-700">({descriptionText})</span>
+              <span className="text-blue-700">({descriptionText})</span>
             </div>
           </div>
         );
@@ -2941,10 +2941,10 @@ export const DocManagement: React.FC = () => {
   };
 
   return (
-    <div className="p-6 space-y-6 h-full flex flex-col">
+    <div className="mx-auto flex h-full min-h-[calc(100vh-7rem)] w-full max-w-[1520px] flex-col space-y-6 p-6 lg:p-8">
       <div className="flex justify-between items-center">
         <div>
-           <h2 className="text-2xl font-bold text-slate-800">Interface Documentation</h2>
+           <h2 className="text-2xl font-semibold text-blue-950">接口文档管理</h2>
 	           <p className="text-slate-500 text-sm flex items-center gap-1">
 	             <Info size={14} className="text-blue-500" />
 	             <span className="font-medium text-slate-600">支持在线获取和本地上传两种方式</span>
@@ -3013,7 +3013,7 @@ export const DocManagement: React.FC = () => {
                 className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 shadow-sm transition-colors disabled:opacity-50"
             >
                 {isProcessing ? <Activity className="animate-spin" size={18}/> : <Folder size={18} />}
-                {isProcessing ? 'Processing...' : '上传网银代码'}
+                {isProcessing ? '处理中...' : '上传网银代码'}
             </button>
 
             <button
@@ -3028,7 +3028,7 @@ export const DocManagement: React.FC = () => {
 
             <button 
                 onClick={handleOpenConfig}
-                className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 shadow-sm transition-colors"
+                className="flex items-center gap-2 rounded-lg border border-blue-200 bg-white px-4 py-2 text-blue-700 shadow-sm transition-colors hover:bg-blue-50"
             >
                 <GitBranch size={18} />
                 在线获取
@@ -3094,33 +3094,33 @@ export const DocManagement: React.FC = () => {
       )}
 
       {transactions.length === 0 ? (
-        <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-slate-300 rounded-xl bg-slate-50">
+        <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-slate-300 rounded-lg bg-slate-50">
             <div className="p-6 text-center">
                 <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
                     <FileJson size={32} />
                 </div>
-                <h3 className="text-lg font-medium text-slate-900">No Interfaces Loaded</h3>
-                <p className="text-slate-500 mt-2 max-w-sm">Please select the <strong>online banking project root directory</strong>. After that, upload the middle-platform project to expand downstream chains.</p>
+                <h3 className="text-lg font-medium text-slate-900">尚未加载接口</h3>
+                <p className="mt-2 max-w-sm text-slate-500">请选择网银工程根目录；加载完成后可继续上传中台工程，以展开下游调用链路。</p>
                 <button 
                     onClick={() => fileInputRef.current?.click()}
                     className="mt-6 text-blue-600 font-medium hover:underline"
                 >
-                    Browse Files
+                    选择工程目录
                 </button>
             </div>
         </div>
       ) : (
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex-1 flex flex-col">
+        <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden flex-1 flex flex-col">
           <div className="overflow-auto flex-1 relative">
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10 shadow-sm">
                 <tr>
-                  <th className="px-6 py-4 font-semibold text-slate-700">Module / ID</th>
-                  <th className="px-6 py-4 font-semibold text-slate-700">Description (CN)</th>
-                  <th className="px-6 py-4 font-semibold text-slate-700">Implementation</th>
-                  <th className="px-6 py-4 font-semibold text-slate-700">Downstream Interfaces</th>
-                  <th className="px-6 py-4 font-semibold text-slate-700 text-center">I/O</th>
-                  <th className="px-6 py-4 font-semibold text-slate-700 text-center">Controls</th>
+                  <th className="px-6 py-4 font-semibold text-slate-700">模块 / 接口 ID</th>
+                  <th className="px-6 py-4 font-semibold text-slate-700">接口描述</th>
+                  <th className="px-6 py-4 font-semibold text-slate-700">实现类</th>
+                  <th className="px-6 py-4 font-semibold text-slate-700">下游接口</th>
+                  <th className="px-6 py-4 font-semibold text-slate-700 text-center">输入 / 输出</th>
+                  <th className="px-6 py-4 font-semibold text-slate-700 text-center">操作</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -3152,7 +3152,7 @@ export const DocManagement: React.FC = () => {
                                     <td className="px-6 py-3">
                                       <div className="flex flex-col">
                                          <div className="flex items-center gap-1 text-slate-700">
-                                            <FileCode size={14} className="text-purple-500"/>
+                                            <FileCode size={14} className="text-amber-500"/>
                                             <span className="font-mono text-xs">{t.actionRef}</span>
                                          </div>
                                          <span className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[250px]" title={t.actionClass}>
@@ -3233,10 +3233,10 @@ export const DocManagement: React.FC = () => {
                                     </td>
                                     <td className="px-6 py-3 text-center">
                                         <div className="flex justify-center gap-2">
-                                            <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-xs font-medium border border-blue-100" title="Input Fields">
+                                            <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-xs font-medium border border-blue-100" title="输入字段">
                                                 {t.inputs.length}
                                             </span>
-                                            <span className="bg-purple-50 text-purple-700 px-2 py-0.5 rounded text-xs font-medium border border-purple-100" title="Output Fields">
+                                            <span className="bg-amber-50 text-amber-700 px-2 py-0.5 rounded text-xs font-medium border border-amber-100" title="输出字段">
                                                 {t.outputs.length}
                                             </span>
                                         </div>
@@ -3282,7 +3282,7 @@ export const DocManagement: React.FC = () => {
                    <ChevronLeft size={16} />
                 </button>
                 <span className="text-sm font-medium text-slate-700 px-2">
-                   Page {currentPage} of {Math.max(1, totalPages)}
+                   第 {currentPage} 页，共 {Math.max(1, totalPages)} 页
                 </span>
                 <button 
                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
@@ -3299,7 +3299,7 @@ export const DocManagement: React.FC = () => {
       {/* Detailed Modal */}
       {selectedTransaction && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
              {/* Header */}
              <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-start bg-slate-50">
                <div>
@@ -3314,12 +3314,12 @@ export const DocManagement: React.FC = () => {
                   
                   <div className="flex flex-col mt-3 text-xs bg-slate-50 p-2 rounded border border-slate-100">
                       <div className="flex gap-2 mb-1">
-                        <span className="font-bold text-slate-600">Action Ref:</span>
+                        <span className="font-bold text-slate-600">动作引用：</span>
                         <span className="font-mono text-slate-800">{selectedTransaction.actionRef}</span>
                       </div>
                       <div className="flex gap-2">
-                        <span className="font-bold text-slate-600">Class:</span>
-                        <span className="font-mono text-purple-600">{selectedTransaction.actionClass}</span>
+                        <span className="font-bold text-slate-600">实现类：</span>
+                        <span className="font-mono text-amber-600">{selectedTransaction.actionClass}</span>
                       </div>
                   </div>
                </div>
@@ -3340,7 +3340,7 @@ export const DocManagement: React.FC = () => {
                      <div>
                          <h4 className="font-bold text-slate-800 mb-3 flex items-center gap-2 pb-2 border-b border-slate-100">
                            <span className="w-2 h-2 bg-amber-500 rounded-full"></span>
-                           Downstream Interfaces
+                           下游接口
                          </h4>
                          <div className="bg-amber-50 rounded-lg border border-amber-100 p-3 space-y-2">
                              {selectedTransaction.downstreamCalls.map((call, idx) => {
@@ -3412,13 +3412,13 @@ export const DocManagement: React.FC = () => {
                  <div>
                      <h4 className="font-bold text-slate-800 mb-4 flex items-center gap-2 pb-2 border-b border-slate-100">
                        <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
-                       Request Parameters
+                       请求参数
                      </h4>
                      <div className="bg-slate-50 rounded-lg border border-slate-100 p-4">
                         <div className="flex text-xs font-semibold text-slate-400 mb-2 px-1">
-                            <div className="flex-1">Name / Type</div>
-                            <div className="flex-1">Description</div>
-                            <div className="flex-1">Style</div>
+                            <div className="flex-1">名称 / 类型</div>
+                            <div className="flex-1">字段描述</div>
+                            <div className="flex-1">字段样式</div>
                         </div>
                         <FieldTree fields={selectedTransaction.inputs} />
                      </div>
@@ -3428,14 +3428,14 @@ export const DocManagement: React.FC = () => {
                {/* Outputs */}
                <div className="flex-1 overflow-y-auto p-6 bg-white">
                  <h4 className="font-bold text-slate-800 mb-4 flex items-center gap-2 pb-2 border-b border-slate-100">
-                   <span className="w-2 h-2 bg-purple-500 rounded-full"></span>
-                   Response Parameters
+                   <span className="w-2 h-2 bg-amber-500 rounded-full"></span>
+                   响应参数
                  </h4>
                  <div className="bg-slate-50 rounded-lg border border-slate-100 p-4">
                     <div className="flex text-xs font-semibold text-slate-400 mb-2 px-1">
-                        <div className="flex-1">Name / Type</div>
-                        <div className="flex-1">Description</div>
-                        <div className="flex-1">Type/Info</div>
+                        <div className="flex-1">名称 / 类型</div>
+                        <div className="flex-1">字段描述</div>
+                        <div className="flex-1">类型信息</div>
                     </div>
                     <FieldTree fields={selectedTransaction.outputs} />
                  </div>
@@ -3448,10 +3448,10 @@ export const DocManagement: React.FC = () => {
       {/* 在线获取配置对话框 */}
       {isConfigOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl overflow-y-auto max-h-[90vh] animate-in fade-in zoom-in duration-200">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-3xl overflow-y-auto max-h-[90vh] animate-in fade-in zoom-in duration-200">
             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 sticky top-0">
               <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                <GitBranch size={20} className="text-purple-600" />
+                <GitBranch size={20} className="text-amber-600" />
                 在线仓库配置 (HTTP/SSH 认证)
               </h3>
               <button 
@@ -3484,7 +3484,7 @@ export const DocManagement: React.FC = () => {
                   <>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Repository URL (HTTPS)</label>
+                        <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">仓库地址（HTTPS）</label>
                         <div className="relative">
                           <Globe className="absolute left-3 top-2.5 text-slate-400" size={16}/>
                           <input 
@@ -3497,11 +3497,11 @@ export const DocManagement: React.FC = () => {
                       </div>
                     </div>
                     <div>
-                      <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Personal Access Token</label>
+                      <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">访问令牌</label>
                       <input 
                         className="w-full pl-4 pr-4 py-2 border border-slate-200 rounded-lg bg-[#f8fafc] focus:bg-white focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm text-slate-700 placeholder:text-slate-400"
                         type="password"
-                        placeholder="Your Gitee Personal Access Token" 
+                        placeholder="请输入 Gitee 访问令牌"
                         value={onlineConfig.authToken || ''}
                         onChange={e => setOnlineConfig({...onlineConfig, authToken: e.target.value})}
                       />
@@ -3512,7 +3512,7 @@ export const DocManagement: React.FC = () => {
                   // SSH Config
                   <>
                     <div>
-                      <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Repository URL (SSH)</label>
+                      <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">仓库地址（SSH）</label>
                       <div className="relative">
                         <Key className="absolute left-3 top-2.5 text-slate-400" size={16}/>
                         <input 
@@ -3641,18 +3641,18 @@ export const DocManagement: React.FC = () => {
               {onlineConfig.isConnected && (
                 <div className="bg-green-50 border border-green-300 rounded-lg p-3 flex items-center gap-2">
                   <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                  <p className="text-sm text-green-700 font-medium">✅ 连接成功！已获取分支列表</p>
+                  <p className="text-sm text-green-700 font-medium">连接成功，已获取分支列表</p>
                 </div>
               )}
 
               {onlineConfig.connectionError && (
                 <div className="bg-red-50 border border-red-300 rounded-lg p-3">
-                  <p className="text-sm text-red-700 font-medium">❌ {onlineConfig.connectionError}</p>
+                  <p className="text-sm text-red-700 font-medium">{onlineConfig.connectionError}</p>
                 </div>
               )}
 
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm text-slate-700">
-                <p className="font-bold mb-2">📋 支持的认证方式:</p>
+                <p className="font-bold mb-2">支持的认证方式:</p>
                 <ul className="list-disc list-inside space-y-1 text-xs">
                   <li><strong>HTTP Token</strong>: Token 认证，推荐用于 Gitee/GitHub</li>
                   <li><strong>SSH Key</strong>: SSH 密钥认证，适合服务器部署</li>
@@ -3670,7 +3670,7 @@ export const DocManagement: React.FC = () => {
               <button 
                 onClick={() => handleFetchOnline(false)}
                 disabled={isProcessing || !onlineConfig.repoUrl.trim() || !onlineConfig.isConnected}
-                className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium disabled:opacity-50 flex items-center gap-2"
+                className="px-6 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 font-medium disabled:opacity-50 flex items-center gap-2"
               >
                 {isProcessing ? <Activity className="animate-spin" size={16} /> : <Download size={16} />}
                 {isProcessing ? '获取中...' : '获取并解析'}

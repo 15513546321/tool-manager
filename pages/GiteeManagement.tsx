@@ -1308,7 +1308,7 @@ export const GiteeManagement: React.FC = () => {
           </button>
           <button 
               onClick={() => setIsExcelStyleOpen(!isExcelStyleOpen)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition-all shadow-sm ${isExcelStyleOpen ? 'bg-slate-200 text-slate-700' : 'bg-white text-purple-600 border border-slate-200 hover:bg-slate-50'}`}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition-all shadow-sm ${isExcelStyleOpen ? 'bg-slate-200 text-slate-700' : 'bg-white text-amber-600 border border-slate-200 hover:bg-slate-50'}`}
           >
               <Settings size={18}/> {isExcelStyleOpen ? '收起样式' : 'Excel样式'}
           </button>
@@ -1329,7 +1329,7 @@ export const GiteeManagement: React.FC = () => {
 
       {/* Export Fields Config Panel */}
       {isExportConfigOpen && (
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-6 animate-in fade-in slide-in-from-top-4">
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-slate-200 mb-6 animate-in fade-in slide-in-from-top-4">
               <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2">
                   <FolderOpen size={18} className="text-green-500"/> 导出字段配置
               </h3>
@@ -1454,9 +1454,9 @@ export const GiteeManagement: React.FC = () => {
 
       {/* Excel Style Config Panel */}
       {isExcelStyleOpen && (
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-6 animate-in fade-in slide-in-from-top-4">
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-slate-200 mb-6 animate-in fade-in slide-in-from-top-4">
               <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2">
-                  <Settings size={18} className="text-purple-500"/> Excel导出样式配置
+                  <Settings size={18} className="text-amber-500"/> Excel导出样式配置
               </h3>
               <p className="text-xs text-slate-500 mb-6">调整导出Excel文件的行高、列宽等样式设置</p>
               
@@ -1558,10 +1558,10 @@ export const GiteeManagement: React.FC = () => {
                   <button onClick={() => setIsExcelStyleOpen(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-medium">取消</button>
                   <button onClick={() => {
                       setExcelExportStyle(DEFAULT_EXCEL_STYLE);
-                  }} className="bg-slate-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-slate-700 transition-colors">
+                  }} className="rounded-lg border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-50">
                       恢复默认
                   </button>
-                  <button onClick={saveExcelStyleConfig} className="bg-purple-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-purple-700 flex items-center gap-2 shadow-sm transition-colors">
+                  <button onClick={saveExcelStyleConfig} className="bg-amber-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-amber-700 flex items-center gap-2 shadow-sm transition-colors">
                       <Save size={18}/> 保存样式
                   </button>
               </div>
@@ -1570,7 +1570,7 @@ export const GiteeManagement: React.FC = () => {
 
       {/* Config Panel */}
       {isConfigOpen && (
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-6 animate-in fade-in slide-in-from-top-4">
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-slate-200 mb-6 animate-in fade-in slide-in-from-top-4">
               <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2">
                   <Settings size={18} className="text-blue-500"/> 连接设置
               </h3>
@@ -1596,7 +1596,7 @@ export const GiteeManagement: React.FC = () => {
                       <>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Repository URL (HTTPS)</label>
+                                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">仓库地址（HTTPS）</label>
                                 <div className="relative">
                                     <Globe className="absolute left-3 top-2.5 text-slate-400" size={16}/>
                                     <input 
@@ -1608,7 +1608,7 @@ export const GiteeManagement: React.FC = () => {
                                 </div>
                             </div>
                             <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Username (Optional)</label>
+                                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">用户名（可选）</label>
                                 <input 
                                     className={INPUT_STYLE} 
                                     placeholder="e.g. dev_user" 
@@ -1618,11 +1618,11 @@ export const GiteeManagement: React.FC = () => {
                             </div>
                         </div>
                         <div>
-                            <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Personal Access Token</label>
+                            <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">访问令牌</label>
                             <input 
                                 className={INPUT_STYLE} 
                                 type="password"
-                                placeholder="Your Gitee Personal Access Token" 
+                                placeholder="请输入 Gitee 访问令牌"
                                 value={config.accessToken || ''}
                                 onChange={e => setConfig({...config, accessToken: e.target.value})}
                             />
@@ -1633,7 +1633,7 @@ export const GiteeManagement: React.FC = () => {
                       // SSH Config
                       <>
                         <div>
-                            <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Repository URL (SSH)</label>
+                            <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">仓库地址（SSH）</label>
                             <div className="relative">
                                 <Key className="absolute left-3 top-2.5 text-slate-400" size={16}/>
                                 <input 
@@ -1683,7 +1683,7 @@ export const GiteeManagement: React.FC = () => {
 
       {/* Analysis Collection Panel */}
       {isAnalysisListOpen && (
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-6 animate-in fade-in slide-in-from-top-4">
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-slate-200 mb-6 animate-in fade-in slide-in-from-top-4">
               <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2">
                   <CheckSquare size={18} className="text-red-500"/> 分析集合 ({analysisList.length})
               </h3>
@@ -1746,7 +1746,7 @@ export const GiteeManagement: React.FC = () => {
       {/* Main Content */}
       <div className="flex-1 flex flex-col md:flex-row gap-6 min-h-0">
           {/* Left: Branch Search & Multi-Select */}
-          <div className="w-full md:w-1/3 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col h-full">
+          <div className="w-full md:w-1/3 bg-white rounded-lg shadow-sm border border-slate-200 flex flex-col h-full">
               <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex-shrink-0">
                   <h3 className="font-bold text-slate-700 mb-2">需求分支查询</h3>
                   <div className="relative mb-3">
@@ -1879,7 +1879,7 @@ export const GiteeManagement: React.FC = () => {
                       <button
                           onClick={handleAddToAnalysis}
                           disabled={loading || selectedBranches.size === 0}
-                          className="w-full bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 shadow-sm transition-colors"
+                          className="w-full bg-amber-600 hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 shadow-sm transition-colors"
                       >
                           <CheckSquare size={16}/>
                           {loading ? '处理中...' : `添加 ${selectedBranches.size} 个分支到集合`}
@@ -1897,7 +1897,7 @@ export const GiteeManagement: React.FC = () => {
           </div>
 
           {/* Right: Changeset Display */}
-          <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col h-full">
+          <div className="flex-1 bg-white rounded-lg shadow-sm border border-slate-200 flex flex-col h-full">
               <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center flex-shrink-0">
                   <div className="flex items-center gap-2">
                       <h3 className="font-bold text-slate-700">变更集预览</h3>
@@ -1919,7 +1919,7 @@ export const GiteeManagement: React.FC = () => {
                                               <span className="text-xs bg-blue-200 text-blue-700 px-2 py-0.5 rounded">
                                                   {getUniqueFiles(changesetData.get(branchName) || []).length} 个文件
                                               </span>
-                                              <span className="text-xs bg-purple-200 text-purple-700 px-2 py-0.5 rounded">
+                                              <span className="text-xs bg-amber-200 text-amber-700 px-2 py-0.5 rounded">
                                                   {(changesetData.get(branchName) || []).length} 条提交
                                               </span>
                                           </div>
@@ -1936,8 +1936,8 @@ export const GiteeManagement: React.FC = () => {
                                                   }}
                                                   className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 shadow-sm transition-colors ${
                                                       showCommitsForBranch.has(branchName) 
-                                                      ? 'bg-purple-600 hover:bg-purple-700 text-white' 
-                                                      : 'bg-purple-100 hover:bg-purple-200 text-purple-700'
+                                                      ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                                                      : 'bg-amber-100 hover:bg-amber-200 text-amber-700'
                                                   }`}
                                               >
                                                   <Eye size={14}/> {showCommitsForBranch.has(branchName) ? '隐藏提交' : '查看提交'}
@@ -2058,8 +2058,8 @@ export const GiteeManagement: React.FC = () => {
       {/* Commit Comparison Modal */}
       {isCompareModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-              <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
-                  <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-purple-50">
+              <div className="bg-white rounded-lg shadow-lg w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
+                  <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-amber-50">
                       <div>
                           <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                               <GitBranch size={20} className="text-blue-600"/>
@@ -2148,7 +2148,7 @@ export const GiteeManagement: React.FC = () => {
       {/* Commit Detail Modal - View & Export Single Commit */}
       {selectedCommitDetail && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-              <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col max-h-[80vh]">
+              <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col max-h-[80vh]">
                   <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                       <div>
                           <h3 className="text-lg font-bold text-slate-800">提交记录详情</h3>

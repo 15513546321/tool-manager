@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Copy, Code, ArrowRightLeft, Database, Plus, Trash2, Download, FileDown, Upload, ChevronRight, ChevronDown, Layers, FileCode } from 'lucide-react';
+import { Copy, Code, ArrowRightLeft, Database, Plus, Trash2, Download, FileDown, Upload, ChevronRight, ChevronDown, Layers, FileCode, Settings, X } from 'lucide-react';
 import { generateXml, generateJava } from '../../services/xmlParser'; // 假设路径不变
 import { XmlTransaction, XmlField } from '../../types';
 import { recordAction } from '../../services/auditService';
@@ -83,11 +83,11 @@ const GridRow: React.FC<GridRowProps> = ({ item, index, onUpdate, onPaste, onAdd
           }}
           className="w-full h-full bg-transparent px-2 text-xs font-bold text-blue-600 outline-none cursor-pointer appearance-none hover:bg-blue-50"
         >
-          <option value="field">Field</option>
-          <option value="string">String</option>
-          <option value="date">Date</option>
-          <option value="array">Array</option>
-          <option value="object">Object</option>
+          <option value="field">字段</option>
+          <option value="string">字符串</option>
+          <option value="date">日期</option>
+          <option value="array">数组</option>
+          <option value="object">对象</option>
         </select>
         {/* 指示箭头 */}
         <div className="absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none text-blue-300">
@@ -115,7 +115,7 @@ const GridRow: React.FC<GridRowProps> = ({ item, index, onUpdate, onPaste, onAdd
           value={field.name}
           onChange={(e) => onUpdate(path, { name: e.target.value })}
           onPaste={(e) => onPaste(e, path, 'name')}
-          placeholder={isContainer ? (field.type === 'array' ? 'arrayName (粘贴可添加子项)' : 'objectName (粘贴可添加子项)') : 'fieldName'}
+          placeholder={isContainer ? (field.type === 'array' ? '数组名称（粘贴可添加子项）' : '对象名称（粘贴可添加子项）') : '字段名称'}
           className={`${INPUT_BASE} font-mono text-slate-700 ${isContainer ? 'bg-blue-50 placeholder:text-blue-300 font-semibold' : ''}`}
         />
         {/* 容器标记 */}
@@ -132,7 +132,7 @@ const GridRow: React.FC<GridRowProps> = ({ item, index, onUpdate, onPaste, onAdd
           value={field.description}
           onChange={(e) => onUpdate(path, { description: e.target.value })}
           onPaste={(e) => onPaste(e, path, 'description')}
-          placeholder="Description"
+          placeholder="字段描述"
           className={INPUT_BASE}
         />
       </div>
@@ -144,7 +144,7 @@ const GridRow: React.FC<GridRowProps> = ({ item, index, onUpdate, onPaste, onAdd
             value={field.type === 'date' ? (field.pattern || '') : (field.style || '')}
             onChange={(e) => onUpdate(path, field.type === 'date' ? { pattern: e.target.value } : { style: e.target.value })}
             onPaste={(e) => onPaste(e, path, 'style')}
-            placeholder={field.type === 'date' ? 'yyyy-MM-dd' : 'Text'}
+            placeholder={field.type === 'date' ? 'yyyy-MM-dd' : '文本样式'}
             className={`${INPUT_BASE} text-xs text-slate-500`}
           />
         )}
@@ -444,11 +444,11 @@ const ExcelFieldGrid: React.FC<ExcelFieldGridProps> = ({ fields, onChange }) => 
     <div className="flex flex-col h-full border border-slate-300 rounded-lg overflow-hidden bg-white shadow-sm">
       {/* Header */}
       <div className="grid bg-slate-100 border-b border-slate-300" style={{ gridTemplateColumns: '100px 1.5fr 2fr 140px 40px' }}>
-        <div className={HEADER_STYLE}>Type</div>
-        <div className={HEADER_STYLE}>Name / Tag</div>
-        <div className={HEADER_STYLE}>Description</div>
-        <div className={HEADER_STYLE}>Style/Pattern</div>
-        <div className={`${HEADER_STYLE} text-center`}>Op</div>
+        <div className={HEADER_STYLE}>类型</div>
+        <div className={HEADER_STYLE}>字段名 / 标签</div>
+        <div className={HEADER_STYLE}>字段描述</div>
+        <div className={HEADER_STYLE}>样式 / 格式</div>
+        <div className={`${HEADER_STYLE} text-center`}>操作</div>
       </div>
 
       {/* Body */}
@@ -478,7 +478,7 @@ const ExcelFieldGrid: React.FC<ExcelFieldGridProps> = ({ fields, onChange }) => 
           className="hover:bg-blue-50 cursor-pointer border-t border-dashed border-slate-200 p-2 flex justify-center items-center text-slate-400 hover:text-blue-600 transition-colors"
           onClick={() => onChange([...fields, { name: '', type: 'field', description: '', style: '' }])}
         >
-          <Plus size={16} className="mr-2"/> Add Root Field
+          <Plus size={16} className="mr-2"/> 新增根字段
         </div>
       </div>
     </div>
@@ -833,20 +833,20 @@ export const CodeGenerator: React.FC = () => {
   };
 
   return (
-    <div className="p-4 h-full flex flex-col md:flex-row gap-4 bg-slate-50 font-sans text-slate-800">
+    <div className="mx-auto flex h-full min-h-[calc(100vh-7rem)] w-full max-w-[1520px] flex-col gap-4 p-6 font-sans text-slate-800 md:flex-row lg:p-8">
       {/* Left: Configuration Form */}
-      <div className="w-full md:w-3/5 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
+      <div className="w-full md:w-3/5 bg-white rounded-lg shadow-sm border border-slate-200 flex flex-col overflow-hidden">
         
         {/* Header Section */}
         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-white">
           <div className="flex items-center gap-3">
              <div className="bg-blue-100 p-2 rounded-lg text-blue-600"><Code size={20}/></div>
              <div>
-               <h2 className="font-bold text-lg text-slate-800">Interface Designer</h2>
+               <h2 className="text-lg font-semibold text-blue-950">接口代码生成</h2>
                <div className="text-xs text-slate-400 flex items-center gap-2">
                  <span>v{metaData.version}</span>
                  <span>•</span>
-                 <span>{formData.id || 'Untitled'}</span>
+                 <span>{formData.id || '未命名接口'}</span>
                </div>
              </div>
           </div>
@@ -859,25 +859,25 @@ export const CodeGenerator: React.FC = () => {
            {/* Top Inputs Grid */}
            <div className="grid grid-cols-2 gap-5">
               <div className="col-span-1">
-                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1 block">Transaction ID</label>
+                 <label className="mb-1 block text-xs font-semibold text-slate-500">交易 ID</label>
                  <input 
                     value={formData.id} 
                     onChange={e => setFormData(p => ({...p, id: e.target.value}))}
                     className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-blue-100 outline-none transition-all font-mono text-sm"
-                    placeholder="e.g. userQuery"
+                    placeholder="例如 userQuery"
                  />
               </div>
               <div className="col-span-1">
-                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1 block">Author</label>
+                 <label className="mb-1 block text-xs font-semibold text-slate-500">作者</label>
                  <input 
                     value={formData.author || ''} 
                     onChange={e => setFormData(p => ({...p, author: e.target.value || undefined}))}
                     className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm"
-                    placeholder="Interface author (matches Java @author)"
+                    placeholder="接口作者，对应 Java @author"
                  />
               </div>
               <div className="col-span-1">
-                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1 block">Template</label>
+                 <label className="mb-1 block text-xs font-semibold text-slate-500">代码模板</label>
                  <div className="flex gap-2">
                    <select 
                       value={formData.template}
@@ -900,17 +900,17 @@ export const CodeGenerator: React.FC = () => {
                       className="px-3 py-2.5 bg-blue-50 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors text-xs font-bold"
                       title="管理模板"
                    >
-                      ⚙️
+                      <Settings size={15} />
                    </button>
                  </div>
               </div>
               <div className="col-span-2">
-                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1 block">Description</label>
+                 <label className="mb-1 block text-xs font-semibold text-slate-500">接口描述</label>
                  <input 
                     value={formData.trsName} 
                     onChange={e => setFormData(p => ({...p, trsName: e.target.value}))}
                     className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-blue-100 outline-none text-sm"
-                    placeholder="Interface description..."
+                    placeholder="请输入接口描述..."
                  />
               </div>
            </div>
@@ -923,13 +923,13 @@ export const CodeGenerator: React.FC = () => {
                        onClick={() => setActiveTab('request')}
                        className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'request' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                     >
-                       <ArrowRightLeft size={14}/> Request
+                       <ArrowRightLeft size={14}/> 请求字段
                     </button>
                     <button 
                        onClick={() => setActiveTab('response')}
-                       className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'response' ? 'bg-white text-purple-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                       className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'response' ? 'bg-white text-amber-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                     >
-                       <Database size={14}/> Response
+                       <Database size={14}/> 响应字段
                     </button>
                  </div>
                  
@@ -954,7 +954,7 @@ export const CodeGenerator: React.FC = () => {
                     
                     <button 
                        onClick={handleExportFields}
-                       className="px-2.5 py-1.5 text-xs bg-purple-50 text-purple-700 rounded-lg hover:bg-purple-100 transition-colors flex items-center gap-1.5 font-semibold"
+                       className="px-2.5 py-1.5 text-xs bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 transition-colors flex items-center gap-1.5 font-semibold"
                        title="导出当前标签页的字段到 Excel"
                     >
                        <Download size={13}/> 导出
@@ -983,8 +983,8 @@ export const CodeGenerator: React.FC = () => {
               </div>
            </div>
            
-           <button onClick={handleGenerate} className="w-full py-3 bg-slate-900 text-white font-bold rounded-xl shadow-lg hover:bg-slate-800 transition-all flex items-center justify-center gap-2">
-             <Code size={18}/> Generate Code
+           <button onClick={handleGenerate} className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-700 py-3 font-semibold text-white shadow-sm transition-colors hover:bg-blue-800">
+             <Code size={18}/> 生成代码
            </button>
         </div>
       </div>
@@ -994,23 +994,23 @@ export const CodeGenerator: React.FC = () => {
          {/* Preview Tabs */}
          <div className="flex gap-2">
             <button onClick={() => setOutputTab('xml')} className={`flex-1 py-2 text-sm font-bold rounded-lg border transition-colors ${outputTab === 'xml' ? 'bg-white border-slate-300 text-slate-800' : 'bg-transparent border-transparent text-slate-500'}`}>
-               XML Config
+               XML 配置
             </button>
             <button onClick={() => setOutputTab('java')} className={`flex-1 py-2 text-sm font-bold rounded-lg border transition-colors ${outputTab === 'java' ? 'bg-white border-slate-300 text-slate-800' : 'bg-transparent border-transparent text-slate-500'}`}>
-               Java Class
+               Java 实体类
             </button>
          </div>
          
-         <div className="flex-1 bg-[#1e293b] rounded-xl shadow-inner border border-slate-700 overflow-hidden relative group">
-            <pre className="p-4 text-sm font-mono text-blue-100 h-full overflow-auto leading-relaxed">
+         <div className="group relative flex-1 overflow-hidden rounded-lg border border-blue-100 bg-[#f7faff] shadow-inner">
+            <pre className="h-full overflow-auto p-4 font-mono text-sm leading-relaxed text-slate-700">
                {outputTab === 'xml' ? generatedXml : generatedJava}
             </pre>
             <button 
               onClick={() => handleCopyToClipboard(outputTab)}
               disabled={outputTab === 'xml' ? !generatedXml : !generatedJava}
               title={outputTab === 'xml' 
-                ? (generatedXml ? '✓ 复制XML配置到剪贴板' : '❌ 请先生成XML配置') 
-                : (generatedJava ? '✓ 复制Java代码到剪贴板' : '❌ 请先生成Java代码')
+                ? (generatedXml ? '复制XML配置到剪贴板' : '请先生成XML配置')
+                : (generatedJava ? '复制Java代码到剪贴板' : '请先生成Java代码')
               }
               className={`absolute top-4 right-4 p-2.5 rounded-lg font-bold transition-all duration-300 flex items-center justify-center gap-1 ${
                 copiedType === outputTab 
@@ -1028,7 +1028,7 @@ export const CodeGenerator: React.FC = () => {
       {/* Template 管理 Modal */}
       {showTemplateManager && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-2xl w-96 max-h-96 flex flex-col">
+          <div className="bg-white rounded-lg shadow-lg w-96 max-h-96 flex flex-col">
             {/* Header */}
             <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
               <h3 className="text-lg font-bold text-slate-900">管理模板</h3>
@@ -1041,7 +1041,7 @@ export const CodeGenerator: React.FC = () => {
                 }}
                 className="text-slate-400 hover:text-slate-600"
               >
-                ✕
+                <X size={18} />
               </button>
             </div>
 
@@ -1167,7 +1167,7 @@ export const CodeGenerator: React.FC = () => {
                   setTemplateInput('');
                   setTemplateChineseName('');
                 }}
-                className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 text-xs font-bold transition-colors"
+                className="rounded-lg border border-blue-200 bg-white px-4 py-2 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-50"
               >
                 关闭
               </button>

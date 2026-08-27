@@ -2,6 +2,172 @@
 @tailwind components;
 @tailwind utilities;
 
+html {
+  background: #f6f9ff;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background:
+    linear-gradient(180deg, rgba(247, 251, 255, 0.98) 0%, rgba(242, 246, 252, 0.98) 100%);
+  color: #0f172a;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color-scheme: light;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.app-main {
+  min-height: calc(100vh - 7rem);
+  background:
+    linear-gradient(180deg, rgba(248, 251, 255, 0.96) 0%, rgba(241, 246, 253, 0.96) 100%),
+    linear-gradient(90deg, rgba(29, 78, 216, 0.04), rgba(245, 158, 11, 0.04));
+}
+
+.app-main > * {
+  animation-duration: 240ms !important;
+}
+
+.app-main table {
+  border-color: #d7e4f6;
+}
+
+.app-main thead,
+.app-main thead tr {
+  background: #edf4ff;
+}
+
+.app-main th {
+  color: #1e3a8a;
+  font-weight: 600;
+}
+
+.app-main tbody tr {
+  transition: background-color 160ms ease;
+}
+
+.app-main tbody tr:hover {
+  background-color: rgba(239, 246, 255, 0.72);
+}
+
+.app-main button,
+.app-main a,
+.app-main input,
+.app-main textarea,
+.app-main select {
+  letter-spacing: 0;
+}
+
+.app-main button:focus-visible,
+.app-main a:focus-visible {
+  outline: 2px solid rgba(29, 78, 216, 0.55);
+  outline-offset: 2px;
+}
+
+.app-main button:disabled {
+  cursor: not-allowed;
+}
+
+.app-main > div[class*="bg-slate-50"],
+.app-main > div[class*="from-slate"],
+.app-main > div[class*="radial-gradient"] {
+  background: transparent !important;
+}
+
+.app-main .bg-white {
+  background-color: rgba(255, 255, 255, 0.96);
+}
+
+.app-main .bg-slate-50,
+.app-main .bg-zinc-50,
+.app-main .bg-gray-50 {
+  background-color: rgba(246, 249, 255, 0.78);
+}
+
+.app-main .bg-slate-100,
+.app-main .bg-zinc-100,
+.app-main .bg-gray-100 {
+  background-color: #edf4ff;
+}
+
+.app-main .border-slate-100,
+.app-main .border-zinc-100,
+.app-main .border-gray-100 {
+  border-color: #e6effc;
+}
+
+.app-main .border-slate-200,
+.app-main .border-zinc-200,
+.app-main .border-gray-200,
+.app-main .border-slate-300 {
+  border-color: #d7e4f6;
+}
+
+.app-main .text-slate-900,
+.app-main .text-zinc-900,
+.app-main .text-gray-900,
+.app-main .text-slate-800,
+.app-main .text-zinc-800,
+.app-main .text-gray-800 {
+  color: #172554;
+}
+
+.app-main .text-slate-700,
+.app-main .text-zinc-700,
+.app-main .text-gray-700 {
+  color: #334155;
+}
+
+.app-main .text-slate-500,
+.app-main .text-zinc-500,
+.app-main .text-gray-500,
+.app-main .text-slate-400,
+.app-main .text-zinc-400,
+.app-main .text-gray-400 {
+  color: #64748b;
+}
+
+.app-main .rounded-xl,
+.app-main .rounded-2xl,
+.app-main [class*="rounded-["] {
+  border-radius: 8px;
+}
+
+.app-main .shadow-sm {
+  box-shadow: 0 8px 24px rgba(30, 64, 175, 0.06);
+}
+
+.app-main .shadow-lg,
+.app-main .shadow-xl,
+.app-main .shadow-2xl {
+  box-shadow: 0 18px 42px rgba(30, 64, 175, 0.12);
+}
+
+.app-main .tracking-tight,
+.app-main .tracking-wide,
+.app-main .tracking-wider,
+.app-main [class*="tracking-["] {
+  letter-spacing: 0;
+}
+
+.app-main input,
+.app-main textarea,
+.app-main select {
+  border-color: #cfe0f6;
+}
+
+.app-main input:focus,
+.app-main textarea:focus,
+.app-main select:focus {
+  border-color: #1d4ed8;
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.12);
+}
+
 /* Custom scrollbar for webkit */
 ::-webkit-scrollbar {
   width: 8px;
@@ -9,16 +175,46 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: #f3f7fd;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #bfd1ea;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #8eabd2;
+}
+
+.sidebar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(37, 99, 235, 0.28) transparent;
+}
+
+.sidebar-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: rgba(37, 99, 235, 0.22);
+  border-radius: 999px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(37, 99, 235, 0.36);
+}
+
+.scrollbar-hide {
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }
 
 /* Excel HTML Preview Styling */

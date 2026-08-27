@@ -524,14 +524,14 @@ export const ParameterConfigPage: React.FC = () => {
           </button>
           <button 
             onClick={handleExport}
-            className="bg-purple-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-purple-700 transition-colors shadow-sm"
+            className="flex items-center gap-2 rounded-lg border border-blue-200 bg-white px-4 py-2 text-blue-700 shadow-sm transition-colors hover:bg-blue-50"
           >
             <Download size={18} />
             批量导出
           </button>
           <button 
             onClick={() => setIsCatManagerOpen(true)}
-            className="bg-slate-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-slate-700 transition-colors shadow-sm"
+            className="flex items-center gap-2 rounded-lg border border-blue-200 bg-white px-4 py-2 text-blue-700 shadow-sm transition-colors hover:bg-blue-50"
             title="管理大类和小类"
           >
             <Settings size={18} />
@@ -548,7 +548,7 @@ export const ParameterConfigPage: React.FC = () => {
       </div>
 
       {isAdding && (
-        <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl mb-6 animate-in fade-in slide-in-from-top-2">
+        <div className="bg-blue-50 border border-blue-100 p-4 rounded-lg mb-6 animate-in fade-in slide-in-from-top-2">
           <div className="text-xs font-bold text-blue-800 uppercase mb-4">新增参数</div>
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
             <div>
@@ -593,7 +593,7 @@ export const ParameterConfigPage: React.FC = () => {
               <input
                 type="text"
                 className={INPUT_STYLE}
-                placeholder="Value"
+                placeholder="参数值"
                 value={newParam.value || ''}
                 onChange={e => setNewParam({...newParam, value: e.target.value})}
               />
@@ -621,7 +621,7 @@ export const ParameterConfigPage: React.FC = () => {
       )}
 
       {/* Filter Section */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 mb-6 shadow-sm">
+      <div className="bg-white p-4 rounded-lg border border-slate-200 mb-6 shadow-sm">
         <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-wider mb-4">
            <Filter size={14} />
            筛选查询
@@ -683,7 +683,7 @@ export const ParameterConfigPage: React.FC = () => {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
         <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
              <tr>
@@ -806,7 +806,7 @@ export const ParameterConfigPage: React.FC = () => {
       {/* Category Manager Modal */}
       {isCatManagerOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden h-[600px] flex flex-col animate-in fade-in zoom-in duration-200">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl overflow-hidden h-[600px] flex flex-col animate-in fade-in zoom-in duration-200">
             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
               <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                 <Settings size={20} />
@@ -823,7 +823,7 @@ export const ParameterConfigPage: React.FC = () => {
                 <div className="p-2 border-b border-slate-100 flex gap-2">
                   <input
                     className={INLINE_INPUT_STYLE}
-                    placeholder="New Category Name"
+                    placeholder="新建大类名称"
                     value={newCatName}
                     onChange={e => setNewCatName(e.target.value)}
                   />
@@ -937,13 +937,13 @@ export const ParameterConfigPage: React.FC = () => {
                         </div>
                       ))}
                       {categoryMap[selectedCatForEdit]?.length === 0 && (
-                        <div className="text-center text-slate-400 italic text-sm mt-4">No sub-categories</div>
+                        <div className="text-center text-slate-400 italic text-sm mt-4">暂无小类</div>
                       )}
                     </div>
                   </>
                 ) : (
                   <div className="flex-1 flex items-center justify-center text-slate-400 text-sm italic">
-                    Select a category to manage sub-items
+                    请选择一个大类后管理小类
                   </div>
                 )}
               </div>
@@ -955,7 +955,7 @@ export const ParameterConfigPage: React.FC = () => {
       {/* Import Modal */}
       {isImportModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
               <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                 <Upload size={20} />

@@ -57,7 +57,7 @@ export interface RoleInfo {
 export interface MenuInfo {
   id: number;
   name: string;
-  path: string;
+  path?: string;
   icon: string;
   permission: string;
   parentId: number;
