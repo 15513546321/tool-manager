@@ -116,6 +116,51 @@ export interface SuggestionItem {
   timestamp: string;
 }
 
+export type ChangeStepRiskType = 'FIELD_KEYWORD' | 'PASSWORD_PATTERN' | 'KNOWN_PASSWORD';
+
+export interface ChangeStepRiskItem {
+  id: string;
+  riskType: ChangeStepRiskType;
+  riskLabel: string;
+  severity: 'HIGH' | 'MEDIUM';
+  matchedText: string;
+  matchedStart: number;
+  matchedEnd: number;
+  rule: string;
+  location: string;
+  lineNumber: number;
+  contextBefore: string;
+  contextLine: string;
+  contextAfter: string;
+}
+
+export interface ChangeStepScanResult {
+  fileName: string;
+  scannedAt: string;
+  scannedLineCount: number;
+  summary: {
+    total: number;
+    high: number;
+    medium: number;
+    fieldMatches: number;
+    passwordMatches: number;
+  };
+  risks: ChangeStepRiskItem[];
+}
+
+export interface ChangeStepScannerConfig {
+  fieldKeywords: string[];
+  regexPatterns: string[];
+  knownPasswords: Array<{ id: string; maskedValue: string }>;
+}
+
+export interface UpdateChangeStepScannerConfig {
+  fieldKeywords: string[];
+  regexPatterns: string[];
+  retainedKnownPasswordIds: string[];
+  newKnownPasswords: string[];
+}
+
 export interface MockPacketConfig {
   host: string;
   port: string;

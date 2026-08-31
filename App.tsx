@@ -17,6 +17,7 @@ import { FieldConfigTool } from './pages/FieldConfigTool';
 import { GitlabReports } from './pages/GitlabReports';
 import { GiteeManagement } from './pages/GiteeManagement';
 import { ReleaseChanges } from './pages/ReleaseChanges';
+import { ChangeStepCheck } from './pages/ChangeStepCheck';
 import { NacosSync } from './pages/sync/NacosSync';
 import { OracleSync } from './pages/sync/OracleSync';
 import { IpConfig } from './pages/admin/IpConfig';
@@ -352,6 +353,7 @@ const App: React.FC = () => {
           <Route path="release-changes" element={<Navigate to="/release-changes/dev" replace />} />
           <Route path="release-changes/dev" element={<ReleaseChanges mode="developer" />} />
           <Route path="release-changes/manager" element={<ReleaseChanges mode="manager" />} />
+          <Route path="release-changes/check" element={<ChangeStepCheck />} />
           
           {/* Removed Diff Tool */}
 

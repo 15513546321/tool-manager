@@ -43,6 +43,20 @@ export interface ApiResponse<T> {
   error?: string;
 }
 
+const getErrorMessage = async (response: Response, fallback: string) => {
+  try {
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const body = await response.json();
+      return body.message || body.error || fallback;
+    }
+    const text = await response.text();
+    return text || fallback;
+  } catch {
+    return fallback;
+  }
+};
+
 /**
  * Get JWT token from localStorage
  */
@@ -284,6 +298,36 @@ export const systemParameterApi = {
       body: formData,
     });
     if (!res.ok) throw new Error('Failed to import parameters');
+    return res.json();
+  },
+};
+
+// Change step password/risk scanner APIs
+export const changeStepCheckApi = {
+  scan: async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetchWithAuth(`${API_BASE_URL}/change-step-check/scan`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!res.ok) throw new Error(await getErrorMessage(res, '变更步骤扫描失败'));
+    return res.json();
+  },
+
+  getConfig: async () => {
+    const res = await fetchWithAuth(`${API_BASE_URL}/change-step-check/config`);
+    if (!res.ok) throw new Error(await getErrorMessage(res, '读取扫描配置失败'));
+    return res.json();
+  },
+
+  updateConfig: async (data: import('../types').UpdateChangeStepScannerConfig) => {
+    const res = await fetchWithAuth(`${API_BASE_URL}/change-step-check/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(await getErrorMessage(res, '保存扫描配置失败'));
     return res.json();
   },
 };

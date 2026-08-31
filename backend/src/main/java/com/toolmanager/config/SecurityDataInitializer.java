@@ -96,8 +96,17 @@ public class SecurityDataInitializer implements CommandLineRunner {
         Menu releaseMenu = createMenuIfNotExists("上线变更", null, "release", null, deliveryMenu.getId(), 1, 0, 1);
         Menu releaseDevMenu = createMenuIfNotExists("变更集录入", "/release-changes/dev", "release", "release:changeset", releaseMenu.getId(), 1, 0, 1);
         Menu releaseManagerMenu = createMenuIfNotExists("比包对账", "/release-changes/manager", "diff", "release:compare", releaseMenu.getId(), 2, 0, 1);
+        Menu changeStepCheckMenu = createMenuIfNotExists("变更步骤检查", "/release-changes/check", "shield", "release:step-check", releaseMenu.getId(), 3, 0, 1);
         Menu gitlabMenu = createMenuIfNotExists("GitLab 报表", "/gitlab-reports", "gitlab", "gitlab:view", deliveryMenu.getId(), 2, 0, 1);
         Menu giteeMenu = createMenuIfNotExists("Gitee 仓库", "/gitee", "gitee", "gitee:manage", deliveryMenu.getId(), 3, 0, 1);
+
+        // 普通用户默认具备变更步骤核查入口；保留管理员后续分配的其他权限。
+        Set<Menu> userMenus = new LinkedHashSet<>(userRole.getMenus());
+        userMenus.add(deliveryMenu);
+        userMenus.add(releaseMenu);
+        userMenus.add(changeStepCheckMenu);
+        userRole.setMenus(userMenus);
+        roleRepository.save(userRole);
 
         // ============= 治理与系统 =============
 
@@ -166,6 +175,7 @@ public class SecurityDataInitializer implements CommandLineRunner {
         createMenuItem("13", "上线变更", "", "release", "g3", 1);
         createMenuItem("13-1", "变更集录入", "/release-changes/dev", "release", "13", 1);
         createMenuItem("13-2", "比包对账", "/release-changes/manager", "diff", "13", 2);
+        createMenuItem("13-3", "变更步骤检查", "/release-changes/check", "shield", "13", 3);
         createMenuItem("6", "GitLab 报表", "/gitlab-reports", "gitlab", "g3", 2);
         createMenuItem("7", "Gitee 仓库", "/gitee", "gitee", "g3", 3);
 
