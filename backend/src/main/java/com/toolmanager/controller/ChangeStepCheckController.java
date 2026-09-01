@@ -7,6 +7,7 @@ import com.toolmanager.service.ChangeStepCheckConfigService;
 import com.toolmanager.service.ChangeStepCheckService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -19,6 +20,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+
+import javax.servlet.http.HttpServletRequest;
+import java.io.IOException;
 
 import java.util.Collections;
 import java.util.Map;
@@ -35,6 +39,21 @@ public class ChangeStepCheckController {
     @PostMapping(value = "/scan", consumes = "multipart/form-data")
     public ResponseEntity<ScanResultDto> scan(@RequestParam("file") MultipartFile file) {
         return ResponseEntity.ok(checkService.scan(file));
+    }
+
+    /**
+     * 原始文件流上传不经过 Servlet multipart 解析器，可兼容被部署环境固定为 1 MB 的场景。
+     */
+    @PostMapping(value = "/scan", consumes = MediaType.APPLICATION_OCTET_STREAM_VALUE)
+    public ResponseEntity<ScanResultDto> scanRaw(
+            @RequestParam("fileName") String fileName,
+            @RequestParam("fileSize") long fileSize,
+            HttpServletRequest request) throws IOException {
+        long contentLength = request.getContentLengthLong();
+        if (contentLength >= 0 && contentLength != fileSize) {
+            throw new IllegalArgumentException("上传文件大小校验失败，请重新选择文件后再试");
+        }
+        return ResponseEntity.ok(checkService.scan(fileName, fileSize, request.getInputStream()));
     }
 
     @GetMapping("/config")

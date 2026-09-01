@@ -14,6 +14,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 
 import java.io.ByteArrayOutputStream;
+import java.io.ByteArrayInputStream;
 import java.util.Arrays;
 import java.util.Collections;
 
@@ -83,6 +84,23 @@ class ChangeStepCheckServiceTest {
         assertThatThrownBy(() -> service.scan(file))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("仅支持 .doc 或 .docx");
+    }
+
+    @Test
+    void scansRawFileStreamWithoutMultipartParsing() throws Exception {
+        when(configService.getInternalConfig()).thenReturn(new InternalConfig(
+                Collections.singletonList("password"),
+                Collections.singletonList("(?i)\\bsrcb\\d{4,}\\b"),
+                Collections.emptyList()
+        ));
+        byte[] document = createDocx("another-secret");
+
+        ScanResultDto result = service.scan(
+                "raw-upload.docx", document.length, new ByteArrayInputStream(document));
+
+        assertThat(result.getSummary().getTotal()).isEqualTo(2);
+        assertThat(result.getRisks()).extracting(RiskItemDto::getRiskType)
+                .containsExactlyInAnyOrder("FIELD_KEYWORD", "PASSWORD_PATTERN");
     }
 
     private byte[] createDocx(String knownPassword) throws Exception {

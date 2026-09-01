@@ -305,11 +305,14 @@ export const systemParameterApi = {
 // Change step password/risk scanner APIs
 export const changeStepCheckApi = {
   scan: async (file: File) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    const res = await fetchWithAuth(`${API_BASE_URL}/change-step-check/scan`, {
+    const query = new URLSearchParams({
+      fileName: file.name,
+      fileSize: String(file.size),
+    });
+    const res = await fetchWithAuth(`${API_BASE_URL}/change-step-check/scan?${query.toString()}`, {
       method: 'POST',
-      body: formData,
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: file,
     });
     if (!res.ok) throw new Error(await getErrorMessage(res, '变更步骤扫描失败'));
     return res.json();

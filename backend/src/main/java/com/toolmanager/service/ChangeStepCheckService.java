@@ -1,5 +1,6 @@
 package com.toolmanager.service;
 
+import com.toolmanager.config.MultipartUploadConfig;
 import com.toolmanager.dto.ChangeStepCheckDtos.RiskItemDto;
 import com.toolmanager.dto.ChangeStepCheckDtos.ScanResultDto;
 import com.toolmanager.dto.ChangeStepCheckDtos.ScanSummaryDto;
@@ -38,7 +39,7 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class ChangeStepCheckService {
-    private static final long MAX_FILE_SIZE = 200L * 1024L * 1024L;
+    private static final long MAX_FILE_SIZE = MultipartUploadConfig.MAX_FILE_SIZE_BYTES;
     private static final int MAX_TEXT_SEGMENTS = 1_000_000;
     private static final long MAX_EXTRACTED_CHARACTERS = 120_000_000L;
     private static final Pattern PASSWORD_TOKEN = Pattern.compile("[\\p{L}\\p{N}@#$%^&*._+!~?/\\-]{4,128}");
@@ -46,13 +47,23 @@ public class ChangeStepCheckService {
     private final ChangeStepCheckConfigService configService;
 
     public ScanResultDto scan(MultipartFile file) {
-        validateFile(file);
-        String fileName = file.getOriginalFilename();
-        List<DocumentLine> lines;
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("请选择需要检查的 Word 文档");
+        }
         try (InputStream inputStream = file.getInputStream()) {
+            return scan(file.getOriginalFilename(), file.getSize(), inputStream);
+        } catch (IOException ex) {
+            throw new IllegalArgumentException("Word 文档读取失败，请确认文件未损坏或加密", ex);
+        }
+    }
+
+    public ScanResultDto scan(String fileName, long fileSize, InputStream inputStream) {
+        validateFile(fileName, fileSize, inputStream);
+        List<DocumentLine> lines;
+        try (InputStream limitedInputStream = new SizeLimitedInputStream(inputStream, MAX_FILE_SIZE)) {
             lines = fileName.toLowerCase(Locale.ROOT).endsWith(".docx")
-                    ? extractDocx(inputStream)
-                    : extractDoc(inputStream);
+                    ? extractDocx(limitedInputStream)
+                    : extractDoc(limitedInputStream);
         } catch (IOException ex) {
             throw new IllegalArgumentException("Word 文档读取失败，请确认文件未损坏或加密", ex);
         } catch (RuntimeException ex) {
@@ -171,19 +182,24 @@ public class ChangeStepCheckService {
         return Pattern.compile("(?i)(?<![\\p{L}\\p{N}_])(?:" + alternatives + ")(?![\\p{L}\\p{N}_])");
     }
 
-    private void validateFile(MultipartFile file) {
-        if (file == null || file.isEmpty()) {
+    private void validateFile(String fileName, long fileSize, InputStream inputStream) {
+        if (inputStream == null || fileSize == 0) {
             throw new IllegalArgumentException("请选择需要检查的 Word 文档");
         }
-        String fileName = file.getOriginalFilename();
         if (fileName == null || fileName.trim().isEmpty()) {
             throw new IllegalArgumentException("文件名不能为空");
+        }
+        if (fileName.length() > 255) {
+            throw new IllegalArgumentException("文件名不能超过 255 个字符");
         }
         String normalized = fileName.toLowerCase(Locale.ROOT);
         if (!normalized.endsWith(".doc") && !normalized.endsWith(".docx")) {
             throw new IllegalArgumentException("仅支持 .doc 或 .docx 格式");
         }
-        if (file.getSize() > MAX_FILE_SIZE) {
+        if (fileSize < 0) {
+            throw new IllegalArgumentException("无法确定上传文件大小");
+        }
+        if (fileSize > MAX_FILE_SIZE) {
             throw new IllegalArgumentException("文件不能超过 200 MB");
         }
     }
@@ -264,5 +280,46 @@ public class ChangeStepCheckService {
         private int lineNumber;
         private String location;
         private String text;
+    }
+
+    private static class SizeLimitedInputStream extends InputStream {
+        private final InputStream delegate;
+        private final long maxBytes;
+        private long bytesRead;
+
+        private SizeLimitedInputStream(InputStream delegate, long maxBytes) {
+            this.delegate = delegate;
+            this.maxBytes = maxBytes;
+        }
+
+        @Override
+        public int read() throws IOException {
+            int value = delegate.read();
+            if (value >= 0) {
+                recordRead(1);
+            }
+            return value;
+        }
+
+        @Override
+        public int read(byte[] buffer, int offset, int length) throws IOException {
+            int count = delegate.read(buffer, offset, length);
+            if (count > 0) {
+                recordRead(count);
+            }
+            return count;
+        }
+
+        private void recordRead(int count) throws IOException {
+            bytesRead += count;
+            if (bytesRead > maxBytes) {
+                throw new IOException("上传文件超过 200 MB");
+            }
+        }
+
+        @Override
+        public void close() throws IOException {
+            delegate.close();
+        }
     }
 }
