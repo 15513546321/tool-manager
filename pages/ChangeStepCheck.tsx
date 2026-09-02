@@ -226,9 +226,6 @@ export const ChangeStepCheck: React.FC = () => {
               <ShieldCheck size={18} /> 交付安全核查
             </div>
             <h1 className="text-2xl font-semibold text-blue-950">变更步骤检查</h1>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
-              扫描 Word 变更步骤中的密码字段、疑似密码和已知密码，扫描完成后不保留上传原文件。
-            </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
@@ -440,7 +437,6 @@ export const ChangeStepCheck: React.FC = () => {
             <div className="flex items-center justify-between border-b border-blue-100 px-6 py-4">
               <div>
                 <h2 className="flex items-center gap-2 text-lg font-semibold text-blue-950"><History size={19} /> 公共检查记录</h2>
-                <p className="mt-1 text-xs text-slate-500">公开展示文件名和检查摘要，不保存上传文件、密码原文或风险上下文。</p>
               </div>
               <button type="button" onClick={() => setShowHistory(false)} className="rounded-md p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X size={19} /></button>
             </div>
@@ -552,7 +548,6 @@ export const ChangeStepCheck: React.FC = () => {
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-blue-100 bg-white px-6 py-4">
               <div>
                 <h2 className="text-lg font-semibold text-blue-950">扫描规则配置</h2>
-                <p className="mt-1 text-xs text-slate-500">配置修改将影响后续所有文档扫描。</p>
               </div>
               <button type="button" onClick={closeConfig} className="rounded-md p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X size={19} /></button>
             </div>
