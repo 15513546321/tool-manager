@@ -333,6 +333,23 @@ export const changeStepCheckApi = {
     if (!res.ok) throw new Error(await getErrorMessage(res, '保存扫描配置失败'));
     return res.json();
   },
+
+  getRecords: async (keyword = '', page = 0, size = 10) => {
+    const query = new URLSearchParams({ keyword, page: String(page), size: String(size) });
+    const res = await fetchWithAuth(`${API_BASE_URL}/change-step-check/records?${query.toString()}`);
+    if (!res.ok) throw new Error(await getErrorMessage(res, '读取公共检查记录失败'));
+    return res.json();
+  },
+
+  updateReview: async (recordId: number, data: import('../types').UpdateChangeStepReviewSummary) => {
+    const res = await fetchWithAuth(`${API_BASE_URL}/change-step-check/records/${recordId}/review`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(await getErrorMessage(res, '同步核查进度失败'));
+    return res.json();
+  },
 };
 
 // Suggestion APIs

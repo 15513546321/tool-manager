@@ -2,10 +2,14 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   FileText,
+  History,
   Loader2,
   Lock,
   Save,
+  Search,
   Settings,
   ShieldAlert,
   ShieldCheck,
@@ -17,12 +21,23 @@ import {
 import { changeStepCheckApi } from '../services/apiService';
 import {
   ChangeStepRiskItem,
+  ChangeStepScanRecordPage,
   ChangeStepScannerConfig,
   ChangeStepScanResult,
   UpdateChangeStepScannerConfig,
 } from '../types';
 
 type ReviewStatus = 'PENDING' | 'CONFIRMED' | 'FALSE_POSITIVE';
+
+const formatFileSize = (bytes: number) => {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+};
+
+const formatDateTime = (value?: string) => {
+  if (!value) return '-';
+  return value.replace('T', ' ').slice(0, 19);
+};
 
 const splitValues = (value: string, includeComma = true) =>
   value
@@ -52,6 +67,14 @@ export const ChangeStepCheck: React.FC = () => {
   const [error, setError] = useState('');
   const [result, setResult] = useState<ChangeStepScanResult | null>(null);
   const [reviews, setReviews] = useState<Record<string, ReviewStatus>>({});
+  const [isSavingReview, setIsSavingReview] = useState(false);
+  const [reviewError, setReviewError] = useState('');
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyKeyword, setHistoryKeyword] = useState('');
+  const [historyPage, setHistoryPage] = useState(0);
+  const [historyData, setHistoryData] = useState<ChangeStepScanRecordPage | null>(null);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [historyError, setHistoryError] = useState('');
   const [showConfig, setShowConfig] = useState(false);
   const [config, setConfig] = useState<ChangeStepScannerConfig | null>(null);
   const [keywordsText, setKeywordsText] = useState('');
@@ -92,6 +115,7 @@ export const ChangeStepCheck: React.FC = () => {
     setFile(selected);
     setResult(null);
     setReviews({});
+    setReviewError('');
     setError('');
   };
 
@@ -104,6 +128,7 @@ export const ChangeStepCheck: React.FC = () => {
     setError('');
     setResult(null);
     setReviews({});
+    setReviewError('');
     try {
       const data: ChangeStepScanResult = await changeStepCheckApi.scan(file);
       setResult(data);
@@ -123,6 +148,44 @@ export const ChangeStepCheck: React.FC = () => {
       pending: values.filter(item => item === 'PENDING').length,
     };
   }, [reviews]);
+
+  const loadHistory = async (page: number, keyword = historyKeyword) => {
+    setIsLoadingHistory(true);
+    setHistoryError('');
+    try {
+      const data: ChangeStepScanRecordPage = await changeStepCheckApi.getRecords(keyword.trim(), page, 10);
+      setHistoryData(data);
+      setHistoryPage(page);
+    } catch (loadError) {
+      setHistoryError(loadError instanceof Error ? loadError.message : '读取公共检查记录失败');
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
+  const handleReview = async (riskId: string, status: ReviewStatus) => {
+    if (isSavingReview) return;
+    const previous = reviews;
+    const next = { ...reviews, [riskId]: status };
+    setReviews(next);
+    setReviewError('');
+    if (!result?.recordId) return;
+
+    const values = Object.values(next);
+    setIsSavingReview(true);
+    try {
+      await changeStepCheckApi.updateReview(result.recordId, {
+        confirmedRisks: values.filter(item => item === 'CONFIRMED').length,
+        falsePositiveRisks: values.filter(item => item === 'FALSE_POSITIVE').length,
+        pendingRisks: values.filter(item => item === 'PENDING').length,
+      });
+    } catch (saveError) {
+      setReviews(previous);
+      setReviewError(saveError instanceof Error ? saveError.message : '同步核查进度失败');
+    } finally {
+      setIsSavingReview(false);
+    }
+  };
 
   const saveConfig = async () => {
     const payload: UpdateChangeStepScannerConfig = {
@@ -167,17 +230,29 @@ export const ChangeStepCheck: React.FC = () => {
               扫描 Word 变更步骤中的密码字段、疑似密码和已知密码，扫描完成后不保留上传原文件。
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              setNewPasswordsText('');
-              setShowConfig(true);
-              loadConfig();
-            }}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-blue-200 bg-white px-4 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-50"
-          >
-            <Settings size={17} /> 扫描规则配置
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setShowHistory(true);
+                loadHistory(0);
+              }}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-blue-200 bg-white px-4 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-50"
+            >
+              <History size={17} /> 公共检查记录
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setNewPasswordsText('');
+                setShowConfig(true);
+                loadConfig();
+              }}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-blue-200 bg-white px-4 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-50"
+            >
+              <Settings size={17} /> 扫描规则配置
+            </button>
+          </div>
         </div>
 
         <div className="p-6">
@@ -282,7 +357,9 @@ export const ChangeStepCheck: React.FC = () => {
           <div className="flex flex-col justify-between gap-3 rounded-lg border border-blue-100 bg-white px-5 py-4 shadow-sm sm:flex-row sm:items-center">
             <div>
               <div className="text-sm font-semibold text-blue-950">{result.fileName}</div>
-              <div className="mt-1 text-xs text-slate-500">已扫描 {result.scannedLineCount} 个文本段落，误报 {reviewCounts.falsePositive} 项</div>
+              <div className="mt-1 text-xs text-slate-500">
+                检查记录 #{result.recordId} · 已扫描 {result.scannedLineCount} 个文本段落，误报 {reviewCounts.falsePositive} 项
+              </div>
             </div>
             {result.risks.length > 0 && reviewCounts.pending === 0 && (
               <div className="inline-flex items-center gap-2 rounded-md bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">
@@ -290,6 +367,12 @@ export const ChangeStepCheck: React.FC = () => {
               </div>
             )}
           </div>
+
+          {reviewError && (
+            <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              <AlertTriangle size={17} className="mt-0.5 shrink-0" /> {reviewError}
+            </div>
+          )}
 
           {result.risks.length === 0 ? (
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-8 text-center">
@@ -327,14 +410,16 @@ export const ChangeStepCheck: React.FC = () => {
                       <div className="flex flex-wrap justify-end gap-2">
                         <button
                           type="button"
-                          onClick={() => setReviews(current => ({ ...current, [risk.id]: 'FALSE_POSITIVE' }))}
+                          disabled={isSavingReview}
+                          onClick={() => handleReview(risk.id, 'FALSE_POSITIVE')}
                           className={`inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-semibold ${status === 'FALSE_POSITIVE' ? 'border-slate-400 bg-slate-100 text-slate-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
                         >
                           <XCircle size={16} /> 标记误报
                         </button>
                         <button
                           type="button"
-                          onClick={() => setReviews(current => ({ ...current, [risk.id]: 'CONFIRMED' }))}
+                          disabled={isSavingReview}
+                          onClick={() => handleReview(risk.id, 'CONFIRMED')}
                           className={`inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold text-white ${status === 'CONFIRMED' ? 'bg-red-800' : 'bg-red-600 hover:bg-red-700'}`}
                         >
                           <CheckCircle2 size={16} /> 确认风险
@@ -347,6 +432,118 @@ export const ChangeStepCheck: React.FC = () => {
             </div>
           )}
         </section>
+      )}
+
+      {showHistory && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-blue-950/50 p-4 backdrop-blur-sm">
+          <div className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-blue-100 px-6 py-4">
+              <div>
+                <h2 className="flex items-center gap-2 text-lg font-semibold text-blue-950"><History size={19} /> 公共检查记录</h2>
+                <p className="mt-1 text-xs text-slate-500">公开展示文件名和检查摘要，不保存上传文件、密码原文或风险上下文。</p>
+              </div>
+              <button type="button" onClick={() => setShowHistory(false)} className="rounded-md p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X size={19} /></button>
+            </div>
+
+            <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50 px-6 py-4 sm:flex-row sm:items-center">
+              <div className="relative flex-1">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={historyKeyword}
+                  onChange={event => setHistoryKeyword(event.target.value)}
+                  onKeyDown={event => event.key === 'Enter' && loadHistory(0)}
+                  className="h-10 w-full rounded-md border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  placeholder="按文件名或检查人查询"
+                />
+              </div>
+              <button type="button" onClick={() => loadHistory(0)} disabled={isLoadingHistory} className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-blue-700 px-5 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-50">
+                {isLoadingHistory ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />} 查询
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-auto">
+              {historyError ? (
+                <div className="m-6 flex gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"><AlertTriangle size={17} />{historyError}</div>
+              ) : isLoadingHistory && !historyData ? (
+                <div className="flex h-56 items-center justify-center gap-2 text-sm text-slate-500"><Loader2 size={18} className="animate-spin" />正在加载检查记录…</div>
+              ) : historyData?.content.length ? (
+                <table className="w-full min-w-[980px] border-collapse text-left text-sm">
+                  <thead className="sticky top-0 bg-blue-50 text-xs font-semibold text-blue-900">
+                    <tr>
+                      <th className="px-5 py-3">检查时间 / 检查人</th>
+                      <th className="px-5 py-3">文件</th>
+                      <th className="px-5 py-3">扫描结果</th>
+                      <th className="px-5 py-3">风险摘要</th>
+                      <th className="px-5 py-3">核查进度</th>
+                      <th className="px-5 py-3">流程状态</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {historyData.content.map(record => (
+                      <tr key={record.id} className="align-top hover:bg-blue-50/30">
+                        <td className="whitespace-nowrap px-5 py-4">
+                          <div className="font-medium text-slate-800">{formatDateTime(record.scannedAt)}</div>
+                          <div className="mt-1 text-xs text-slate-500">{record.scannedBy || '未知用户'}</div>
+                        </td>
+                        <td className="max-w-[280px] px-5 py-4">
+                          <div className="break-all font-semibold text-blue-950">{record.fileName}</div>
+                          <div className="mt-1 text-xs text-slate-500">{formatFileSize(record.fileSize)} · {record.scannedLineCount} 个文本段</div>
+                          {record.errorMessage && <div className="mt-2 line-clamp-2 text-xs text-red-600" title={record.errorMessage}>{record.errorMessage}</div>}
+                        </td>
+                        <td className="px-5 py-4">
+                          <span className={`inline-flex rounded px-2 py-1 text-xs font-semibold ${record.scanStatus === 'SUCCESS' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                            {record.scanStatus === 'SUCCESS' ? '扫描成功' : '扫描失败'}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4 text-xs leading-6 text-slate-600">
+                          {record.scanStatus === 'SUCCESS' ? (
+                            <>
+                              <div>风险 <strong className="text-red-700">{record.totalRisks}</strong> · 高风险 {record.highRisks}</div>
+                              <div>字段 {record.fieldMatches} · 密码 {record.passwordMatches}</div>
+                            </>
+                          ) : '-'}
+                        </td>
+                        <td className="px-5 py-4 text-xs leading-6 text-slate-600">
+                          {record.scanStatus === 'SUCCESS' ? (
+                            <>
+                              <div>确认 <strong className="text-blue-700">{record.confirmedRisks}</strong> · 误报 {record.falsePositiveRisks}</div>
+                              <div>待核查 <strong className="text-amber-700">{record.pendingRisks}</strong></div>
+                            </>
+                          ) : '-'}
+                        </td>
+                        <td className="whitespace-nowrap px-5 py-4">
+                          <span className={`inline-flex rounded px-2 py-1 text-xs font-semibold ${
+                            record.reviewStatus === 'COMPLETED'
+                              ? 'bg-emerald-50 text-emerald-700'
+                              : record.reviewStatus === 'PENDING'
+                                ? 'bg-amber-50 text-amber-700'
+                                : 'bg-slate-100 text-slate-500'
+                          }`}>
+                            {record.reviewStatus === 'COMPLETED' ? '核查完成' : record.reviewStatus === 'PENDING' ? '待核查' : '不适用'}
+                          </span>
+                          {record.reviewedBy && <div className="mt-2 text-xs text-slate-500">{record.reviewedBy}</div>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="flex h-56 flex-col items-center justify-center text-sm text-slate-500">
+                  <History size={32} className="mb-3 text-slate-300" /> 暂无检查记录
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between border-t border-slate-100 bg-white px-6 py-4 text-sm text-slate-500">
+              <span>共 {historyData?.totalElements || 0} 条记录</span>
+              <div className="flex items-center gap-2">
+                <button type="button" disabled={historyPage <= 0 || isLoadingHistory} onClick={() => loadHistory(historyPage - 1)} className="rounded-md border border-slate-200 p-2 hover:bg-slate-50 disabled:opacity-40"><ChevronLeft size={16} /></button>
+                <span>第 {historyData?.totalPages ? historyPage + 1 : 0} / {historyData?.totalPages || 0} 页</span>
+                <button type="button" disabled={!historyData || historyPage >= historyData.totalPages - 1 || isLoadingHistory} onClick={() => loadHistory(historyPage + 1)} className="rounded-md border border-slate-200 p-2 hover:bg-slate-50 disabled:opacity-40"><ChevronRight size={16} /></button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {showConfig && (

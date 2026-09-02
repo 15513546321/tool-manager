@@ -84,7 +84,7 @@ public class ChangeStepCheckService {
                 (int) risks.stream().filter(item -> "FIELD_KEYWORD".equals(item.getRiskType())).count(),
                 (int) risks.stream().filter(item -> !"FIELD_KEYWORD".equals(item.getRiskType())).count()
         );
-        return new ScanResultDto(fileName, LocalDateTime.now(), lines.size(), summary, risks);
+        return new ScanResultDto(fileName, LocalDateTime.now(), lines.size(), summary, risks, null);
     }
 
     List<RiskItemDto> detectRisks(List<DocumentLine> lines, InternalConfig config) {

@@ -48,6 +48,52 @@ public class ChangeStepCheckDtos {
         private Integer scannedLineCount;
         private ScanSummaryDto summary;
         private List<RiskItemDto> risks = new ArrayList<>();
+        private Long recordId;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ScanRecordDto {
+        private Long id;
+        private String fileName;
+        private Long fileSize;
+        private String scanStatus;
+        private String errorMessage;
+        private Integer scannedLineCount;
+        private Integer totalRisks;
+        private Integer highRisks;
+        private Integer fieldMatches;
+        private Integer passwordMatches;
+        private Integer confirmedRisks;
+        private Integer falsePositiveRisks;
+        private Integer pendingRisks;
+        private String reviewStatus;
+        private String scannedBy;
+        private LocalDateTime scannedAt;
+        private String reviewedBy;
+        private LocalDateTime reviewedAt;
+        private LocalDateTime updatedAt;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ScanRecordPageDto {
+        private List<ScanRecordDto> content = new ArrayList<>();
+        private Long totalElements;
+        private Integer totalPages;
+        private Integer page;
+        private Integer size;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class UpdateReviewSummaryRequest {
+        private Integer confirmedRisks;
+        private Integer falsePositiveRisks;
+        private Integer pendingRisks;
     }
 
     @Data

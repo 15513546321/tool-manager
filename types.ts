@@ -135,6 +135,7 @@ export interface ChangeStepRiskItem {
 }
 
 export interface ChangeStepScanResult {
+  recordId: number;
   fileName: string;
   scannedAt: string;
   scannedLineCount: number;
@@ -146,6 +147,42 @@ export interface ChangeStepScanResult {
     passwordMatches: number;
   };
   risks: ChangeStepRiskItem[];
+}
+
+export interface ChangeStepScanRecord {
+  id: number;
+  fileName: string;
+  fileSize: number;
+  scanStatus: 'SUCCESS' | 'FAILED';
+  errorMessage?: string;
+  scannedLineCount: number;
+  totalRisks: number;
+  highRisks: number;
+  fieldMatches: number;
+  passwordMatches: number;
+  confirmedRisks: number;
+  falsePositiveRisks: number;
+  pendingRisks: number;
+  reviewStatus: 'PENDING' | 'COMPLETED' | 'NOT_APPLICABLE';
+  scannedBy: string;
+  scannedAt: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  updatedAt: string;
+}
+
+export interface ChangeStepScanRecordPage {
+  content: ChangeStepScanRecord[];
+  totalElements: number;
+  totalPages: number;
+  page: number;
+  size: number;
+}
+
+export interface UpdateChangeStepReviewSummary {
+  confirmedRisks: number;
+  falsePositiveRisks: number;
+  pendingRisks: number;
 }
 
 export interface ChangeStepScannerConfig {

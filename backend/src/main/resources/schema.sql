@@ -343,6 +343,30 @@ CREATE TABLE IF NOT EXISTS sys_role_menu (
     FOREIGN KEY (menu_id) REFERENCES sys_menu(id) ON DELETE CASCADE
 );
 
+-- 22. Change Step Scan Records (变更步骤检查公共台账，只保存摘要，不保存文件和敏感上下文)
+CREATE TABLE IF NOT EXISTS change_step_scan_records (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    file_name VARCHAR(500) NOT NULL,
+    file_size BIGINT NOT NULL,
+    scan_status VARCHAR(20) NOT NULL,
+    error_message VARCHAR(500),
+    scanned_line_count INT DEFAULT 0 NOT NULL,
+    total_risks INT DEFAULT 0 NOT NULL,
+    high_risks INT DEFAULT 0 NOT NULL,
+    field_matches INT DEFAULT 0 NOT NULL,
+    password_matches INT DEFAULT 0 NOT NULL,
+    confirmed_risks INT DEFAULT 0 NOT NULL,
+    false_positive_risks INT DEFAULT 0 NOT NULL,
+    pending_risks INT DEFAULT 0 NOT NULL,
+    review_status VARCHAR(20) NOT NULL,
+    scanned_by VARCHAR(100),
+    scanned_at TIMESTAMP NOT NULL,
+    reviewed_by VARCHAR(100),
+    reviewed_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
 -- ==================================================
 -- 创建索引以提高查询性能
 -- ==================================================
@@ -392,3 +416,7 @@ CREATE INDEX IF NOT EXISTS idx_sys_user_role_role_id ON sys_user_role(role_id);
 
 CREATE INDEX IF NOT EXISTS idx_sys_role_menu_role_id ON sys_role_menu(role_id);
 CREATE INDEX IF NOT EXISTS idx_sys_role_menu_menu_id ON sys_role_menu(menu_id);
+
+CREATE INDEX IF NOT EXISTS idx_change_step_scan_records_scanned_at ON change_step_scan_records(scanned_at);
+CREATE INDEX IF NOT EXISTS idx_change_step_scan_records_file_name ON change_step_scan_records(file_name);
+CREATE INDEX IF NOT EXISTS idx_change_step_scan_records_scanned_by ON change_step_scan_records(scanned_by);

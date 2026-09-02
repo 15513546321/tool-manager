@@ -1,9 +1,13 @@
 package com.toolmanager.controller;
 
 import com.toolmanager.dto.ChangeStepCheckDtos.ScanResultDto;
+import com.toolmanager.dto.ChangeStepCheckDtos.ScanRecordDto;
+import com.toolmanager.dto.ChangeStepCheckDtos.ScanRecordPageDto;
 import com.toolmanager.dto.ChangeStepCheckDtos.ScannerConfigDto;
+import com.toolmanager.dto.ChangeStepCheckDtos.UpdateReviewSummaryRequest;
 import com.toolmanager.dto.ChangeStepCheckDtos.UpdateScannerConfigRequest;
 import com.toolmanager.service.ChangeStepCheckConfigService;
+import com.toolmanager.service.ChangeStepCheckRecordService;
 import com.toolmanager.service.ChangeStepCheckService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -13,6 +17,7 @@ import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -35,10 +40,22 @@ import java.util.Map;
 public class ChangeStepCheckController {
     private final ChangeStepCheckService checkService;
     private final ChangeStepCheckConfigService configService;
+    private final ChangeStepCheckRecordService recordService;
 
     @PostMapping(value = "/scan", consumes = "multipart/form-data")
-    public ResponseEntity<ScanResultDto> scan(@RequestParam("file") MultipartFile file) {
-        return ResponseEntity.ok(checkService.scan(file));
+    public ResponseEntity<ScanResultDto> scan(
+            @RequestParam("file") MultipartFile file,
+            @RequestAttribute(value = "username", required = false) String username) {
+        String fileName = file == null ? "未知文件" : file.getOriginalFilename();
+        long fileSize = file == null ? 0 : file.getSize();
+        try {
+            ScanResultDto result = checkService.scan(file);
+            recordService.recordSuccess(fileName, fileSize, result, username);
+            return ResponseEntity.ok(result);
+        } catch (RuntimeException ex) {
+            recordService.recordFailure(fileName, fileSize, ex.getMessage(), username);
+            throw ex;
+        }
     }
 
     /**
@@ -48,12 +65,36 @@ public class ChangeStepCheckController {
     public ResponseEntity<ScanResultDto> scanRaw(
             @RequestParam("fileName") String fileName,
             @RequestParam("fileSize") long fileSize,
-            HttpServletRequest request) throws IOException {
-        long contentLength = request.getContentLengthLong();
-        if (contentLength >= 0 && contentLength != fileSize) {
-            throw new IllegalArgumentException("上传文件大小校验失败，请重新选择文件后再试");
+            HttpServletRequest request,
+            @RequestAttribute(value = "username", required = false) String username) throws IOException {
+        try {
+            long contentLength = request.getContentLengthLong();
+            if (contentLength >= 0 && contentLength != fileSize) {
+                throw new IllegalArgumentException("上传文件大小校验失败，请重新选择文件后再试");
+            }
+            ScanResultDto result = checkService.scan(fileName, fileSize, request.getInputStream());
+            recordService.recordSuccess(fileName, fileSize, result, username);
+            return ResponseEntity.ok(result);
+        } catch (RuntimeException ex) {
+            recordService.recordFailure(fileName, fileSize, ex.getMessage(), username);
+            throw ex;
         }
-        return ResponseEntity.ok(checkService.scan(fileName, fileSize, request.getInputStream()));
+    }
+
+    @GetMapping("/records")
+    public ResponseEntity<ScanRecordPageDto> getRecords(
+            @RequestParam(defaultValue = "") String keyword,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        return ResponseEntity.ok(recordService.search(keyword, page, size));
+    }
+
+    @PostMapping("/records/{recordId}/review")
+    public ResponseEntity<ScanRecordDto> updateReview(
+            @PathVariable Long recordId,
+            @RequestBody UpdateReviewSummaryRequest request,
+            @RequestAttribute(value = "username", required = false) String username) {
+        return ResponseEntity.ok(recordService.updateReview(recordId, request, username));
     }
 
     @GetMapping("/config")
