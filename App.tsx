@@ -7,6 +7,7 @@ import { MenuManagement } from './pages/MenuManagement';
 import { DocManagement } from './pages/interface/DocManagement';
 import { CodeGenerator } from './pages/interface/CodeGenerator';
 import { MockPacketGenerator } from './pages/interface/MockPacketGenerator';
+import { Eibs3gApiDocs } from './pages/interface/Eibs3gApiDocs';
 import { ParameterConfigPage } from './pages/ParameterConfig';
 import { DocRepository } from './pages/DocRepository';
 import { Announcement } from './pages/Announcement';
@@ -341,6 +342,7 @@ const App: React.FC = () => {
           <Route path="interface/docs" element={<DocManagement />} />
           <Route path="interface/code" element={<CodeGenerator />} />
           <Route path="interface/mock-packet" element={<MockPacketGenerator />} />
+          <Route path="interface/bank-api-docs" element={<Eibs3gApiDocs />} />
           
           {/* New Format Tools */}
           <Route path="format" element={<FormatTools />} />
