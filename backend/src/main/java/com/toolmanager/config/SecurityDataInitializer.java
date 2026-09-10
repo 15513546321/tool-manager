@@ -74,6 +74,7 @@ public class SecurityDataInitializer implements CommandLineRunner {
         Menu docMenu = createMenuIfNotExists("接口文档", "/interface/docs", "docs", "interface:docs", interfaceMenu.getId(), 1, 0, 1);
         Menu codeMenu = createMenuIfNotExists("代码生成", "/interface/code", "code", "interface:code", interfaceMenu.getId(), 2, 0, 1);
         Menu mockMenu = createMenuIfNotExists("模拟报文", "/interface/mock-packet", "payload", "interface:mock", interfaceMenu.getId(), 3, 0, 1);
+        Menu bankApiDocsMenu = createMenuIfNotExists("网银接口文档", "/interface/bank-api-docs", "network", "interface:bank-api-docs", interfaceMenu.getId(), 4, 0, 1);
         Menu filedMenu = createMenuIfNotExists("XML 报文生成", "/field", "field", "field::view", devToolsMenu.getId(), 2, 0, 1);
         Menu formatMenu = createMenuIfNotExists("数据格式化", "/format", "format", "format:view", devToolsMenu.getId(), 3, 0, 1);
         Menu repoMenu = createMenuIfNotExists("知识库", "/repo", "repo", "repo:view", devToolsMenu.getId(), 4, 0, 1);
@@ -167,6 +168,7 @@ public class SecurityDataInitializer implements CommandLineRunner {
         createMenuItem("2-1", "接口文档", "/interface/docs", "docs", "2", 1);
         createMenuItem("2-2", "代码生成", "/interface/code", "code", "2", 2);
         createMenuItem("2-3", "模拟报文", "/interface/mock-packet", "payload", "2", 3);
+        createMenuItem("2-4", "网银接口文档", "/interface/bank-api-docs", "network", "2", 4);
         createMenuItem("8", "XML 报文生成", "/field", "field", "g2", 2);
         createMenuItem("14", "数据格式化", "/format", "format", "g2", 3);
         createMenuItem("4", "知识库", "/repo", "repo", "g2", 4);
