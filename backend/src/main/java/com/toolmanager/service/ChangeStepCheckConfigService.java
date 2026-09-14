@@ -20,8 +20,11 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -34,6 +37,8 @@ public class ChangeStepCheckConfigService {
     static final String KEYWORDS_KEY = "change_step_check.field_keywords";
     static final String REGEX_KEY = "change_step_check.regex_patterns";
     static final String PASSWORDS_KEY = "change_step_check.known_password_fingerprints";
+    static final String SERVER_ASSETS_KEY = "change_step_check.server_asset_names";
+    static final String SERVER_ASSETS_BY_SYSTEM_KEY = "change_step_check.server_asset_names_by_system";
     private static final String CATEGORY = "变更步骤检查";
 
     private static final List<String> DEFAULT_KEYWORDS = Arrays.asList(
@@ -65,14 +70,28 @@ public class ChangeStepCheckConfigService {
         List<KnownPasswordRuleDto> knownPasswords = config.getKnownPasswords().stream()
                 .map(item -> new KnownPasswordRuleDto(item.getId(), item.getMaskedValue()))
                 .collect(Collectors.toList());
-        return new ScannerConfigDto(config.getFieldKeywords(), config.getRegexPatterns(), knownPasswords);
+        return new ScannerConfigDto(config.getFieldKeywords(), config.getRegexPatterns(), knownPasswords,
+                config.getServerAssetNames(ChangeStepBusinessValidationService.SYSTEM_MIDDLE_PLATFORM),
+                config.getServerAssetNamesBySystem());
     }
 
     public InternalConfig getInternalConfig() {
         List<String> keywords = readStringList(KEYWORDS_KEY, DEFAULT_KEYWORDS);
         List<String> regexPatterns = readStringList(REGEX_KEY, DEFAULT_REGEX_PATTERNS);
         List<KnownPasswordFingerprint> passwords = readPasswords();
-        return new InternalConfig(keywords, regexPatterns, passwords);
+        List<String> legacyMiddleAssets = readStringList(SERVER_ASSETS_KEY, Collections.emptyList());
+        Map<String, List<String>> serverAssetsBySystem = readStringListMap(SERVER_ASSETS_BY_SYSTEM_KEY);
+        serverAssetsBySystem.putIfAbsent(ChangeStepBusinessValidationService.SYSTEM_MIDDLE_PLATFORM,
+                legacyMiddleAssets);
+        serverAssetsBySystem.putIfAbsent(ChangeStepBusinessValidationService.SYSTEM_WECHAT,
+                new ArrayList<>());
+        serverAssetsBySystem.putIfAbsent(ChangeStepBusinessValidationService.SYSTEM_ONLINE_BANKING,
+                new ArrayList<>());
+        serverAssetsBySystem.putIfAbsent(ChangeStepBusinessValidationService.TREASURY_SAAS_ASSET_SCOPE,
+                new ArrayList<>());
+        serverAssetsBySystem.putIfAbsent(ChangeStepBusinessValidationService.TREASURY_NT_ASSET_SCOPE,
+                new ArrayList<>());
+        return new InternalConfig(keywords, regexPatterns, passwords, serverAssetsBySystem);
     }
 
     @Transactional
@@ -98,8 +117,9 @@ public class ChangeStepCheckConfigService {
             }
         }
 
+        InternalConfig existingConfig = getInternalConfig();
         Set<String> retainedIds = new LinkedHashSet<>(safeList(request.getRetainedKnownPasswordIds()));
-        List<KnownPasswordFingerprint> passwords = getInternalConfig().getKnownPasswords().stream()
+        List<KnownPasswordFingerprint> passwords = existingConfig.getKnownPasswords().stream()
                 .filter(item -> retainedIds.contains(item.getId()))
                 .collect(Collectors.toCollection(ArrayList::new));
 
@@ -118,9 +138,36 @@ public class ChangeStepCheckConfigService {
             throw new IllegalArgumentException("已知密码最多配置 200 条");
         }
 
+        Map<String, List<String>> requestedAssets = request.getServerAssetNamesBySystem() == null
+                ? Collections.emptyMap() : request.getServerAssetNamesBySystem();
+        Map<String, List<String>> serverAssetsBySystem = new LinkedHashMap<>();
+        for (String systemCode : Arrays.asList(
+                ChangeStepBusinessValidationService.SYSTEM_MIDDLE_PLATFORM,
+                ChangeStepBusinessValidationService.SYSTEM_WECHAT,
+                ChangeStepBusinessValidationService.SYSTEM_ONLINE_BANKING,
+                ChangeStepBusinessValidationService.TREASURY_SAAS_ASSET_SCOPE,
+                ChangeStepBusinessValidationService.TREASURY_NT_ASSET_SCOPE)) {
+            List<String> values = requestedAssets.get(systemCode);
+            if (values == null && ChangeStepBusinessValidationService.SYSTEM_MIDDLE_PLATFORM.equals(systemCode)) {
+                values = request.getServerAssetNames();
+            }
+            if (values == null) {
+                values = existingConfig.getServerAssetNames(systemCode);
+            }
+            List<String> normalizedAssets = normalizeValues(values, 2000, 64,
+                    systemName(systemCode) + "服务器资产名称").stream()
+                    .map(value -> value.toUpperCase(Locale.ROOT))
+                    .collect(Collectors.toList());
+            serverAssetsBySystem.put(systemCode, normalizedAssets);
+        }
+
         saveJson(KEYWORDS_KEY, keywords, "需要识别的密码字段关键词", updatedBy);
         saveJson(REGEX_KEY, regexPatterns, "用于识别疑似密码的正则表达式", updatedBy);
         saveJson(PASSWORDS_KEY, passwords, "已知密码的 SHA-256 指纹（不保存原文）", updatedBy);
+        saveJson(SERVER_ASSETS_KEY,
+                serverAssetsBySystem.get(ChangeStepBusinessValidationService.SYSTEM_MIDDLE_PLATFORM),
+                "中台服务器资产名称清单（兼容旧版本）", updatedBy);
+        saveJson(SERVER_ASSETS_BY_SYSTEM_KEY, serverAssetsBySystem, "按业务系统维护的服务器资产名称清单", updatedBy);
         return getPublicConfig();
     }
 
@@ -162,6 +209,31 @@ public class ChangeStepCheckConfigService {
                     }
                 })
                 .orElseGet(ArrayList::new);
+    }
+
+    private Map<String, List<String>> readStringListMap(String key) {
+        return repository.findByParamKey(key)
+                .map(SystemParameter::getParamValue)
+                .map(value -> {
+                    try {
+                        Map<String, List<String>> parsed = objectMapper.readValue(value,
+                                new TypeReference<Map<String, List<String>>>() {});
+                        return parsed == null ? new LinkedHashMap<String, List<String>>() : new LinkedHashMap<>(parsed);
+                    } catch (Exception ex) {
+                        return new LinkedHashMap<String, List<String>>();
+                    }
+                })
+                .orElseGet(LinkedHashMap::new);
+    }
+
+    private String systemName(String systemCode) {
+        if (ChangeStepBusinessValidationService.SYSTEM_MIDDLE_PLATFORM.equals(systemCode)) return "中台";
+        if (ChangeStepBusinessValidationService.SYSTEM_WECHAT.equals(systemCode)) return "微信";
+        if (ChangeStepBusinessValidationService.SYSTEM_ONLINE_BANKING.equals(systemCode)) return "网银";
+        if (ChangeStepBusinessValidationService.SYSTEM_TREASURY.equals(systemCode)) return "财资";
+        if (ChangeStepBusinessValidationService.TREASURY_SAAS_ASSET_SCOPE.equals(systemCode)) return "财资 SaaS";
+        if (ChangeStepBusinessValidationService.TREASURY_NT_ASSET_SCOPE.equals(systemCode)) return "财资 NT";
+        return systemCode;
     }
 
     private List<String> normalizeValues(List<String> values, int maxItems, int maxLength, String label) {
@@ -214,6 +286,28 @@ public class ChangeStepCheckConfigService {
         private List<String> fieldKeywords;
         private List<String> regexPatterns;
         private List<KnownPasswordFingerprint> knownPasswords;
+        private Map<String, List<String>> serverAssetNamesBySystem;
+
+        public InternalConfig(List<String> fieldKeywords,
+                              List<String> regexPatterns,
+                              List<KnownPasswordFingerprint> knownPasswords) {
+            this(fieldKeywords, regexPatterns, knownPasswords, new LinkedHashMap<>());
+        }
+
+        public InternalConfig(List<String> fieldKeywords,
+                              List<String> regexPatterns,
+                              List<KnownPasswordFingerprint> knownPasswords,
+                              List<String> serverAssetNames) {
+            this(fieldKeywords, regexPatterns, knownPasswords, new LinkedHashMap<>());
+            this.serverAssetNamesBySystem.put(ChangeStepBusinessValidationService.SYSTEM_MIDDLE_PLATFORM,
+                    serverAssetNames == null ? new ArrayList<>() : new ArrayList<>(serverAssetNames));
+        }
+
+        public List<String> getServerAssetNames(String systemCode) {
+            if (serverAssetNamesBySystem == null) return Collections.emptyList();
+            List<String> values = serverAssetNamesBySystem.get(systemCode);
+            return values == null ? Collections.emptyList() : values;
+        }
     }
 
     @Data

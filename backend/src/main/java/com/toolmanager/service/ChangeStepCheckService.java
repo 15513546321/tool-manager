@@ -4,10 +4,11 @@ import com.toolmanager.config.MultipartUploadConfig;
 import com.toolmanager.dto.ChangeStepCheckDtos.RiskItemDto;
 import com.toolmanager.dto.ChangeStepCheckDtos.ScanResultDto;
 import com.toolmanager.dto.ChangeStepCheckDtos.ScanSummaryDto;
+import com.toolmanager.dto.ChangeStepCheckDtos.ValidationCheckDto;
+import com.toolmanager.dto.ChangeStepCheckDtos.ValidationSummaryDto;
 import com.toolmanager.service.ChangeStepCheckConfigService.InternalConfig;
 import com.toolmanager.service.ChangeStepCheckConfigService.KnownPasswordFingerprint;
-import lombok.AllArgsConstructor;
-import lombok.Data;
+import com.toolmanager.service.ChangeStepBusinessValidationService.TextSegment;
 import lombok.RequiredArgsConstructor;
 import org.apache.poi.hwpf.HWPFDocument;
 import org.apache.poi.hwpf.extractor.WordExtractor;
@@ -39,27 +40,58 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class ChangeStepCheckService {
+    public static final String VALIDATION_ENGINE_VERSION = "2.1";
     private static final long MAX_FILE_SIZE = MultipartUploadConfig.MAX_FILE_SIZE_BYTES;
     private static final int MAX_TEXT_SEGMENTS = 1_000_000;
     private static final long MAX_EXTRACTED_CHARACTERS = 120_000_000L;
     private static final Pattern PASSWORD_TOKEN = Pattern.compile("[\\p{L}\\p{N}@#$%^&*._+!~?/\\-]{4,128}");
 
     private final ChangeStepCheckConfigService configService;
+    private final ChangeStepBusinessValidationService businessValidationService;
 
     public ScanResultDto scan(MultipartFile file) {
+        return scan(file, ChangeStepBusinessValidationService.TYPE_MANUAL,
+                ChangeStepBusinessValidationService.SYSTEM_MIDDLE_PLATFORM, null);
+    }
+
+    public ScanResultDto scan(MultipartFile file, String documentType, String systemCode,
+                              String companionManualFileName) {
+        return scan(file, documentType, systemCode, companionManualFileName, null, null);
+    }
+
+    public ScanResultDto scan(MultipartFile file, String documentType, String systemCode,
+                              String companionManualFileName, String treasurySaasManualFileName,
+                              String treasuryNtManualFileName) {
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("请选择需要检查的 Word 文档");
         }
         try (InputStream inputStream = file.getInputStream()) {
-            return scan(file.getOriginalFilename(), file.getSize(), inputStream);
+            return scan(file.getOriginalFilename(), file.getSize(), inputStream,
+                    documentType, systemCode, companionManualFileName,
+                    treasurySaasManualFileName, treasuryNtManualFileName);
         } catch (IOException ex) {
             throw new IllegalArgumentException("Word 文档读取失败，请确认文件未损坏或加密", ex);
         }
     }
 
     public ScanResultDto scan(String fileName, long fileSize, InputStream inputStream) {
+        return scan(fileName, fileSize, inputStream, ChangeStepBusinessValidationService.TYPE_MANUAL,
+                ChangeStepBusinessValidationService.SYSTEM_MIDDLE_PLATFORM, null);
+    }
+
+    public ScanResultDto scan(String fileName, long fileSize, InputStream inputStream,
+                              String documentType, String systemCode, String companionManualFileName) {
+        return scan(fileName, fileSize, inputStream, documentType, systemCode,
+                companionManualFileName, null, null);
+    }
+
+    public ScanResultDto scan(String fileName, long fileSize, InputStream inputStream,
+                              String documentType, String systemCode, String companionManualFileName,
+                              String treasurySaasManualFileName, String treasuryNtManualFileName) {
         validateFile(fileName, fileSize, inputStream);
-        List<DocumentLine> lines;
+        String normalizedType = businessValidationService.normalizeDocumentType(documentType);
+        String normalizedSystem = businessValidationService.normalizeSystemCode(systemCode);
+        List<TextSegment> lines;
         try (InputStream limitedInputStream = new SizeLimitedInputStream(inputStream, MAX_FILE_SIZE)) {
             lines = fileName.toLowerCase(Locale.ROOT).endsWith(".docx")
                     ? extractDocx(limitedInputStream)
@@ -77,6 +109,18 @@ public class ChangeStepCheckService {
 
         InternalConfig config = configService.getInternalConfig();
         List<RiskItemDto> risks = detectRisks(lines, config);
+        String assetScope = normalizedSystem;
+        if (ChangeStepBusinessValidationService.SYSTEM_TREASURY.equals(normalizedSystem)
+                && ChangeStepBusinessValidationService.TYPE_MANUAL.equals(normalizedType)) {
+            assetScope = fileName.toLowerCase(Locale.ROOT).endsWith("-nt.docx")
+                    ? ChangeStepBusinessValidationService.TREASURY_NT_ASSET_SCOPE
+                    : ChangeStepBusinessValidationService.TREASURY_SAAS_ASSET_SCOPE;
+        }
+        List<ValidationCheckDto> validationChecks = businessValidationService.validate(
+                fileName, normalizedType, normalizedSystem, companionManualFileName,
+                treasurySaasManualFileName, treasuryNtManualFileName, lines,
+                config.getServerAssetNames(assetScope));
+        ValidationSummaryDto validationSummary = summarizeValidation(validationChecks);
         ScanSummaryDto summary = new ScanSummaryDto(
                 risks.size(),
                 (int) risks.stream().filter(item -> "HIGH".equals(item.getSeverity())).count(),
@@ -84,10 +128,24 @@ public class ChangeStepCheckService {
                 (int) risks.stream().filter(item -> "FIELD_KEYWORD".equals(item.getRiskType())).count(),
                 (int) risks.stream().filter(item -> !"FIELD_KEYWORD".equals(item.getRiskType())).count()
         );
-        return new ScanResultDto(fileName, LocalDateTime.now(), lines.size(), summary, risks, null);
+        return new ScanResultDto(
+                fileName,
+                normalizedSystem,
+                businessValidationService.systemName(normalizedSystem),
+                normalizedType,
+                businessValidationService.documentTypeLabel(normalizedType),
+                companionManualFileName,
+                VALIDATION_ENGINE_VERSION,
+                LocalDateTime.now(),
+                lines.size(),
+                summary,
+                risks,
+                validationSummary,
+                validationChecks,
+                null);
     }
 
-    List<RiskItemDto> detectRisks(List<DocumentLine> lines, InternalConfig config) {
+    List<RiskItemDto> detectRisks(List<TextSegment> lines, InternalConfig config) {
         List<RiskItemDto> risks = new ArrayList<>();
         Set<String> deduplicationKeys = new HashSet<>();
 
@@ -99,7 +157,7 @@ public class ChangeStepCheckService {
                 .collect(Collectors.toMap(KnownPasswordFingerprint::getFingerprint, item -> item, (first, ignored) -> first, LinkedHashMap::new));
 
         for (int index = 0; index < lines.size(); index++) {
-            DocumentLine line = lines.get(index);
+            TextSegment line = lines.get(index);
             if (line.getText().trim().isEmpty()) {
                 continue;
             }
@@ -135,10 +193,10 @@ public class ChangeStepCheckService {
         return risks;
     }
 
-    private void addRisk(List<RiskItemDto> risks, Set<String> deduplicationKeys, List<DocumentLine> lines,
+    private void addRisk(List<RiskItemDto> risks, Set<String> deduplicationKeys, List<TextSegment> lines,
                          int index, String type, String label, String severity, String matchedText,
                          int start, int end, String rule) {
-        DocumentLine line = lines.get(index);
+        TextSegment line = lines.get(index);
         String deduplicationKey = index + ":" + start + ":" + end + ":" + type;
         if (!deduplicationKeys.add(deduplicationKey)) {
             return;
@@ -160,7 +218,7 @@ public class ChangeStepCheckService {
         ));
     }
 
-    private String findContext(List<DocumentLine> lines, int currentIndex, int direction) {
+    private String findContext(List<TextSegment> lines, int currentIndex, int direction) {
         int index = currentIndex + direction;
         while (index >= 0 && index < lines.size()) {
             String text = lines.get(index).getText().trim();
@@ -204,8 +262,8 @@ public class ChangeStepCheckService {
         }
     }
 
-    private List<DocumentLine> extractDocx(InputStream inputStream) throws IOException {
-        List<DocumentLine> lines = new ArrayList<>();
+    private List<TextSegment> extractDocx(InputStream inputStream) throws IOException {
+        List<TextSegment> lines = new ArrayList<>();
         try (XWPFDocument document = new XWPFDocument(inputStream)) {
             appendBodyElements(lines, document.getBodyElements(), "正文");
             for (XWPFHeaderFooter header : document.getHeaderList()) {
@@ -219,38 +277,52 @@ public class ChangeStepCheckService {
         return lines;
     }
 
-    private void appendHeaderFooter(List<DocumentLine> lines, XWPFHeaderFooter part, String location) {
+    private void appendHeaderFooter(List<TextSegment> lines, XWPFHeaderFooter part, String location) {
         for (XWPFParagraph paragraph : part.getParagraphs()) {
             addLine(lines, paragraph.getText(), location);
         }
+        int tableNumber = 0;
         for (XWPFTable table : part.getTables()) {
-            appendTable(lines, table, location + "表格");
+            appendTable(lines, table, location + "表格#" + (++tableNumber));
         }
     }
 
-    private void appendBodyElements(List<DocumentLine> lines, List<IBodyElement> elements, String location) {
+    private void appendBodyElements(List<TextSegment> lines, List<IBodyElement> elements, String location) {
+        int tableNumber = 0;
         for (IBodyElement element : elements) {
             if (element instanceof XWPFParagraph) {
                 addLine(lines, ((XWPFParagraph) element).getText(), location);
             } else if (element instanceof XWPFTable) {
-                appendTable(lines, (XWPFTable) element, "表格");
+                appendTable(lines, (XWPFTable) element, "表格#" + (++tableNumber));
             }
         }
     }
 
-    private void appendTable(List<DocumentLine> lines, XWPFTable table, String location) {
+    private void appendTable(List<TextSegment> lines, XWPFTable table, String location) {
         for (XWPFTableRow row : table.getRows()) {
             List<String> cells = new ArrayList<>();
             for (XWPFTableCell cell : row.getTableCells()) {
-                String text = cell.getText().replace('\r', ' ').replace('\n', ' ').trim();
+                String text = cell.getParagraphs().stream()
+                        .map(XWPFParagraph::getText)
+                        .collect(Collectors.joining(" "))
+                        .replace('\r', ' ').replace('\n', ' ').trim();
                 cells.add(text);
             }
-            addLine(lines, String.join(" | ", cells), location);
+            addLine(lines, String.join(" | ", cells), location, cells);
+            int cellNumber = 0;
+            for (XWPFTableCell cell : row.getTableCells()) {
+                cellNumber++;
+                int nestedNumber = 0;
+                for (XWPFTable nestedTable : cell.getTables()) {
+                    appendTable(lines, nestedTable, location + "-单元格" + cellNumber
+                            + "-嵌套表格#" + (++nestedNumber));
+                }
+            }
         }
     }
 
-    private List<DocumentLine> extractDoc(InputStream inputStream) throws IOException {
-        List<DocumentLine> lines = new ArrayList<>();
+    private List<TextSegment> extractDoc(InputStream inputStream) throws IOException {
+        List<TextSegment> lines = new ArrayList<>();
         try (HWPFDocument document = new HWPFDocument(inputStream);
              WordExtractor extractor = new WordExtractor(document)) {
             for (String paragraph : extractor.getParagraphText()) {
@@ -261,25 +333,28 @@ public class ChangeStepCheckService {
         return lines;
     }
 
-    private void addLine(List<DocumentLine> lines, String rawText, String location) {
+    private void addLine(List<TextSegment> lines, String rawText, String location) {
+        addLine(lines, rawText, location, new ArrayList<>());
+    }
+
+    private void addLine(List<TextSegment> lines, String rawText, String location, List<String> cells) {
         String text = rawText == null ? "" : rawText.replace('\u0007', ' ').replace('\r', ' ').trim();
         if (!text.isEmpty()) {
-            lines.add(new DocumentLine(lines.size() + 1, location, text));
+            lines.add(new TextSegment(lines.size() + 1, location, text, new ArrayList<>(cells)));
         }
     }
 
-    private void renumber(List<DocumentLine> lines) {
+    private void renumber(List<TextSegment> lines) {
         for (int index = 0; index < lines.size(); index++) {
             lines.get(index).setLineNumber(index + 1);
         }
     }
 
-    @Data
-    @AllArgsConstructor
-    static class DocumentLine {
-        private int lineNumber;
-        private String location;
-        private String text;
+    private ValidationSummaryDto summarizeValidation(List<ValidationCheckDto> checks) {
+        int passed = (int) checks.stream().filter(item -> "PASSED".equals(item.getStatus())).count();
+        int failed = (int) checks.stream().filter(item -> "FAILED".equals(item.getStatus())).count();
+        int warnings = (int) checks.stream().filter(item -> "WARNING".equals(item.getStatus())).count();
+        return new ValidationSummaryDto(checks.size(), passed, failed, warnings);
     }
 
     private static class SizeLimitedInputStream extends InputStream {
