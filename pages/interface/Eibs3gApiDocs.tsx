@@ -21,20 +21,51 @@ import {
   X
 } from 'lucide-react';
 import { recordAction } from '../../services/auditService';
+import { eibs3gAnalysisApi } from '../../services/apiService';
+import { buildVueTreeFromSnapshot } from '../../services/eibs3gApiAnalyzer/snapshotBuilder';
 import type {
   AnalysisDiagnostic,
   AnalysisProgress,
   AnalysisSummary,
+  ApiEndpointTarget,
+  ApiReference,
+  Eibs3gAnalysisSnapshot,
+  Eibs3gAnalysisSnapshotRecord,
   AnalysisWorkerResponse,
   RouteRoot,
   VueTreeNode
 } from '../../services/eibs3gApiAnalyzer/types';
 
-type PageStatus = 'idle' | 'analyzing' | 'ready' | 'building' | 'error';
+type PageStatus = 'restoring' | 'idle' | 'analyzing' | 'ready' | 'error';
+type PersistenceStatus = 'none' | 'saving' | 'saved' | 'unsaved';
 
 const requestId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 const fileName = (path: string) => path.slice(path.lastIndexOf('/') + 1);
+
+const formatDateTime = (value: string): string => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString('zh-CN', { hour12: false });
+};
+
+const endpointTargets = (api: ApiReference): ApiEndpointTarget[] => {
+  if (api.endpoints && api.endpoints.length > 0) return api.endpoints;
+  if (!api.endpoint) return [];
+  return [{
+    endpoint: api.endpoint,
+    httpMethod: api.httpMethod,
+    transportMethod: api.transportMethod || '',
+    chineseName: ''
+  }];
+};
+
+const requestMethodLabel = (target: ApiEndpointTarget): string => {
+  if (!target.transportMethod || target.transportMethod.toUpperCase() === target.httpMethod) {
+    return target.httpMethod;
+  }
+  return `${target.httpMethod} · ${target.transportMethod}`;
+};
 
 const defaultExpandedNodes = (tree: VueTreeNode): Set<string> => {
   const expanded = new Set<string>();
@@ -143,11 +174,20 @@ const TreeNodeCard: React.FC<TreeNodeCardProps> = ({ node, expanded, onToggle, o
                     <span className="text-xs text-slate-600">{api.chineseName}</span>
                   )}
                 </div>
-                <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]">
-                  <span className="rounded bg-emerald-100 px-1.5 py-0.5 font-bold text-emerald-700">
-                    {api.httpMethod}
-                  </span>
-                  <code className="break-all text-slate-600">{api.endpoint}</code>
+                <div className="mt-1.5 space-y-1.5 text-[11px]">
+                  {endpointTargets(api).length > 0 ? endpointTargets(api).map((target, index) => (
+                    <div key={`${target.httpMethod}:${target.endpoint}:${index}`} className="flex flex-wrap items-center gap-2">
+                      <span className="rounded bg-emerald-100 px-1.5 py-0.5 font-bold text-emerald-700">
+                        {requestMethodLabel(target)}
+                      </span>
+                      <code className="break-all text-slate-600">{target.endpoint}</code>
+                      {target.chineseName && target.chineseName !== api.chineseName && (
+                        <span className="text-slate-500">{target.chineseName}</span>
+                      )}
+                    </div>
+                  )) : (
+                    <span className="text-amber-700">后端地址无法静态确定</span>
+                  )}
                 </div>
               </div>
             )) : (
@@ -237,9 +277,29 @@ const NodeDetails: React.FC<NodeDetailsProps> = ({ node, onClose }) => (
               <div key={`${api.modulePath}:${api.methodName}`} className="rounded-lg border border-blue-100 p-4">
                 <div className="break-all text-sm font-semibold text-blue-950">{api.methodName}</div>
                 {api.chineseName && <div className="mt-1 text-sm text-slate-600">{api.chineseName}</div>}
-                <div className="mt-3 flex items-center gap-2 text-xs">
-                  <span className="rounded bg-emerald-100 px-2 py-1 font-bold text-emerald-700">{api.httpMethod}</span>
-                  <code className="break-all text-slate-700">{api.endpoint}</code>
+                <div className="mt-3 space-y-2 text-xs">
+                  {endpointTargets(api).length > 0 ? endpointTargets(api).map((target, index) => (
+                    <div key={`${target.httpMethod}:${target.endpoint}:${index}`} className="rounded-md bg-slate-50 p-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded bg-emerald-100 px-2 py-1 font-bold text-emerald-700">
+                          {requestMethodLabel(target)}
+                        </span>
+                        <code className="break-all text-slate-700">{target.endpoint}</code>
+                      </div>
+                      {target.chineseName && target.chineseName !== api.chineseName && (
+                        <div className="mt-1.5 text-slate-500">配置中文名：{target.chineseName}</div>
+                      )}
+                      {target.configPath && (
+                        <div className="mt-1 break-all font-mono text-[11px] text-slate-400">
+                          配置来源：{target.configPath}{target.configLine ? `:${target.configLine}` : ''}
+                        </div>
+                      )}
+                    </div>
+                  )) : (
+                    <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-700">
+                      已找到 API 方法，但后端地址无法静态确定。
+                    </div>
+                  )}
                 </div>
                 <div className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-400">
                   <div className="break-all">API 文件：{api.modulePath}:{api.sourceLine}</div>
@@ -357,8 +417,9 @@ export const Eibs3gApiDocs: React.FC = () => {
   const workerRef = useRef<Worker | null>(null);
   const selectedFilesRef = useRef<File[]>([]);
   const initializeRequestRef = useRef('');
-  const treeRequestRef = useRef('');
-  const [status, setStatus] = useState<PageStatus>('idle');
+  const snapshotRef = useRef<Eibs3gAnalysisSnapshot | null>(null);
+  const analysisStartedRef = useRef(false);
+  const [status, setStatus] = useState<PageStatus>('restoring');
   const [progress, setProgress] = useState<AnalysisProgress | null>(null);
   const [error, setError] = useState('');
   const [rootName, setRootName] = useState('');
@@ -372,22 +433,66 @@ export const Eibs3gApiDocs: React.FC = () => {
   const [hideEmpty, setHideEmpty] = useState(false);
   const [selectedNode, setSelectedNode] = useState<VueTreeNode | null>(null);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [snapshotRecord, setSnapshotRecord] = useState<Eibs3gAnalysisSnapshotRecord | null>(null);
+  const [persistenceStatus, setPersistenceStatus] = useState<PersistenceStatus>('none');
+  const [persistenceMessage, setPersistenceMessage] = useState('');
 
   const requestTree = useCallback((routeRootId: string) => {
-    const worker = workerRef.current;
-    if (!worker || !routeRootId) return;
-    const id = requestId('tree');
-    treeRequestRef.current = id;
+    const snapshot = snapshotRef.current;
+    if (!snapshot || !routeRootId) return;
+    const routeRoot = snapshot.routeRoots.find(root => root.id === routeRootId);
+    if (!routeRoot) return;
+    const nextTree = buildVueTreeFromSnapshot(snapshot, routeRoot);
+    if (!nextTree) {
+      setError(`已保存结果中找不到路由顶点文件：${routeRoot.componentPath}`);
+      return;
+    }
+
     setSelectedRootId(routeRootId);
-    setTree(null);
+    setTree(nextTree);
     setSelectedNode(null);
-    setStatus('building');
     setError('');
-    setProgress({ phase: 'tree', label: '准备构建页面组件树', completed: 0, total: 0, percent: 2 });
-    worker.postMessage({ type: 'build-tree', requestId: id, routeRootId });
+    setExpanded(defaultExpandedNodes(nextTree));
+  }, []);
+
+  const applySnapshot = useCallback((
+    snapshot: Eibs3gAnalysisSnapshot,
+    record: Eibs3gAnalysisSnapshotRecord | null
+  ) => {
+    if (
+      snapshot.schemaVersion !== 1
+      || !Array.isArray(snapshot.routeRoots)
+      || !snapshot.componentsByPath
+    ) {
+      throw new Error('已保存结果版本不兼容，请重新选择 src 文件夹进行分析。');
+    }
+
+    snapshotRef.current = snapshot;
+    setSnapshotRecord(record);
+    setRootName(snapshot.rootName);
+    setRouteRoots(snapshot.routeRoots);
+    setSummary(snapshot.summary);
+    setDiagnostics(snapshot.diagnostics);
+    setSelectedNode(null);
+    setError('');
+    setProgress(null);
+
+    const firstRoot = snapshot.routeRoots[0];
+    if (firstRoot) {
+      const firstTree = buildVueTreeFromSnapshot(snapshot, firstRoot);
+      setSelectedRootId(firstRoot.id);
+      setTree(firstTree);
+      setExpanded(firstTree ? defaultExpandedNodes(firstTree) : new Set());
+    } else {
+      setSelectedRootId('');
+      setTree(null);
+      setExpanded(new Set());
+    }
+    setStatus('ready');
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     const worker = new Worker(new URL('../../workers/eibs3gApiAnalysisWorker.ts', import.meta.url), {
       type: 'module'
     });
@@ -396,7 +501,7 @@ export const Eibs3gApiDocs: React.FC = () => {
     worker.onmessage = (event: MessageEvent<AnalysisWorkerResponse>) => {
       const message = event.data;
       if (message.type === 'progress') {
-        if (message.requestId === initializeRequestRef.current || message.requestId === treeRequestRef.current) {
+        if (message.requestId === initializeRequestRef.current) {
           setProgress(message.progress);
         }
         return;
@@ -404,14 +509,26 @@ export const Eibs3gApiDocs: React.FC = () => {
 
       if (message.type === 'ready') {
         if (message.requestId !== initializeRequestRef.current) return;
-        setRootName(message.rootName);
-        setRouteRoots(message.routeRoots);
-        setSummary(message.summary);
-        setDiagnostics(message.diagnostics);
-        setStatus('ready');
-        setProgress(null);
-        const firstRoot = message.routeRoots[0];
-        if (firstRoot) requestTree(firstRoot.id);
+        applySnapshot(message.snapshot, null);
+        setPersistenceStatus('saving');
+        setPersistenceMessage('正在把本次完整分析结果保存到平台……');
+
+        const fingerprint = message.snapshot.sourceFingerprint;
+        void eibs3gAnalysisApi.saveLatest(message.snapshot)
+          .then(record => {
+            if (cancelled || snapshotRef.current?.sourceFingerprint !== fingerprint) return;
+            setSnapshotRecord(record);
+            setPersistenceStatus('saved');
+            setPersistenceMessage('本次结果已保存为全平台最新版本。');
+          })
+          .catch(saveError => {
+            if (cancelled || snapshotRef.current?.sourceFingerprint !== fingerprint) return;
+            setPersistenceStatus('unsaved');
+            setPersistenceMessage(
+              `本次结果可以继续查看，但保存失败；刷新页面后仍会显示上一次已保存结果。原因：${saveError instanceof Error ? saveError.message : '未知错误'}`
+            );
+          });
+
         void recordAction(
           '接口管理 - 网银接口文档',
           `本地分析 src：路由顶点 ${message.routeRoots.length}，API ${message.summary.apiDefinitions}`
@@ -419,63 +536,79 @@ export const Eibs3gApiDocs: React.FC = () => {
         return;
       }
 
-      if (message.type === 'tree') {
-        if (message.requestId !== treeRequestRef.current) return;
-        setTree(message.tree);
-        setSummary(message.summary);
-        setDiagnostics(message.diagnostics);
-        setExpanded(defaultExpandedNodes(message.tree));
-        setStatus('ready');
-        setProgress(null);
-        return;
-      }
-
-      if (message.requestId !== initializeRequestRef.current && message.requestId !== treeRequestRef.current) return;
+      if (message.type === 'tree' || message.requestId !== initializeRequestRef.current) return;
       setError(message.message);
-      setDiagnostics(message.diagnostics);
-      setStatus('error');
+      const previousSnapshot = snapshotRef.current;
+      setDiagnostics(previousSnapshot ? previousSnapshot.diagnostics : message.diagnostics);
+      setStatus(previousSnapshot ? 'ready' : 'error');
       setProgress(null);
+      if (previousSnapshot) {
+        setPersistenceMessage('新目录分析失败，当前继续展示上一次成功结果。');
+      }
     };
 
     worker.onerror = event => {
       const detail = event.message || '未知运行错误';
       setError(`浏览器本地分析线程运行失败：${detail}。该过程不经过后端，因此后端控制台不会产生分析日志。`);
-      setStatus('error');
+      setStatus(snapshotRef.current ? 'ready' : 'error');
       setProgress(null);
     };
 
     worker.onmessageerror = () => {
       setError('浏览器无法读取分析线程返回的数据，请刷新页面后重新选择 src 文件夹。');
-      setStatus('error');
+      setStatus(snapshotRef.current ? 'ready' : 'error');
       setProgress(null);
     };
 
+    setProgress({ phase: 'snapshot', label: '正在读取上次保存的分析结果', completed: 0, total: 0, percent: 30 });
+    void eibs3gAnalysisApi.getLatest()
+      .then(record => {
+        if (cancelled || analysisStartedRef.current) return;
+        if (!record) {
+          setStatus('idle');
+          setPersistenceStatus('none');
+          setProgress(null);
+          return;
+        }
+        applySnapshot(record.snapshot, record);
+        setPersistenceStatus('saved');
+        setPersistenceMessage('正在展示全平台上一次成功保存的分析结果。');
+      })
+      .catch(loadError => {
+        if (cancelled || analysisStartedRef.current) return;
+        setStatus('idle');
+        setPersistenceStatus('none');
+        setProgress(null);
+        setPersistenceMessage(
+          `未能读取上次保存结果，仍可选择 src 重新分析。原因：${loadError instanceof Error ? loadError.message : '未知错误'}`
+        );
+      });
+
     return () => {
+      cancelled = true;
       worker.terminate();
       workerRef.current = null;
     };
-  }, [requestTree]);
+  }, [applySnapshot]);
 
   const startAnalysis = useCallback((files: File[]) => {
     const worker = workerRef.current;
     if (!worker || files.length === 0) return;
 
+    analysisStartedRef.current = true;
     worker.postMessage({ type: 'reset' });
     const id = requestId('initialize');
     initializeRequestRef.current = id;
-    treeRequestRef.current = '';
     selectedFilesRef.current = files;
     setStatus('analyzing');
     setProgress({ phase: 'index', label: '准备读取 src 文件夹', completed: 0, total: files.length, percent: 1 });
     setError('');
-    setRootName('');
-    setRouteRoots([]);
-    setSelectedRootId('');
-    setTree(null);
-    setSummary(null);
-    setDiagnostics([]);
     setSelectedNode(null);
-    setExpanded(new Set());
+    setPersistenceMessage(
+      snapshotRef.current
+        ? '正在分析新目录；完成并成功保存前，上一次结果不会被覆盖。'
+        : ''
+    );
     worker.postMessage({ type: 'initialize', requestId: id, files });
   }, []);
 
@@ -511,7 +644,7 @@ export const Eibs3gApiDocs: React.FC = () => {
     });
   };
 
-  const isBusy = status === 'analyzing' || status === 'building';
+  const isBusy = status === 'restoring' || status === 'analyzing' || persistenceStatus === 'saving';
 
   return (
     <div className="mx-auto flex min-h-[calc(100vh-7rem)] w-full max-w-[1520px] flex-col gap-6 p-6 lg:p-8">
@@ -532,7 +665,7 @@ export const Eibs3gApiDocs: React.FC = () => {
             <h2 className="text-2xl font-semibold text-blue-950">网银接口文档</h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
               从路由页面出发，递归展示 Vue 组件依赖及每个节点直接调用的后端接口。
-              源码仅在当前浏览器中解析，不会上传到服务器。
+              原始源码仅在当前浏览器中解析；处理后的关系快照会保存到平台，供所有用户继续查看。
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -577,6 +710,29 @@ export const Eibs3gApiDocs: React.FC = () => {
           </div>
         )}
 
+        {persistenceMessage && (
+          <div className={`mt-5 rounded-lg border p-4 text-sm ${
+            persistenceStatus === 'unsaved' || persistenceStatus === 'none'
+              ? 'border-amber-200 bg-amber-50 text-amber-800'
+              : persistenceStatus === 'saving'
+                ? 'border-blue-200 bg-blue-50 text-blue-800'
+                : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+          }`}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="font-medium">{persistenceMessage}</div>
+              {persistenceStatus === 'saving' && <Loader2 size={17} className="animate-spin" />}
+            </div>
+            {snapshotRecord && (
+              <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs opacity-80">
+                <span>保存时间：{formatDateTime(snapshotRecord.savedAt)}</span>
+                <span>上传人：{snapshotRecord.savedBy || '未知用户'}</span>
+                <span>分析时间：{formatDateTime(snapshotRecord.snapshot.analyzedAt)}</span>
+                <span>源码指纹：{snapshotRecord.snapshot.sourceFingerprint}</span>
+              </div>
+            )}
+          </div>
+        )}
+
         {error && (
           <div className="mt-5 flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
             <AlertTriangle size={18} className="mt-0.5 shrink-0" />
@@ -589,14 +745,15 @@ export const Eibs3gApiDocs: React.FC = () => {
       </section>
 
       {summary && (
-        <section className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
+        <section className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
           {[
             { label: '已选文件', value: summary.files.totalSelected, icon: Files },
             { label: '路由文件', value: summary.files.routeFiles, icon: GitBranch },
             { label: '路由顶点', value: summary.routeRoots, icon: FileCode2 },
             { label: 'Vue 文件', value: summary.files.vueFiles, icon: Braces },
             { label: '已解析 Vue', value: summary.parsedVueFiles, icon: RefreshCw },
-            { label: 'API 定义', value: summary.apiDefinitions, icon: Database }
+            { label: 'API 定义', value: summary.apiDefinitions, icon: Database },
+            { label: '配置地址', value: summary.configEndpoints ?? 0, icon: ShieldCheck }
           ].map(item => {
             const Icon = item.icon;
             return (
@@ -637,8 +794,8 @@ export const Eibs3gApiDocs: React.FC = () => {
               </div>
               <div className="rounded-lg border border-slate-200 bg-white p-4">
                 <ShieldCheck size={18} className="text-emerald-600" />
-                <div className="mt-2 text-sm font-semibold text-slate-800">浏览器本地处理</div>
-                <div className="mt-1 text-xs leading-5 text-slate-500">不上传文件，不依赖网络服务</div>
+                <div className="mt-2 text-sm font-semibold text-slate-800">原始源码本地处理</div>
+                <div className="mt-1 text-xs leading-5 text-slate-500">不上传源文件，只保存结构化结果</div>
               </div>
             </div>
             <button
@@ -752,7 +909,7 @@ export const Eibs3gApiDocs: React.FC = () => {
             </div>
 
             <div className="h-[calc(100vh-18rem)] min-h-[520px] overflow-auto bg-[#f8fbff] p-5 md:p-7">
-              {status === 'building' && !tree ? (
+              {status === 'analyzing' && !tree ? (
                 <div className="flex h-full items-center justify-center">
                   <div className="text-center">
                     <Loader2 size={30} className="mx-auto animate-spin text-blue-700" />

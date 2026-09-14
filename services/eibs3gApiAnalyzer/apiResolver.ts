@@ -62,6 +62,20 @@ export const resolveDirectApis = (
     const key = `${modulePath}:${call.methodName}`;
     if (seen.has(key)) continue;
     seen.add(key);
+
+    const hasResolvedEndpoint = (definition.endpoints?.length || 0) > 0 || Boolean(definition.endpoint);
+    if (!hasResolvedEndpoint) {
+      diagnostics.push({
+        id: `api-endpoint-unresolved:${parsedVue.componentPath}:${modulePath}:${call.methodName}`,
+        level: 'warning',
+        code: 'API_ENDPOINT_UNRESOLVED',
+        message: `已找到 API 方法，但无法静态确定后端地址：${call.methodName}`,
+        filePath: parsedVue.componentPath,
+        relatedPath: modulePath,
+        sourceLine: call.sourceLine
+      });
+    }
+
     apis.push({
       ...definition,
       importAlias: call.alias,
