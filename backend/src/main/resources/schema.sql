@@ -367,6 +367,20 @@ CREATE TABLE IF NOT EXISTS change_step_scan_records (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
+-- 23. EIBS3G API analysis snapshot (全平台只保留一份最新的结构化分析结果，不保存原始源码)
+CREATE TABLE IF NOT EXISTS eibs3g_analysis_snapshots (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    scope_key VARCHAR(50) NOT NULL UNIQUE,
+    schema_version INT NOT NULL,
+    project_name VARCHAR(255) NOT NULL,
+    source_fingerprint VARCHAR(128) NOT NULL,
+    snapshot_json CLOB NOT NULL,
+    snapshot_size BIGINT NOT NULL,
+    updated_by VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
 -- ==================================================
 -- 创建索引以提高查询性能
 -- ==================================================
@@ -420,3 +434,5 @@ CREATE INDEX IF NOT EXISTS idx_sys_role_menu_menu_id ON sys_role_menu(menu_id);
 CREATE INDEX IF NOT EXISTS idx_change_step_scan_records_scanned_at ON change_step_scan_records(scanned_at);
 CREATE INDEX IF NOT EXISTS idx_change_step_scan_records_file_name ON change_step_scan_records(file_name);
 CREATE INDEX IF NOT EXISTS idx_change_step_scan_records_scanned_by ON change_step_scan_records(scanned_by);
+
+CREATE INDEX IF NOT EXISTS idx_eibs3g_analysis_snapshot_updated_at ON eibs3g_analysis_snapshots(updated_at);

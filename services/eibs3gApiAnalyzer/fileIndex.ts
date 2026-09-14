@@ -7,8 +7,25 @@ import {
 
 const isIncludedSourceFile = (path: string): boolean => {
   if (/^api\/.+\.js$/i.test(path)) return true;
+  if (/^config\/.+\.js$/i.test(path)) return true;
   if (/^router\/modules\/.+\.js$/i.test(path)) return true;
   return /^views\/.+\.vue$/i.test(path);
+};
+
+const createSourceFingerprint = (files: Map<string, File>): string => {
+  let hash = 0x811c9dc5;
+  const updateHash = (value: string) => {
+    for (let index = 0; index < value.length; index += 1) {
+      hash ^= value.charCodeAt(index);
+      hash = Math.imul(hash, 0x01000193);
+    }
+  };
+
+  Array.from(files.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .forEach(([path, file]) => updateHash(`${path}\0${file.size}\0${file.lastModified}\n`));
+
+  return `v1-${files.size}-${(hash >>> 0).toString(16).padStart(8, '0')}`;
 };
 
 export const createFileIndex = (selectedFiles: File[]): IndexedProject => {
@@ -27,6 +44,7 @@ export const createFileIndex = (selectedFiles: File[]): IndexedProject => {
 
   const files = new Map<string, File>();
   let apiFiles = 0;
+  let configFiles = 0;
   let routeFiles = 0;
   let vueFiles = 0;
 
@@ -37,17 +55,20 @@ export const createFileIndex = (selectedFiles: File[]): IndexedProject => {
 
     files.set(path, file);
     if (/^api\/.+\.js$/i.test(path)) apiFiles += 1;
+    else if (/^config\/.+\.js$/i.test(path)) configFiles += 1;
     else if (/^router\/modules\/.+\.js$/i.test(path)) routeFiles += 1;
     else if (/^views\/.+\.vue$/i.test(path)) vueFiles += 1;
   }
 
   return {
     rootName,
+    sourceFingerprint: createSourceFingerprint(files),
     files,
     stats: {
       totalSelected: selectedFiles.length,
       indexed: files.size,
       apiFiles,
+      configFiles,
       routeFiles,
       vueFiles,
       skipped: selectedFiles.length - files.size

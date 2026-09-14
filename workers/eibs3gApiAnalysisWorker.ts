@@ -1,6 +1,8 @@
 import { parseApiFiles } from '../services/eibs3gApiAnalyzer/apiParser';
+import { parseConfigEndpointFiles } from '../services/eibs3gApiAnalyzer/configEndpointParser';
 import { createFileIndex, validateFileIndex } from '../services/eibs3gApiAnalyzer/fileIndex';
 import { parseRouteFiles } from '../services/eibs3gApiAnalyzer/routeParser';
+import { buildPersistedComponentGraph } from '../services/eibs3gApiAnalyzer/snapshotBuilder';
 import { buildVueTree } from '../services/eibs3gApiAnalyzer/treeBuilder';
 import { createVueParser } from '../services/eibs3gApiAnalyzer/vueParser';
 import type {
@@ -18,6 +20,7 @@ interface WorkerSession {
   project: IndexedProject;
   apiModules: Map<string, ApiModuleDefinition>;
   apiDefinitionCount: number;
+  configEndpointCount: number;
   routeRoots: RouteRoot[];
   diagnostics: AnalysisDiagnostic[];
   vueParser: ReturnType<typeof createVueParser>;
@@ -51,6 +54,7 @@ const uniqueDiagnostics = (diagnostics: AnalysisDiagnostic[]): AnalysisDiagnosti
 const summaryFor = (current: WorkerSession): AnalysisSummary => ({
   files: current.project.stats,
   apiDefinitions: current.apiDefinitionCount,
+  configEndpoints: current.configEndpointCount,
   routeRoots: current.routeRoots.length,
   parsedVueFiles: current.vueParser.getParsedCount()
 });
@@ -62,21 +66,41 @@ const initialize = async (requestId: string, files: File[], generation: number) 
 
   validateFileIndex(project);
 
-  const apiResult = await parseApiFiles(project, (completed, total) => {
+  progress(requestId, 'config', '解析 config 接口地址清单', 0, project.stats.configFiles || 0, 15);
+  const configResult = await parseConfigEndpointFiles(project, (completed, total) => {
     if (completed !== 1 && completed !== total && completed % 10 !== 0) return;
     const ratio = total === 0 ? 1 : completed / total;
-    progress(requestId, 'api', '解析 API 接口字典', completed, total, 15 + Math.round(ratio * 35));
+    progress(requestId, 'config', '解析 config 接口地址清单', completed, total, 15 + Math.round(ratio * 10));
+  });
+  if (generation !== sessionGeneration) return;
+  progress(
+    requestId,
+    'config',
+    'config 接口地址清单已解析',
+    project.stats.configFiles || 0,
+    project.stats.configFiles || 0,
+    25
+  );
+
+  const apiResult = await parseApiFiles(project, configResult.catalog, (completed, total) => {
+    if (completed !== 1 && completed !== total && completed % 10 !== 0) return;
+    const ratio = total === 0 ? 1 : completed / total;
+    progress(requestId, 'api', '解析 API 接口字典', completed, total, 25 + Math.round(ratio * 25));
   });
   if (generation !== sessionGeneration) return;
 
   const routeResult = await parseRouteFiles(project, (completed, total) => {
     if (completed !== 1 && completed !== total && completed % 10 !== 0) return;
     const ratio = total === 0 ? 1 : completed / total;
-    progress(requestId, 'route', '解析路由顶点', completed, total, 50 + Math.round(ratio * 45));
+    progress(requestId, 'route', '解析路由顶点', completed, total, 50 + Math.round(ratio * 15));
   });
   if (generation !== sessionGeneration) return;
 
-  const diagnostics = [...apiResult.diagnostics, ...routeResult.diagnostics];
+  const diagnostics = [
+    ...configResult.diagnostics,
+    ...apiResult.diagnostics,
+    ...routeResult.diagnostics
+  ];
   const routeRoots = routeResult.routeRoots.filter(root => {
     if (project.files.has(root.componentPath)) return true;
     diagnostics.push({
@@ -95,23 +119,67 @@ const initialize = async (requestId: string, files: File[], generation: number) 
     throw new Error('没有找到可用的路由顶点，请检查 router/modules 中的 component 路径。');
   }
 
-  session = {
+  const currentSession: WorkerSession = {
     project,
     apiModules: apiResult.modules,
     apiDefinitionCount: apiResult.definitionCount,
+    configEndpointCount: configResult.definitionCount,
     routeRoots,
     diagnostics: uniqueDiagnostics(diagnostics),
     vueParser: createVueParser(project)
   };
+  session = currentSession;
 
-  progress(requestId, 'route', '基础分析完成', routeRoots.length, routeRoots.length, 100);
+  progress(requestId, 'snapshot', '整理完整组件关系', 0, routeRoots.length, 65);
+  let lastSnapshotPercent = 65;
+  const graphResult = await buildPersistedComponentGraph(
+    project,
+    routeRoots,
+    currentSession.vueParser.parseVue,
+    currentSession.apiModules,
+    (completed, discovered) => {
+      const ratio = discovered === 0 ? 1 : completed / discovered;
+      lastSnapshotPercent = Math.max(
+        lastSnapshotPercent,
+        65 + Math.round(ratio * 34)
+      );
+      progress(
+        requestId,
+        'snapshot',
+        `整理可持久化组件关系（${completed}/${discovered}）`,
+        completed,
+        discovered,
+        lastSnapshotPercent
+      );
+    }
+  );
+  if (generation !== sessionGeneration || session !== currentSession) return;
+
+  currentSession.diagnostics = uniqueDiagnostics([
+    ...currentSession.diagnostics,
+    ...graphResult.diagnostics
+  ]);
+  const summary = summaryFor(currentSession);
+  const snapshot = {
+    schemaVersion: 1 as const,
+    rootName: project.rootName,
+    sourceFingerprint: project.sourceFingerprint,
+    analyzedAt: new Date().toISOString(),
+    summary,
+    routeRoots,
+    componentsByPath: graphResult.componentsByPath,
+    diagnostics: currentSession.diagnostics
+  };
+
+  progress(requestId, 'snapshot', '完整分析结果已生成', Object.keys(graphResult.componentsByPath).length, Object.keys(graphResult.componentsByPath).length, 100);
   post({
     type: 'ready',
     requestId,
     rootName: project.rootName,
     routeRoots,
-    summary: summaryFor(session),
-    diagnostics: session.diagnostics
+    summary,
+    diagnostics: currentSession.diagnostics,
+    snapshot
   });
 };
 

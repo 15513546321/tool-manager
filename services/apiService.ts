@@ -3,6 +3,11 @@
  * Handles all HTTP requests to the Spring Boot backend
  */
 
+import type {
+  Eibs3gAnalysisSnapshot,
+  Eibs3gAnalysisSnapshotRecord
+} from './eibs3gApiAnalyzer/types';
+
 // Get API base URL - support multiple configurations:
 // 1. VITE_API_URL environment variable (for custom deployments)
 // 2. Detect if running on same host as backend (common scenario)
@@ -82,6 +87,32 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
   });
   
   return response;
+};
+
+// EIBS3G API analysis snapshot (global latest successful result)
+export const eibs3gAnalysisApi = {
+  getLatest: async (): Promise<Eibs3gAnalysisSnapshotRecord | null> => {
+    const res = await fetchWithAuth(`${API_BASE_URL}/eibs3g-api-analysis/latest`);
+    if (res.status === 204) return null;
+    if (!res.ok) {
+      throw new Error(await getErrorMessage(res, '读取上次网银接口分析结果失败'));
+    }
+    return res.json();
+  },
+
+  saveLatest: async (
+    snapshot: Eibs3gAnalysisSnapshot
+  ): Promise<Eibs3gAnalysisSnapshotRecord> => {
+    const res = await fetchWithAuth(`${API_BASE_URL}/eibs3g-api-analysis/latest`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(snapshot),
+    });
+    if (!res.ok) {
+      throw new Error(await getErrorMessage(res, '保存网银接口分析结果失败'));
+    }
+    return res.json();
+  },
 };
 
 // Announcement APIs
@@ -1087,4 +1118,5 @@ export const apiService = {
   documentApi,
   documentCategoryApi,
   nacosApi,
+  eibs3gAnalysisApi,
 };
