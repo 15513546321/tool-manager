@@ -27,6 +27,12 @@ public class ChangeStepScanRecord {
     @Column(name = "file_name", nullable = false, length = 500)
     private String fileName;
 
+    @Column(name = "system_code", length = 50)
+    private String systemCode;
+
+    @Column(name = "document_type", length = 20)
+    private String documentType;
+
     @Column(name = "file_size", nullable = false)
     private Long fileSize;
 
@@ -59,6 +65,18 @@ public class ChangeStepScanRecord {
 
     @Column(name = "pending_risks", nullable = false)
     private Integer pendingRisks = 0;
+
+    @Column(name = "validation_total", nullable = false)
+    private Integer validationTotal = 0;
+
+    @Column(name = "validation_passed", nullable = false)
+    private Integer validationPassed = 0;
+
+    @Column(name = "validation_failed", nullable = false)
+    private Integer validationFailed = 0;
+
+    @Column(name = "validation_warnings", nullable = false)
+    private Integer validationWarnings = 0;
 
     @Column(name = "review_status", nullable = false, length = 20)
     private String reviewStatus;

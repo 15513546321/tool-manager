@@ -302,13 +302,33 @@ export const systemParameterApi = {
   },
 };
 
-// Change step password/risk scanner APIs
+// Change form business validation and sensitive-information scanner APIs
 export const changeStepCheckApi = {
-  scan: async (file: File) => {
+  scan: async (
+    file: File,
+    options: {
+      documentType: import('../types').ChangeStepDocumentType;
+      systemCode: import('../types').ChangeStepSystemCode;
+      companionManualFileName?: string;
+      treasurySaasManualFileName?: string;
+      treasuryNtManualFileName?: string;
+    },
+  ) => {
     const query = new URLSearchParams({
       fileName: file.name,
       fileSize: String(file.size),
+      documentType: options.documentType,
+      systemCode: options.systemCode,
     });
+    if (options.companionManualFileName) {
+      query.set('companionManualFileName', options.companionManualFileName);
+    }
+    if (options.treasurySaasManualFileName) {
+      query.set('treasurySaasManualFileName', options.treasurySaasManualFileName);
+    }
+    if (options.treasuryNtManualFileName) {
+      query.set('treasuryNtManualFileName', options.treasuryNtManualFileName);
+    }
     const res = await fetchWithAuth(`${API_BASE_URL}/change-step-check/scan?${query.toString()}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/octet-stream' },

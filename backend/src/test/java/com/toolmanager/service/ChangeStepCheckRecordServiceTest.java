@@ -4,6 +4,7 @@ import com.toolmanager.dto.ChangeStepCheckDtos.ScanRecordDto;
 import com.toolmanager.dto.ChangeStepCheckDtos.ScanResultDto;
 import com.toolmanager.dto.ChangeStepCheckDtos.ScanSummaryDto;
 import com.toolmanager.dto.ChangeStepCheckDtos.UpdateReviewSummaryRequest;
+import com.toolmanager.dto.ChangeStepCheckDtos.ValidationSummaryDto;
 import com.toolmanager.entity.ChangeStepScanRecord;
 import com.toolmanager.repository.ChangeStepScanRecordRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,9 +45,17 @@ class ChangeStepCheckRecordServiceTest {
     void createsPublicSummaryAndPersistsReviewProgress() {
         ScanResultDto result = new ScanResultDto(
                 "上线变更步骤.docx",
+                ChangeStepBusinessValidationService.SYSTEM_MIDDLE_PLATFORM,
+                "中台",
+                ChangeStepBusinessValidationService.TYPE_MANUAL,
+                "手动变更单",
+                null,
+                ChangeStepCheckService.VALIDATION_ENGINE_VERSION,
                 LocalDateTime.now(),
                 18,
                 new ScanSummaryDto(3, 3, 0, 1, 2),
+                new ArrayList<>(),
+                new ValidationSummaryDto(2, 1, 1, 0),
                 new ArrayList<>(),
                 null
         );

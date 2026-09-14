@@ -45,11 +45,18 @@ class ChangeStepCheckConfigServiceTest {
     @Test
     void storesOnlyPasswordFingerprintAndReturnsMaskedValue() {
         String password = "srcb-Prod-9876!";
+        Map<String, java.util.List<String>> assetsBySystem = new HashMap<>();
+        assetsBySystem.put(ChangeStepBusinessValidationService.SYSTEM_MIDDLE_PLATFORM,
+                Arrays.asList("ecss01rac", "ECSS01APP"));
+        assetsBySystem.put(ChangeStepBusinessValidationService.SYSTEM_WECHAT,
+                Arrays.asList("ewbs01web", "EWBS01APP"));
         UpdateScannerConfigRequest request = new UpdateScannerConfigRequest(
                 Arrays.asList("password", "key"),
                 Arrays.asList("(?i)\\bsrcb\\d{4,}\\b"),
                 new ArrayList<>(),
-                Arrays.asList(password)
+                Arrays.asList(password),
+                Arrays.asList("ecss01rac", "ECSS01APP"),
+                assetsBySystem
         );
 
         ScannerConfigDto saved = service.updateConfig(request, "reviewer");
@@ -63,5 +70,13 @@ class ChangeStepCheckConfigServiceTest {
                 .noneMatch(value -> value.contains(password));
         assertThat(storedParameters.get(ChangeStepCheckConfigService.PASSWORDS_KEY).getParamValue())
                 .contains(ChangeStepCheckConfigService.sha256(password));
+        assertThat(saved.getServerAssetNames()).containsExactly("ECSS01RAC", "ECSS01APP");
+        assertThat(saved.getServerAssetNamesBySystem()
+                .get(ChangeStepBusinessValidationService.SYSTEM_WECHAT))
+                .containsExactly("EWBS01WEB", "EWBS01APP");
+        assertThat(storedParameters.get(ChangeStepCheckConfigService.SERVER_ASSETS_KEY).getParamValue())
+                .contains("ECSS01RAC", "ECSS01APP");
+        assertThat(storedParameters.get(ChangeStepCheckConfigService.SERVER_ASSETS_BY_SYSTEM_KEY).getParamValue())
+                .contains("EWBS01WEB", "EWBS01APP");
     }
 }

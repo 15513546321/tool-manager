@@ -117,6 +117,23 @@ export interface SuggestionItem {
 }
 
 export type ChangeStepRiskType = 'FIELD_KEYWORD' | 'PASSWORD_PATTERN' | 'KNOWN_PASSWORD';
+export type ChangeStepSystemCode = 'MIDDLE_PLATFORM' | 'ONLINE_BANKING' | 'TREASURY' | 'WECHAT';
+export type ChangeStepDocumentType = 'MANUAL' | 'AUTOMATIC';
+export type ChangeStepAssetScope = ChangeStepSystemCode | 'TREASURY_SAAS' | 'TREASURY_NT';
+
+export interface ChangeStepValidationCheck {
+  id: string;
+  code: string;
+  category: string;
+  label: string;
+  status: 'PASSED' | 'FAILED' | 'WARNING';
+  severity: 'INFO' | 'MEDIUM' | 'HIGH';
+  message: string;
+  expectedValue?: string;
+  actualValue?: string;
+  location: string;
+  lineNumber?: number;
+}
 
 export interface ChangeStepRiskItem {
   id: string;
@@ -135,8 +152,14 @@ export interface ChangeStepRiskItem {
 }
 
 export interface ChangeStepScanResult {
-  recordId: number;
+  recordId?: number;
   fileName: string;
+  systemCode: ChangeStepSystemCode;
+  systemName: string;
+  documentType: ChangeStepDocumentType;
+  documentTypeLabel: string;
+  companionManualFileName?: string;
+  validationEngineVersion: string;
   scannedAt: string;
   scannedLineCount: number;
   summary: {
@@ -147,11 +170,20 @@ export interface ChangeStepScanResult {
     passwordMatches: number;
   };
   risks: ChangeStepRiskItem[];
+  validationSummary: {
+    total: number;
+    passed: number;
+    failed: number;
+    warnings: number;
+  };
+  validationChecks: ChangeStepValidationCheck[];
 }
 
 export interface ChangeStepScanRecord {
   id: number;
   fileName: string;
+  systemCode?: ChangeStepSystemCode;
+  documentType?: ChangeStepDocumentType;
   fileSize: number;
   scanStatus: 'SUCCESS' | 'FAILED';
   errorMessage?: string;
@@ -163,6 +195,10 @@ export interface ChangeStepScanRecord {
   confirmedRisks: number;
   falsePositiveRisks: number;
   pendingRisks: number;
+  validationTotal: number;
+  validationPassed: number;
+  validationFailed: number;
+  validationWarnings: number;
   reviewStatus: 'PENDING' | 'COMPLETED' | 'NOT_APPLICABLE';
   scannedBy: string;
   scannedAt: string;
@@ -189,6 +225,8 @@ export interface ChangeStepScannerConfig {
   fieldKeywords: string[];
   regexPatterns: string[];
   knownPasswords: Array<{ id: string; maskedValue: string }>;
+  serverAssetNames: string[];
+  serverAssetNamesBySystem: Partial<Record<ChangeStepAssetScope, string[]>>;
 }
 
 export interface UpdateChangeStepScannerConfig {
@@ -196,6 +234,8 @@ export interface UpdateChangeStepScannerConfig {
   regexPatterns: string[];
   retainedKnownPasswordIds: string[];
   newKnownPasswords: string[];
+  serverAssetNames: string[];
+  serverAssetNamesBySystem: Partial<Record<ChangeStepAssetScope, string[]>>;
 }
 
 export interface MockPacketConfig {

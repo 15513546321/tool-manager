@@ -24,7 +24,8 @@ public class ChangeStepCheckRecordService {
 
     @Transactional
     public ScanRecordDto recordSuccess(String fileName, long fileSize, ScanResultDto result, String username) {
-        ChangeStepScanRecord record = baseRecord(fileName, fileSize, username);
+        ChangeStepScanRecord record = baseRecord(fileName, fileSize, username,
+                result.getSystemCode(), result.getDocumentType());
         record.setScanStatus("SUCCESS");
         record.setScannedLineCount(result.getScannedLineCount());
         record.setTotalRisks(result.getSummary().getTotal());
@@ -32,6 +33,12 @@ public class ChangeStepCheckRecordService {
         record.setFieldMatches(result.getSummary().getFieldMatches());
         record.setPasswordMatches(result.getSummary().getPasswordMatches());
         record.setPendingRisks(result.getSummary().getTotal());
+        if (result.getValidationSummary() != null) {
+            record.setValidationTotal(result.getValidationSummary().getTotal());
+            record.setValidationPassed(result.getValidationSummary().getPassed());
+            record.setValidationFailed(result.getValidationSummary().getFailed());
+            record.setValidationWarnings(result.getValidationSummary().getWarnings());
+        }
         if (result.getSummary().getTotal() == 0) {
             record.setReviewStatus("COMPLETED");
             record.setReviewedBy(normalizeUsername(username));
@@ -46,7 +53,15 @@ public class ChangeStepCheckRecordService {
 
     @Transactional
     public ScanRecordDto recordFailure(String fileName, long fileSize, String errorMessage, String username) {
-        ChangeStepScanRecord record = baseRecord(fileName, Math.max(fileSize, 0), username);
+        return recordFailure(fileName, fileSize, errorMessage, username,
+                ChangeStepBusinessValidationService.SYSTEM_MIDDLE_PLATFORM, null);
+    }
+
+    @Transactional
+    public ScanRecordDto recordFailure(String fileName, long fileSize, String errorMessage, String username,
+                                       String systemCode, String documentType) {
+        ChangeStepScanRecord record = baseRecord(fileName, Math.max(fileSize, 0), username,
+                systemCode, documentType);
         record.setScanStatus("FAILED");
         record.setReviewStatus("NOT_APPLICABLE");
         record.setErrorMessage(truncate(errorMessage, 500));
@@ -100,9 +115,12 @@ public class ChangeStepCheckRecordService {
         return new ScanRecordPageDto(content, records.getTotalElements(), records.getTotalPages(), safePage, safeSize);
     }
 
-    private ChangeStepScanRecord baseRecord(String fileName, long fileSize, String username) {
+    private ChangeStepScanRecord baseRecord(String fileName, long fileSize, String username,
+                                            String systemCode, String documentType) {
         ChangeStepScanRecord record = new ChangeStepScanRecord();
         record.setFileName(truncate(fileName == null || fileName.trim().isEmpty() ? "未知文件" : fileName, 500));
+        record.setSystemCode(truncate(systemCode, 50));
+        record.setDocumentType(truncate(documentType, 20));
         record.setFileSize(fileSize);
         record.setScannedBy(normalizeUsername(username));
         record.setScannedAt(LocalDateTime.now());
@@ -125,9 +143,11 @@ public class ChangeStepCheckRecordService {
 
     private ScanRecordDto toDto(ChangeStepScanRecord record) {
         return new ScanRecordDto(
-                record.getId(), record.getFileName(), record.getFileSize(), record.getScanStatus(), record.getErrorMessage(),
+                record.getId(), record.getFileName(), record.getSystemCode(), record.getDocumentType(),
+                record.getFileSize(), record.getScanStatus(), record.getErrorMessage(),
                 record.getScannedLineCount(), record.getTotalRisks(), record.getHighRisks(), record.getFieldMatches(),
                 record.getPasswordMatches(), record.getConfirmedRisks(), record.getFalsePositiveRisks(), record.getPendingRisks(),
+                record.getValidationTotal(), record.getValidationPassed(), record.getValidationFailed(), record.getValidationWarnings(),
                 record.getReviewStatus(), record.getScannedBy(), record.getScannedAt(), record.getReviewedBy(),
                 record.getReviewedAt(), record.getUpdatedAt());
     }
