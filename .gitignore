@@ -35,3 +35,21 @@ eibs3g-service/
 *.swp
 *.swo
 *~
+
+# Bundled Node runtime in repo root (node.exe is ~68M, must not be versioned)
+node/
+
+# Local H2 database - contains plaintext repo credentials
+data/
+
+# Trae IDE private config
+.trae/
+
+# Local assistant notes
+.workbuddy/
+
+# Recovered / legacy code dump
+RECOVERED_CODE/
+
+# Frontend build output embedded into backend
+backend/src/main/resources/static/

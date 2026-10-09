@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Download, Folder, Eye, X, FileJson, ChevronDown, FileCode, Layers, ChevronLeft, ChevronRight, Activity, ArrowRightLeft, Info, GitBranch, Network, Settings, Lock, Key, Globe, AlertTriangle } from 'lucide-react';
+import { Download, Folder, Eye, X, FileJson, ChevronDown, FileCode, Layers, ChevronLeft, ChevronRight, Activity, ArrowRightLeft, Info, GitBranch, Network, Settings, Lock, Key, Globe, AlertTriangle, Upload, Save, Package, PackagePlus, UploadCloud } from 'lucide-react';
 import {
   parseProjectFiles,
   FileEntry,
@@ -9,6 +9,18 @@ import {
 import { XmlTransaction, XmlField, DownstreamCallChain, TransactionCallExpandToken, TransactionChainCall } from '../../types';
 import { recordAction } from '../../services/auditService';
 import { apiService } from '../../services/apiService';
+import {
+  buildSnapshot,
+  parseSnapshot,
+  downloadSnapshot,
+  buildSnapshotFileName,
+  countUniqueDownstreamCalls,
+  formatBytes,
+  formatSnapshotTime,
+  measureSnapshotSize,
+  SnapshotParseError,
+  DocSnapshot
+} from '../../services/docSnapshot';
 
 // 增强的配置类型定义 - 与Gitee管理复用相同的认证类型
 interface OnlineSourceConfig {
@@ -59,16 +71,32 @@ interface MiddleResolveNodeLayerRequest {
   entries?: FileEntry[];
 }
 
+interface MiddleResolveManyWorkerRequest {
+  type: 'resolve-many';
+  requestId: string;
+  serviceKey: string;
+  downstreamCalls: string[];
+  maxDepth?: number;
+  timeBudgetMs?: number;
+  entries?: FileEntry[];
+}
+
 interface MiddleResetWorkerRequest {
   type: 'reset-cache';
 }
 
-type MiddleWorkerRequest = MiddleResolveWorkerRequest | MiddleResolveNodeLayerRequest | MiddleResetWorkerRequest;
+type MiddleWorkerRequest =
+  | MiddleResolveWorkerRequest
+  | MiddleResolveNodeLayerRequest
+  | MiddleResolveManyWorkerRequest
+  | MiddleResetWorkerRequest;
 
 interface MiddleWorkerProgressResponse {
   type: 'progress';
   requestId: string;
   progress: number;
+  done?: number;
+  total?: number;
 }
 
 interface MiddleWorkerDownstreamResultResponse {
@@ -83,6 +111,13 @@ interface MiddleWorkerNodeLayerResultResponse {
   children: TransactionChainCall[];
 }
 
+interface MiddleWorkerManyResultResponse {
+  type: 'result-many';
+  requestId: string;
+  chains: Record<string, DownstreamCallChain>;
+  failed: string[];
+}
+
 interface MiddleWorkerErrorResponse {
   type: 'error';
   requestId: string;
@@ -93,6 +128,7 @@ type MiddleWorkerResponse =
   | MiddleWorkerProgressResponse
   | MiddleWorkerDownstreamResultResponse
   | MiddleWorkerNodeLayerResultResponse
+  | MiddleWorkerManyResultResponse
   | MiddleWorkerErrorResponse;
 
 interface PendingResolveChainWorkerRequest {
@@ -108,7 +144,17 @@ interface PendingResolveNodeLayerWorkerRequest {
   reject: (reason?: unknown) => void;
 }
 
-type PendingWorkerRequest = PendingResolveChainWorkerRequest | PendingResolveNodeLayerWorkerRequest;
+interface PendingResolveManyWorkerRequest {
+  kind: 'many';
+  onProgress?: (done: number, total: number) => void;
+  resolve: (result: { chains: Record<string, DownstreamCallChain>; failed: string[] }) => void;
+  reject: (reason?: unknown) => void;
+}
+
+type PendingWorkerRequest =
+  | PendingResolveChainWorkerRequest
+  | PendingResolveNodeLayerWorkerRequest
+  | PendingResolveManyWorkerRequest;
 
 interface MiddleSourceFileMeta {
   file: File;
@@ -130,6 +176,10 @@ const MIDDLE_SERVICE_RESOLVER_FILE_LIMIT = 64;
 const MIDDLE_REFERENCE_HINT_JAVA_LIMIT = 360;
 const MIDDLE_WORKER_CHAIN_TIMEOUT_MS = 45_000;
 const MIDDLE_WORKER_NODE_LAYER_TIMEOUT_MS = 30_000;
+const MIDDLE_WORKER_BATCH_TIMEOUT_MS = 300_000;
+const FULL_CHAIN_MAX_DEPTH = 100;
+const FULL_CHAIN_BATCH_SIZE = 20;
+const FULL_CHAIN_TIME_BUDGET_MS = 10_000;
 const MIDDLE_IGNORED_PATH_SEGMENTS = [
   '/.git/',
   '/.idea/',
@@ -273,6 +323,24 @@ export const DocManagement: React.FC = () => {
   });
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
+
+  const snapshotFileInputRef = useRef<HTMLInputElement>(null);
+  const snapshotMenuRef = useRef<HTMLDivElement>(null);
+  const importedSnapshotRef = useRef<DocSnapshot | null>(null);
+  const [isSnapshotMenuOpen, setIsSnapshotMenuOpen] = useState(false);
+  const [isSnapshotBusy, setIsSnapshotBusy] = useState(false);
+  const [fullResolveProgress, setFullResolveProgress] = useState<{ done: number; total: number } | null>(null);
+  const fullResolveCancelRef = useRef(false);
+  const [slimSnapshot, setSlimSnapshot] = useState(false);
+  const [snapshotSummary, setSnapshotSummary] = useState<{
+    kind: 'full' | 'light';
+    bankProjectName: string;
+    middleProjectName: string;
+    createdAt: number;
+    transactionCount: number;
+    chainCount: number;
+    entryCount: number;
+  } | null>(null);
 
   const applyMiddleChains = (items: XmlTransaction[]): XmlTransaction[] => {
     return enrichTransactionsWithChains(items, middleChainMap);
@@ -1151,6 +1219,63 @@ export const DocManagement: React.FC = () => {
     });
   };
 
+  const resolveManyChainsInWorker = async (
+    serviceKey: string,
+    downstreamCalls: string[],
+    maxDepth: number,
+    entriesForInit?: FileEntry[],
+    onProgress?: (done: number, total: number) => void,
+    timeBudgetMs?: number
+  ): Promise<{ chains: Record<string, DownstreamCallChain>; failed: string[] }> => {
+    const worker = middleWorkerRef.current;
+    if (!worker) {
+      const fallbackEntries = entriesForInit || middleServiceEntriesRef.current[serviceKey] || [];
+      if (fallbackEntries.length === 0) return { chains: {}, failed: downstreamCalls };
+      const resolver = createMiddleProjectChainResolver(fallbackEntries);
+      const chains: Record<string, DownstreamCallChain> = {};
+      const failed: string[] = [];
+      downstreamCalls.forEach((call, index) => {
+        try {
+          chains[call] = resolver.resolveOne(call, { maxDepth, timeBudgetMs });
+        } catch (err) {
+          failed.push(call);
+        }
+        onProgress?.(index + 1, downstreamCalls.length);
+      });
+      return { chains, failed };
+    }
+
+    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    return await new Promise<{ chains: Record<string, DownstreamCallChain>; failed: string[] }>((resolve, reject) => {
+      pendingWorkerRequestsRef.current[requestId] = {
+        kind: 'many',
+        onProgress,
+        resolve,
+        reject
+      };
+      // 批量解析给足时间：一批 25 条，每条内部最多 2.6s，留足余量
+      pendingWorkerTimeoutRef.current[requestId] = window.setTimeout(() => {
+        const pending = pendingWorkerRequestsRef.current[requestId];
+        if (!pending || pending.kind !== 'many') return;
+        delete pendingWorkerRequestsRef.current[requestId];
+        clearPendingWorkerTimeout(requestId);
+        pending.reject(new Error('resolve many chains timeout'));
+      }, MIDDLE_WORKER_BATCH_TIMEOUT_MS);
+
+      const request: MiddleWorkerRequest = {
+        type: 'resolve-many',
+        requestId,
+        serviceKey,
+        downstreamCalls,
+        maxDepth,
+        timeBudgetMs,
+        entries: entriesForInit
+      };
+      worker.postMessage(request);
+    });
+  };
+
   const resetMiddleResolverState = () => {
     sharedMiddleEntriesLoadingRef.current = null;
     middleSourceFilesRef.current = [];
@@ -1345,6 +1470,20 @@ export const DocManagement: React.FC = () => {
     return true;
   };
 
+  // 全量解析后子节点已在 transactionCalls 里，无需再请求 Worker
+  const hasLoadedChildren = (
+    downstreamCall: string,
+    beanName: string,
+    call: TransactionChainCall
+  ): boolean => {
+    const chain = middleChainMapRef.current[downstreamCall];
+    if (!chain) return false;
+    const domain = chain.domainServices.find(item => item.beanName === beanName);
+    if (!domain) return false;
+    const parentFullPath = getCallFullPath(call);
+    return (domain.transactionCalls || []).some(item => isDescendantCall(item, parentFullPath));
+  };
+
   const findCallByNodeKey = (
     downstreamCall: string,
     beanName: string,
@@ -1395,7 +1534,11 @@ export const DocManagement: React.FC = () => {
       [nodeKey]: true
     }));
 
-    if (loadedCallNodeMap[nodeKey] || expandingCallNodeMap[nodeKey]) {
+    if (
+      loadedCallNodeMap[nodeKey] ||
+      expandingCallNodeMap[nodeKey] ||
+      hasLoadedChildren(downstreamCall, beanName, targetCall)
+    ) {
       return;
     }
 
@@ -1472,6 +1615,18 @@ export const DocManagement: React.FC = () => {
     }
   };
 
+  // 点击空白处关闭「导出快照」下拉菜单
+  useEffect(() => {
+    if (!isSnapshotMenuOpen) return;
+    const handleDocClick = (event: MouseEvent) => {
+      if (snapshotMenuRef.current && !snapshotMenuRef.current.contains(event.target as Node)) {
+        setIsSnapshotMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleDocClick);
+    return () => document.removeEventListener('mousedown', handleDocClick);
+  }, [isSnapshotMenuOpen]);
+
   useEffect(() => {
     const worker = new Worker(new URL('../../workers/middleChainWorker.ts', import.meta.url), {
       type: 'module'
@@ -1484,7 +1639,14 @@ export const DocManagement: React.FC = () => {
 
       if (message.type === 'progress') {
         const pending = pendingWorkerRequestsRef.current[message.requestId];
-        if (!pending || pending.kind !== 'chain') return;
+        if (!pending) return;
+        if (pending.kind === 'many') {
+          if (typeof message.done === 'number' && typeof message.total === 'number') {
+            pending.onProgress?.(message.done, message.total);
+          }
+          return;
+        }
+        if (pending.kind !== 'chain') return;
         setResolvingDownstreamProgressMap(prev => ({
           ...prev,
           [pending.downstreamCall]: Math.max(prev[pending.downstreamCall] || 1, Math.min(99, message.progress))
@@ -1507,6 +1669,15 @@ export const DocManagement: React.FC = () => {
         delete pendingWorkerRequestsRef.current[message.requestId];
         clearPendingWorkerTimeout(message.requestId);
         pending.resolve(message.children || []);
+        return;
+      }
+
+      if (message.type === 'result-many') {
+        const pending = pendingWorkerRequestsRef.current[message.requestId];
+        if (!pending || pending.kind !== 'many') return;
+        delete pendingWorkerRequestsRef.current[message.requestId];
+        clearPendingWorkerTimeout(message.requestId);
+        pending.resolve({ chains: message.chains || {}, failed: message.failed || [] });
         return;
       }
 
@@ -2398,6 +2569,320 @@ export const DocManagement: React.FC = () => {
     }
   };
 
+  // ===== 接口文档快照：导出 / 导入（免重新上传代码即可还原链路） =====
+
+  // 全量解析：把懒加载（maxDepth=0）换成一次性递归到底，供快照导出前调用
+  const handleResolveAllChains = async (): Promise<boolean> => {
+    // 索引可能还没从服务端共享工作区拉回来，先尝试恢复
+    if (middleAllEntriesRef.current.length === 0) {
+      await ensureSharedMiddleEntriesLoaded();
+    }
+    if (!middleIndexReady || middleAllEntriesRef.current.length === 0) {
+      alert('请先上传中台代码（或导入完整包快照），再做全量链路解析。');
+      return false;
+    }
+
+    const allCalls = Array.from(
+      new Set(
+        transactions.flatMap(item =>
+          (item.downstreamCalls || []).map(call => (call || '').trim()).filter(Boolean)
+        )
+      )
+    );
+    if (allCalls.length === 0) {
+      alert('当前接口清单里没有可解析的下游调用。');
+      return false;
+    }
+
+    if (
+      !window.confirm(
+        `将对 ${allCalls.length} 条下游调用做全量递归解析（深度上限 ${FULL_CHAIN_MAX_DEPTH}）。\n` +
+        `解析期间页面保持可用，但大工程可能耗时数分钟。是否继续？`
+      )
+    ) {
+      return false;
+    }
+
+    fullResolveCancelRef.current = false;
+    setFullResolveProgress({ done: 0, total: allCalls.length });
+    setIsSnapshotBusy(true);
+
+    const entries = middleAllEntriesRef.current;
+    let needInit = !middleServiceResolverRef.current[MIDDLE_GLOBAL_SERVICE_KEY];
+    let failedCount = 0;
+
+    try {
+      for (let offset = 0; offset < allCalls.length; offset += FULL_CHAIN_BATCH_SIZE) {
+        if (fullResolveCancelRef.current) break;
+        const batch = allCalls.slice(offset, offset + FULL_CHAIN_BATCH_SIZE);
+
+        const result = await resolveManyChainsInWorker(
+          MIDDLE_GLOBAL_SERVICE_KEY,
+          batch,
+          FULL_CHAIN_MAX_DEPTH,
+          needInit ? entries : undefined,
+          (done) => setFullResolveProgress({ done: offset + done, total: allCalls.length }),
+          FULL_CHAIN_TIME_BUDGET_MS
+        );
+        needInit = false;
+        middleServiceResolverRef.current[MIDDLE_GLOBAL_SERVICE_KEY] = true;
+        failedCount += result.failed.length;
+
+        // 同时写 ref 与 state：ref 供紧接着的导出使用，state 触发界面实时更新
+        const nextMap = { ...middleChainMapRef.current };
+        Object.entries(result.chains).forEach(([call, chain]) => {
+          nextMap[call] = chooseRicherChain(chain, nextMap[call]) || chain;
+        });
+        middleChainMapRef.current = nextMap;
+        setMiddleChainMap(nextMap);
+      }
+
+      const cancelled = fullResolveCancelRef.current;
+      recordAction(
+        '接口管理 - 文档管理',
+        `按钮:全量解析链路 - 目标 ${allCalls.length} 条，已缓存 ${Object.keys(middleChainMapRef.current).length} 条${cancelled ? '（已取消）' : ''}`
+      );
+
+      if (cancelled) {
+        alert(`已取消，本次保留已解析的 ${Object.keys(middleChainMapRef.current).length} 条链路。`);
+        return false;
+      }
+
+      alert(
+        `✅ 全量解析完成\n` +
+        `共解析 ${Object.keys(middleChainMapRef.current).length} 条链路` +
+        (failedCount > 0 ? `，其中 ${failedCount} 条解析失败（多为中台找不到对应实现类）` : '')
+      );
+      return true;
+    } catch (err) {
+      console.error('全量解析链路失败:', err);
+      alert('❌ 全量解析失败：' + (err instanceof Error ? err.message : String(err)));
+      return false;
+    } finally {
+      setFullResolveProgress(null);
+      setIsSnapshotBusy(false);
+    }
+  };
+
+  const getBankProjectName = (): string => {
+    if (sourceMode === 'online' && onlineConfig.repoUrl) {
+      const segments = onlineConfig.repoUrl.replace(/\.git$/, '').split(/[\\/:]/).filter(Boolean);
+      return segments[segments.length - 1] || '网银工程';
+    }
+    return '网银工程';
+  };
+
+  const handleExportSnapshot = async (kind: 'full' | 'light', options?: { resolveAllChains?: boolean }) => {
+    setIsSnapshotMenuOpen(false);
+    if (transactions.length === 0) {
+      alert('当前没有可导出的接口清单，请先上传网银工程。');
+      return;
+    }
+    const entries = middleAllEntriesRef.current || [];
+    if (kind === 'full' && entries.length === 0) {
+      alert('尚未加载中台代码，无法导出完整包。\n可改为导出「轻量包」（仅接口清单 + 已解析链路）。');
+      return;
+    }
+
+    if (options?.resolveAllChains) {
+      const ok = await handleResolveAllChains();
+      if (!ok) return;
+    }
+
+    setIsSnapshotBusy(true);
+    try {
+      const snapshot = buildSnapshot({
+        kind,
+        transactions,
+        chainMap: middleChainMapRef.current || {},
+        middleProjectName,
+        middleEntries: entries,
+        bankProjectName: getBankProjectName(),
+        sourceMode,
+        repoUrl: sourceMode === 'online' ? onlineConfig.repoUrl : '',
+        branch: sourceMode === 'online' ? onlineConfig.branch : '',
+        includeFieldDetails: !slimSnapshot
+      });
+      const fileName = buildSnapshotFileName(getBankProjectName(), kind);
+      const serialized = JSON.stringify(snapshot);
+      const sizeText = formatBytes(new Blob([serialized]).size);
+      downloadSnapshot(snapshot, fileName, serialized);
+
+      const size = measureSnapshotSize(snapshot);
+      const percent = (part: number): string =>
+        `${((part / Math.max(1, size.totalBytes)) * 100).toFixed(0)}%`;
+      recordAction(
+        '接口管理 - 文档管理',
+        `按钮:导出${kind === 'full' ? '完整' : '轻量'}快照 - ${snapshot.bank.transactions.length} 个接口 / ${Object.keys(snapshot.chains).length} 条链路 / ${sizeText}`
+      );
+      alert(
+        `✅ 已导出${kind === 'full' ? '完整' : '轻量'}快照\n` +
+        `文件名：${fileName}\n` +
+        `位置：浏览器默认下载目录（通常是 C:\\Users\\<用户名>\\Downloads）\n\n` +
+        `总体积 ${sizeText}，构成：\n` +
+        `· 接口清单 ${formatBytes(size.bankBytes)}（${percent(size.bankBytes)}）\n` +
+        `· 链路结果 ${formatBytes(size.chainsBytes)}（${percent(size.chainsBytes)}）\n` +
+        `· 中台源码 ${formatBytes(size.middleBytes)}（${percent(size.middleBytes)}）` +
+        (kind === 'full' ? '' : '\n\n（轻量包不含源码，此处仅为路径清单）')
+      );
+    } catch (err) {
+      console.error('导出快照失败:', err);
+      alert('❌ 导出快照失败：' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setIsSnapshotBusy(false);
+    }
+  };
+
+  const persistSnapshotInterfaceCache = async (snapshot: DocSnapshot): Promise<void> => {
+    try {
+      const interfaces = snapshot.bank.transactions.map(t => ({
+        id: t.id,
+        name: t.trsName,
+        module: t.module,
+        inputs: t.inputs,
+        outputs: t.outputs,
+        downstreamCalls: t.downstreamCalls,
+        filePath: t.filePath
+      }));
+      await apiService.configApi.save({
+        configKey: 'doc-management-interface-cache',
+        configValue: JSON.stringify({
+          interfaces,
+          timestamp: Date.now(),
+          repoUrl: snapshot.bank.sourceMode === 'online' && snapshot.bank.repoUrl ? snapshot.bank.repoUrl : 'local-upload',
+          branch: snapshot.bank.branch || 'local'
+        })
+      });
+    } catch (err) {
+      console.warn('快照接口清单持久化失败（不影响本次导入渲染）:', err);
+    }
+  };
+
+  const handleImportSnapshot = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    setIsSnapshotBusy(true);
+    try {
+      const raw = await file.text();
+      const snapshot = parseSnapshot(raw);
+
+      if (transactions.length > 0 && !window.confirm('导入快照会覆盖当前页面上的接口清单与链路，是否继续？')) {
+        return;
+      }
+
+      const chains = snapshot.chains || {};
+      const bankTransactions = snapshot.bank.transactions || [];
+      const middleEntries = snapshot.middle.entries || [];
+
+      // 1) 先恢复链路结果，再 enrich 到接口上，保证导入即可渲染
+      middleChainMapRef.current = { ...chains };
+      setMiddleChainMap({ ...chains });
+
+      const enriched = enrichTransactionsWithChains(bankTransactions, chains);
+      setTransactions(enriched);
+      setSelectedTransaction(null);
+      setCurrentPage(1);
+      setSearchQuery('');
+      setExpandedDownstreamMap({});
+      setExpandedCallNodeMap({});
+      setLoadedCallNodeMap({});
+
+      // 2) 完整包：恢复中台源码索引，后续可继续解析未解析过的链路
+      if (snapshot.kind === 'full' && middleEntries.length > 0) {
+        applySharedMiddleEntries(snapshot.middle.projectName || 'snapshot-middle-project', middleEntries);
+      } else {
+        // 轻量包：彻底清掉中台索引，避免残留旧源码与新接口清单混用
+        middleSourceFilesRef.current = [];
+        middleSourceMetaRef.current = [];
+        middleServiceFilePoolRef.current = {};
+        middleResolverFilesRef.current = [];
+        middleFileContentCacheRef.current = {};
+        middleServiceEntriesRef.current = {};
+        middleAllEntriesRef.current = [];
+        resetMiddleWorkerCacheOnly();
+        setMiddleProjectName(snapshot.middle.projectName || '');
+        setMiddleIndexReady(false);
+      }
+
+      setMiddleDownstreamTotal(countUniqueDownstreamCalls(bankTransactions));
+      setSourceMode(snapshot.bank.sourceMode);
+      if (snapshot.bank.sourceMode === 'online' && snapshot.bank.repoUrl) {
+        setOnlineConfig(prev => ({
+          ...prev,
+          repoUrl: snapshot.bank.repoUrl,
+          branch: snapshot.bank.branch || prev.branch
+        }));
+      }
+
+      importedSnapshotRef.current = snapshot;
+      setSnapshotSummary({
+        kind: snapshot.kind,
+        bankProjectName: snapshot.bank.projectName || '网银工程',
+        middleProjectName: snapshot.middle.projectName || '',
+        createdAt: snapshot.createdAt,
+        transactionCount: bankTransactions.length,
+        chainCount: Object.keys(chains).length,
+        entryCount: middleEntries.length
+      });
+
+      // 3) 落库接口清单，刷新页面也能恢复（链路由服务端 chain-map 或再次导入恢复）
+      await persistSnapshotInterfaceCache(snapshot);
+
+      recordAction(
+        '接口管理 - 文档管理',
+        `按钮:导入${snapshot.kind === 'full' ? '完整' : '轻量'}快照 - ${bankTransactions.length} 个接口 / ${Object.keys(chains).length} 条链路`
+      );
+
+      alert(
+        `✅ 快照导入成功\n` +
+        `网银工程：${snapshot.bank.projectName || '未命名'}（${bankTransactions.length} 个接口）\n` +
+        `已解析链路：${Object.keys(chains).length} 条\n` +
+        (snapshot.kind === 'full'
+          ? `中台源码：${middleEntries.length} 个文件已恢复，可继续展开新链路`
+          : `轻量包不含中台源码，未解析过的下游调用需重新上传中台代码`)
+      );
+    } catch (err) {
+      const message = err instanceof SnapshotParseError ? err.message : (err instanceof Error ? err.message : String(err));
+      console.error('导入快照失败:', err);
+      alert('❌ 导入快照失败：' + message);
+    } finally {
+      setIsSnapshotBusy(false);
+    }
+  };
+
+  const handleSyncSnapshotToServer = async () => {
+    const snapshot = importedSnapshotRef.current;
+    if (!snapshot) return;
+
+    const entries = snapshot.middle.entries || [];
+    if (entries.length === 0) {
+      alert('当前导入的是轻量包，不含中台源码，无法同步源码到服务端。');
+      return;
+    }
+    if (!window.confirm('将覆盖服务端共享工作区的中台源码与链路缓存，同事务的其他操作员会一起切换。是否继续？')) {
+      return;
+    }
+
+    setIsSnapshotBusy(true);
+    try {
+      // 注意顺序：保存源码会清空旧的 chain-map，所以必须先 entries 后 chainMap
+      await apiService.docManagementApi.saveSharedMiddleEntries({
+        projectName: snapshot.middle.projectName || 'snapshot-middle-project',
+        entries
+      });
+      await apiService.docManagementApi.saveSharedChainMap({ chainMap: snapshot.chains || {} });
+      recordAction('接口管理 - 文档管理', `按钮:同步快照到服务端 - ${entries.length} 个中台文件 / ${Object.keys(snapshot.chains || {}).length} 条链路`);
+      alert('✅ 已同步到服务端共享工作区');
+    } catch (err) {
+      console.error('同步快照到服务端失败:', err);
+      alert('❌ 同步失败：' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setIsSnapshotBusy(false);
+    }
+  };
+
   // Generate XML Spreadsheet 2003 format
   const handleExportExcel = () => {
     recordAction('接口管理 - 文档管理', '按钮:导出 Excel - 导出当前接口列表');
@@ -3043,8 +3528,183 @@ export const DocManagement: React.FC = () => {
                     导出Excel
                 </button>
             )}
+
+            <input
+                type="file"
+                ref={snapshotFileInputRef}
+                className="hidden"
+                accept=".json,application/json"
+                onChange={handleImportSnapshot}
+            />
+
+            <button
+                onClick={() => snapshotFileInputRef.current?.click()}
+                disabled={isSnapshotBusy}
+                className="flex items-center gap-2 rounded-lg border border-purple-300 bg-white px-4 py-2 text-purple-700 shadow-sm transition-colors hover:bg-purple-50 disabled:opacity-50"
+                title="导入之前导出的快照文件，直接还原接口清单与链路，无需重新上传代码"
+            >
+                {isSnapshotBusy ? <Activity className="animate-spin" size={18}/> : <Upload size={18} />}
+                导入快照
+            </button>
+
+            <div className="relative" ref={snapshotMenuRef}>
+                <button
+                    onClick={() => setIsSnapshotMenuOpen(prev => !prev)}
+                    disabled={isSnapshotBusy || transactions.length === 0}
+                    className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-white shadow-sm transition-colors hover:bg-purple-700 disabled:opacity-50"
+                    title={transactions.length === 0 ? '请先上传网银工程' : '把当前解析结果保存为快照文件'}
+                >
+                    {isSnapshotBusy ? <Activity className="animate-spin" size={18}/> : <Save size={18} />}
+                    导出快照
+                    <ChevronDown size={14} />
+                </button>
+                {isSnapshotMenuOpen && (
+                    <div className="absolute right-0 z-30 mt-2 w-80 rounded-lg border border-slate-200 bg-white p-2 shadow-xl">
+                        <div className="px-3 pb-1 pt-1 text-xs font-medium text-slate-400">不含源码 · 体积小</div>
+                        <button
+                            onClick={() => handleExportSnapshot('light', { resolveAllChains: true })}
+                            className="w-full rounded-md px-3 py-2 text-left transition-colors hover:bg-purple-50"
+                        >
+                            <div className="flex items-center gap-2 text-sm font-medium text-slate-800">
+                                <Network size={16} className="text-purple-600" />
+                                链路包 · 解析全部链路
+                            </div>
+                            <div className="mt-1 text-xs text-slate-500">
+                                推荐：先把所有链路递归解析到底再导出，导入后即可看全图，通常仅几 MB
+                            </div>
+                        </button>
+                        <button
+                            onClick={() => handleExportSnapshot('light')}
+                            className="mt-1 w-full rounded-md px-3 py-2 text-left transition-colors hover:bg-purple-50"
+                        >
+                            <div className="flex items-center gap-2 text-sm font-medium text-slate-800">
+                                <Package size={16} className="text-purple-600" />
+                                链路包（当前进度）
+                            </div>
+                            <div className="mt-1 text-xs text-slate-500">
+                                只含接口清单 + 已解析的 {Object.keys(middleChainMap).length} 条链路，秒导秒开
+                            </div>
+                        </button>
+
+                        <label className="mt-2 flex cursor-pointer items-start gap-2 rounded-md bg-slate-50 px-3 py-2">
+                            <input
+                                type="checkbox"
+                                checked={slimSnapshot}
+                                onChange={(e) => setSlimSnapshot(e.target.checked)}
+                                className="mt-0.5"
+                            />
+                            <span className="text-xs leading-relaxed text-slate-600">
+                                精简：不含接口字段详情（inputs / outputs）
+                                <br />
+                                <span className="text-slate-400">
+                                    体积可再降一半，但导入后点开接口看不到输入输出字段定义
+                                </span>
+                            </span>
+                        </label>
+
+                        <div className="mt-2 border-t border-slate-100 px-3 pb-1 pt-2 text-xs font-medium text-slate-400">
+                            含中台源码 · 导入后可继续解析新链路
+                        </div>
+                        <button
+                            onClick={() => handleExportSnapshot('full', { resolveAllChains: true })}
+                            disabled={middleAllEntriesRef.current.length === 0}
+                            className="w-full rounded-md px-3 py-2 text-left transition-colors hover:bg-purple-50 disabled:opacity-40 disabled:hover:bg-transparent"
+                        >
+                            <div className="flex items-center gap-2 text-sm font-medium text-slate-800">
+                                <PackagePlus size={16} className="text-purple-600" />
+                                完整包 · 解析全部链路
+                            </div>
+                            <div className="mt-1 text-xs text-slate-500">
+                                含 {middleAllEntriesRef.current.length} 个中台源文件，体积大
+                            </div>
+                        </button>
+                        <button
+                            onClick={() => handleExportSnapshot('full')}
+                            disabled={middleAllEntriesRef.current.length === 0}
+                            className="mt-1 w-full rounded-md px-3 py-2 text-left transition-colors hover:bg-purple-50 disabled:opacity-40 disabled:hover:bg-transparent"
+                        >
+                            <div className="flex items-center gap-2 text-sm font-medium text-slate-800">
+                                <PackagePlus size={16} className="text-purple-600" />
+                                完整包（当前进度）
+                            </div>
+                            <div className="mt-1 text-xs text-slate-500">
+                                含源码，但链路只含已解析的 {Object.keys(middleChainMap).length} 条
+                            </div>
+                        </button>
+                        <div className="mt-2 border-t border-slate-100 pt-2">
+                            <button
+                                onClick={() => {
+                                    setIsSnapshotMenuOpen(false);
+                                    void handleResolveAllChains();
+                                }}
+                                disabled={middleAllEntriesRef.current.length === 0}
+                                className="w-full rounded-md px-3 py-2 text-left transition-colors hover:bg-amber-50 disabled:opacity-40 disabled:hover:bg-transparent"
+                            >
+                                <div className="flex items-center gap-2 text-sm font-medium text-slate-800">
+                                    <Activity size={16} className="text-amber-600" />
+                                    仅解析全部链路（不导出）
+                                </div>
+                                <div className="mt-1 text-xs text-slate-500">
+                                    把懒加载改成一次性递归到底，之后点开任意节点都是瞬时的
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
         </div>
       </div>
+
+      {/* 全量链路解析进度 */}
+      {fullResolveProgress && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm">
+          <Activity size={18} className="animate-spin text-amber-600" />
+          <span className="font-medium text-amber-800">
+            正在全量解析链路 {fullResolveProgress.done}/{fullResolveProgress.total}
+          </span>
+          <div className="h-1.5 w-56 overflow-hidden rounded bg-amber-100">
+            <div
+              className="h-full bg-amber-500 transition-all duration-300"
+              style={{
+                width: `${Math.min(100, Math.round((fullResolveProgress.done / Math.max(1, fullResolveProgress.total)) * 100))}%`
+              }}
+            />
+          </div>
+          <span className="text-xs text-amber-600">递归深度上限 {FULL_CHAIN_MAX_DEPTH}，页面可继续操作</span>
+          <button
+            onClick={() => { fullResolveCancelRef.current = true; }}
+            className="ml-auto rounded-md border border-amber-300 bg-white px-3 py-1 text-xs text-amber-700 transition-colors hover:bg-amber-100"
+          >
+            取消
+          </button>
+        </div>
+      )}
+
+      {/* 快照导入结果摘要 */}
+      {snapshotSummary && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-purple-200 bg-purple-50 px-4 py-3 text-sm">
+          <FileJson size={18} className="text-purple-600" />
+          <span className="font-medium text-purple-800">
+            已从{snapshotSummary.kind === 'full' ? '完整包' : '轻量包'}导入：{snapshotSummary.bankProjectName}
+          </span>
+          <span className="text-purple-700">
+            接口 {snapshotSummary.transactionCount} 个 · 链路 {snapshotSummary.chainCount} 条
+            {snapshotSummary.entryCount > 0 ? ` · 中台源码 ${snapshotSummary.entryCount} 个文件` : ' · 无中台源码'}
+          </span>
+          <span className="text-purple-500 text-xs">生成于 {formatSnapshotTime(snapshotSummary.createdAt)}</span>
+          {snapshotSummary.kind === 'full' && (
+            <button
+              onClick={handleSyncSnapshotToServer}
+              disabled={isSnapshotBusy}
+              className="ml-auto flex items-center gap-2 rounded-md bg-purple-600 px-3 py-1.5 text-xs text-white transition-colors hover:bg-purple-700 disabled:opacity-50"
+              title="写入服务端共享工作区，同事打开页面即可直接复用"
+            >
+              <UploadCloud size={14} />
+              同步到服务端
+            </button>
+          )}
+        </div>
+      )}
 
       {/* 接口搜索栏 */}
       {transactions.length > 0 && (
