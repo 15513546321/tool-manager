@@ -8,6 +8,7 @@ interface ResolveDownstreamRequestMessage {
   serviceKey: string;
   downstreamCall: string;
   maxDepth?: number;
+  timeBudgetMs?: number;
   entries?: FileEntry[];
 }
 
@@ -19,16 +20,32 @@ interface ResolveNodeLayerRequestMessage {
   entries?: FileEntry[];
 }
 
+interface ResolveManyRequestMessage {
+  type: 'resolve-many';
+  requestId: string;
+  serviceKey: string;
+  downstreamCalls: string[];
+  maxDepth?: number;
+  timeBudgetMs?: number;
+  entries?: FileEntry[];
+}
+
 interface ResetRequestMessage {
   type: 'reset-cache';
 }
 
-type WorkerRequest = ResolveDownstreamRequestMessage | ResolveNodeLayerRequestMessage | ResetRequestMessage;
+type WorkerRequest =
+  | ResolveDownstreamRequestMessage
+  | ResolveNodeLayerRequestMessage
+  | ResolveManyRequestMessage
+  | ResetRequestMessage;
 
 interface ProgressResponseMessage {
   type: 'progress';
   requestId: string;
   progress: number;
+  done?: number;
+  total?: number;
 }
 
 interface DownstreamResultResponseMessage {
@@ -43,6 +60,13 @@ interface NodeLayerResultResponseMessage {
   children: TransactionChainCall[];
 }
 
+interface ManyResultResponseMessage {
+  type: 'result-many';
+  requestId: string;
+  chains: Record<string, DownstreamCallChain>;
+  failed: string[];
+}
+
 interface ErrorResponseMessage {
   type: 'error';
   requestId: string;
@@ -53,10 +77,14 @@ type WorkerResponse =
   | ProgressResponseMessage
   | DownstreamResultResponseMessage
   | NodeLayerResultResponseMessage
+  | ManyResultResponseMessage
   | ErrorResponseMessage;
 
 interface ResolverLike {
-  resolveOne: (downstreamCall: string, options?: { maxDepth?: number }) => DownstreamCallChain;
+  resolveOne: (
+    downstreamCall: string,
+    options?: { maxDepth?: number; timeBudgetMs?: number }
+  ) => DownstreamCallChain;
   resolveCallLayer: (token: TransactionCallExpandToken) => TransactionChainCall[];
 }
 
@@ -84,11 +112,13 @@ workerScope.onmessage = (event: MessageEvent<WorkerRequest>) => {
   }
 
   const { requestId, serviceKey, entries } = message;
-  const postProgress = (progress: number) => {
+  const postProgress = (progress: number, done?: number, total?: number) => {
     postMessageToMain({
       type: 'progress',
       requestId,
-      progress
+      progress,
+      done,
+      total
     });
   };
 
@@ -105,12 +135,41 @@ workerScope.onmessage = (event: MessageEvent<WorkerRequest>) => {
     postProgress(96);
     if (message.type === 'resolve-downstream') {
       const chain = resolverCache[serviceKey].resolveOne(message.downstreamCall, {
-        maxDepth: message.maxDepth
+        maxDepth: message.maxDepth,
+        timeBudgetMs: message.timeBudgetMs
       });
       postMessageToMain({
         type: 'result-downstream',
         requestId,
         chain
+      });
+      return;
+    }
+
+    if (message.type === 'resolve-many') {
+      const calls = message.downstreamCalls || [];
+      const chains: Record<string, DownstreamCallChain> = {};
+      const failed: string[] = [];
+      calls.forEach((call, index) => {
+        try {
+          chains[call] = resolverCache[serviceKey].resolveOne(call, {
+            maxDepth: message.maxDepth,
+            timeBudgetMs: message.timeBudgetMs
+          });
+        } catch (err) {
+          failed.push(call);
+        }
+        postProgress(
+          Math.round(((index + 1) / Math.max(1, calls.length)) * 100),
+          index + 1,
+          calls.length
+        );
+      });
+      postMessageToMain({
+        type: 'result-many',
+        requestId,
+        chains,
+        failed
       });
       return;
     }

@@ -970,6 +970,8 @@ interface TransactionTraversalState {
 
 interface ResolveDownstreamChainOptions {
   maxDepth?: number;
+  /** 单次解析的时间预算（毫秒），全量递归时可放宽，避免大链路被 2.6s 截断 */
+  timeBudgetMs?: number;
 }
 
 export interface MiddleProjectChainResolver {
@@ -1577,7 +1579,7 @@ const resolveSingleDownstreamChain = (
   const traversalState: TransactionTraversalState = {
     remainingCalls: MAX_TRANSACTION_CHAIN_TOTAL_CALLS,
     truncated: false,
-    deadlineAt: Date.now() + MAX_TRANSACTION_CHAIN_PARSE_TIME_MS
+    deadlineAt: Date.now() + Math.max(1, options?.timeBudgetMs ?? MAX_TRANSACTION_CHAIN_PARSE_TIME_MS)
   };
 
   const apiMethodBody = resolveMethodBodyFromClass(selectedApiImpl, apiMethod);
